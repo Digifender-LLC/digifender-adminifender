@@ -1,0 +1,27 @@
+# Requests review for known external commands when a trusted Codex layer loads this file.
+# Prefix matching is not a secret sandbox, exhaustive command parser or extra authority.
+prefix_rule(
+    pattern = ["git", "push"],
+    decision = "prompt",
+    justification = "Review the authorized task and exact external effect before execution.",
+)
+prefix_rule(
+    pattern = ["gh"],
+    decision = "prompt",
+    justification = "Review the authorized task and exact external effect before execution.",
+)
+prefix_rule(
+    pattern = ["wrangler"],
+    decision = "prompt",
+    justification = "Review production/staging scope, migrations and credentials before execution.",
+)
+prefix_rule(
+    pattern = ["npx", "wrangler"],
+    decision = "prompt",
+    justification = "Review production/staging scope, migrations and credentials before execution.",
+)
+prefix_rule(
+    pattern = ["./gradlew", "publish"],
+    decision = "prompt",
+    justification = "Review the exact Play publication target before execution.",
+)

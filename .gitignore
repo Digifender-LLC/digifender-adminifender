@@ -1,0 +1,35 @@
+# Local credentials and Firebase CLI output
+.secrets/
+.env
+.env.*
+.dev.vars
+.dev.vars.*
+firebase-debug.log
+firebase-debug.*.log
+ui-debug.log
+*service-account*.json
+*.key
+*.jks
+*.keystore
+
+# Android/Firebase local artifacts
+**/google-services.json
+**/build/
+.gradle/
+local.properties
+
+# Backend, tooling, and generated reports
+backend/node_modules/
+backend/dist/
+.wrangler/
+.quality-reports/
+test-results/
+__pycache__/
+*.pyc
+*.hprof
+
+# Downloaded models and private exports
+*.litertlm
+*.gguf
+*.tflite
+exports/
