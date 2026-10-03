@@ -1,5 +1,5 @@
 import { createMessageBatch, getQueueResult } from 'cloudflare:test';
-import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test';
+import { createExecutionContext } from 'cloudflare:test';
 import { env, exports } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
 import worker from '../../src/index';
@@ -13,7 +13,7 @@ describe('HTTP envelope', () => {
     expect(response.status).toBe(200);
     expect(response.headers.get('cache-control')).toBe('no-store');
     const body = await response.json<{ data: { contract: Record<string, number> }; requestId: string }>();
-    expect(body.data.contract).toEqual({ httpSchemaVersion: 1, eventSchemaVersion: 1, controlMigration: 1, archiveMigration: 1 });
+    expect(body.data.contract).toEqual({ httpSchemaVersion: 1, eventSchemaVersion: 1, controlMigration: 2, archiveMigration: 1 });
     expect(body.requestId).toMatch(/^[0-9a-f-]{36}$/);
   });
 
@@ -46,16 +46,5 @@ describe('queue envelope', () => {
     const result = await getQueueResult(batch, ctx);
     expect(result.explicitAcks.sort()).toEqual(['m1', 'm2']);
     expect(result.retryMessages).toEqual([]);
-  });
-});
-
-describe('email intake before capture exists', () => {
-  it('rejects explicitly instead of silently accepting', async () => {
-    let reason: string | undefined;
-    const message = { setReject: (value: string) => { reason = value; } } as unknown as ForwardableEmailMessage;
-    const ctx = createExecutionContext();
-    await worker.email(message, env, ctx);
-    await waitOnExecutionContext(ctx);
-    expect(reason).toBe('Adminifender intake is not enabled.');
   });
 });

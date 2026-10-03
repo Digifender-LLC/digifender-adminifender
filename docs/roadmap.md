@@ -6,8 +6,8 @@ Tracks delivery of the [baseline phases](specifications/baseline.md#delivery-pha
 
 | Slice | Requirements | Status | Evidence |
 | --- | --- | --- | --- |
-| 1. Worker scaffold, D1 migrations, shared contract fixtures, backend CI | NFR-010; LLD storage, conventions, queue envelope, triage output | Locally verified | `cd backend && npm ci && npm run check`: typecheck, 36 Vitest tests (Workers runtime with local D1, Node contract fixtures), dry-run bundle |
-| 2. Email admission: block rules, raw R2 staging, registry and parse job | FR-003, FR-004, AT-02 | Planned | |
+| 1. Worker scaffold, D1 migrations, shared contract fixtures, backend CI | NFR-010; LLD storage, conventions, queue envelope, triage output | Locally verified | `cd backend && npm ci && npm run check`: typecheck, Vitest tests (Workers runtime with local D1, Node contract fixtures), dry-run bundle |
+| 2. Email admission: block rules, raw R2 staging, registry and parse job | FR-003, FR-004, AT-02 (blocking and staging cases) | Locally verified | `npm run check`: exact-domain/address and match-field rules, rejection before the body is read with only per-rule daily counters, hash-keyed R2 staging, recipient-scoped dedupe, registry + parse job + outbox in one batch, and R2, D1 and queue failure cases. Live routing and actual sender behavior on bounce are not tested. |
 | 3. MIME parsing, normalization and archive publication | FR-006, FR-007, FR-008, AT-03 | Planned | |
 | 4. Spam heuristics `spam-rules-v1`, quarantine and release | FR-005, AT-02 | Planned | |
 | 5. Durable jobs, outbox, leases and cron reconciler | NFR-001, NFR-004 | Planned | |

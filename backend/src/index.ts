@@ -1,4 +1,5 @@
 import type { Env } from './env';
+import { admitEmail } from './admission/capture';
 import { handleFetch } from './http/router';
 import { parseQueueEnvelope } from './jobs/queue-envelope';
 
@@ -7,10 +8,10 @@ export default {
     return handleFetch(request, env);
   },
 
-  async email(message, _env, _ctx) {
-    // Capture is not implemented in this slice. Reject explicitly rather than accept and lose mail;
-    // the live route stays disabled until intake acceptance (tdd.md#preflight-and-release-gates).
-    message.setReject('Adminifender intake is not enabled.');
+  async email(message, env, _ctx) {
+    // The live route stays disabled until intake acceptance (tdd.md#preflight-and-release-gates).
+    const outcome = await admitEmail(message, env);
+    console.log(JSON.stringify({ event: 'email_admission', outcome: outcome.kind }));
   },
 
   async queue(batch, _env, _ctx) {
