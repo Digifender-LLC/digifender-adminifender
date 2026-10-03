@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://adminifender.invalid/schema/v1/common.schema.json",
+  "title": "Shared v1 definitions",
+  "$defs": {
+    "uuid": {
+      "description": "Random UUIDv4, lowercase (lld.md#contract-conventions).",
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "timestamp": {
+      "description": "UTC RFC3339 timestamp with Z suffix.",
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+    },
+    "chunkId": {
+      "description": "Stable chunk/citation identifier derived from source, attachment, generation and ordinal.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "pattern": "^[A-Za-z0-9:_.-]+$"
+    },
+    "actionKind": {
+      "enum": [
+        "email.reply",
+        "cloudflare.dns.upsert",
+        "cloudflare.dns.delete",
+        "cloudflare.worker.version.activate",
+        "whumpo.release.apply",
+        "whumpo.recovery.execute",
+        "whumpo.support.respond"
+      ]
+    }
+  }
+}

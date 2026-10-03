@@ -2,9 +2,9 @@
 
 Personal Kotlin/Jetpack Compose Android app for a Galaxy S24+: retain email and attachments, review important concerns, act with explicit controls, and chat over the evidence. Cloudflare supplies the backend and optional inference; automatic hybrid routing also supports local inference.
 
-**Status:** Full product specification and selected designs are documented. Application code, cloud provisioning, Whumpo adapters and physical-device acceptance remain future implementation work.
+**Status:** Full product specification and selected designs are documented. The Worker scaffold, D1 migrations and shared contracts are locally verified. Remaining application code, cloud provisioning, Whumpo adapters and physical-device acceptance remain future implementation work.
 
-Start with the [specification guide](docs/specifications/README.md). It links BRD, PRD, FRD, SRS, HLD, SDD, TDD, LLD and the ADR collection.
+Start with the [specification guide](docs/specifications/README.md). Implementation progress is tracked in the [roadmap](docs/roadmap.md). It links BRD, PRD, FRD, SRS, HLD, SDD, TDD, LLD and the ADR collection.
 
 - [Accepted product notes](docs/product-notes.md) — owner decisions, complete accepted scope and phases.
 - [Requirements and acceptance](docs/specifications/srs.md) — 54 functional requirements, 12 quality requirements and canonical traceability.

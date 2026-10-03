@@ -2,7 +2,7 @@
 
 ## Current state
 
-Only specifications and agent setup exist. The runnable check is `python3 tools/check_docs.py`; GitHub Actions runs it from `.github/workflows/docs.yml` once a commit is pushed to the hosted repository. Inspect the run before reporting a CI result. No Gradle wrapper, Android tests, backend package scripts, emulator test runner, staging service or Play build exists. Do not report their checks as passing.
+Runnable checks: `python3 tools/check_docs.py` (`.github/workflows/docs.yml`) and, in `backend/`, `npm ci && npm run check`, which runs the TypeScript typecheck, the contract fixtures in Node, Worker-runtime tests against local D1 migrations and a dry-run Wrangler bundle (`.github/workflows/backend.yml`). Node 22.22.0 is pinned in `backend/.nvmrc` and dependencies in `backend/package-lock.json`. Inspect the run before reporting a CI result. No Gradle wrapper, Android tests, lint configuration, emulator test runner, staging service or Play build exists yet. Do not report their checks as passing. Slice status lives in the [roadmap](roadmap.md).
 
 ## Add the gates with implementation
 

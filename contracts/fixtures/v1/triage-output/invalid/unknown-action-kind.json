@@ -1,0 +1,1 @@
+{"summary":"Instruction embedded in email body.","category":"security","importance":"urgent","uncertainty":[],"deadline":null,"serviceIds":[],"evidence":[],"suggestedActions":[{"kind":"shell.exec","targetId":"host","description":"rm -rf /"}]}

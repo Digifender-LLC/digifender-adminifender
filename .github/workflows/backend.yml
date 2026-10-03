@@ -1,0 +1,39 @@
+name: Backend and contracts
+
+on:
+  pull_request:
+    paths: ['backend/**', 'contracts/**', '.github/workflows/backend.yml']
+  push:
+    branches: [main]
+    paths: ['backend/**', 'contracts/**', '.github/workflows/backend.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  worker:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: backend/.nvmrc
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Install frozen dependencies
+        run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Contract fixtures and Worker-runtime tests
+        run: npm test
+      - name: Bundle without deploying
+        run: npm run bundle
