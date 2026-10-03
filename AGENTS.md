@@ -39,13 +39,13 @@ Handoff: task and acceptance IDs; checkout/branch if present; owned files; decis
 
 The primary agent acts as an orchestrator, coordinating work through context-scoped subagents rather than performing coding and edits directly. This division of labor optimizes reasoning effort and keeps the main conversation focused on coordination and decision-making.
 
-When delegating to subagents, route work based on task complexity and requirements:
+When delegating to subagents, route work based on task complexity and requirements. Models are listed from cheapest to most capable; prices are Anthropic first-party API rates per million input/output tokens as of 2026-09-25 (see the [Anthropic pricing page](https://www.anthropic.com/pricing) for current rates):
 
-- **Fable 5.1**: Fast, cost-efficient agent for simple, straightforward tasks (file reads, pattern matching, routine edits, small scripts). Ideal for exploratory searches and quick lookups.
-- **Haiku 4.5**: Lightweight reasoning for focused tasks (targeted code analysis, small refactors, single-file changes, fast feedback loops). Best for narrow, well-defined problems without complex cross-file dependencies.
-- **Sonnet 5.5**: Balanced capability for general-purpose work (multi-file refactoring, feature implementation, moderate complexity analysis, code review). The default choice for most substantive tasks.
-- **Opus 5.5**: Most capable reasoning for complex, high-stakes work (architecture decisions, cross-system design, deep codebase analysis, security review, intricate bug diagnosis). Use when a task requires sustained reasoning across multiple domains or when Sonnet's output quality is insufficient.
+- **Haiku 4.5** ($1/$5): Cheapest and fastest. Use for simple, well-defined tasks such as file reads, pattern matching, routine edits, small scripts, exploratory searches and quick lookups.
+- **Sonnet 5.5** ($2/$10): Balanced speed and capability for general-purpose work such as multi-file refactoring, feature implementation, moderate analysis and code review. The default choice for most substantive tasks.
+- **Opus 5.5** ($4/$20): Strong reasoning for complex, high-stakes work such as architecture decisions, cross-system design, deep codebase analysis, security review and intricate bug diagnosis. Use when Sonnet's output quality is insufficient.
+- **Fable 5.1** ($10/$50): Anthropic's most capable widely released model and the most expensive. Turns on hard tasks can run for many minutes. Reserve it for the most demanding reasoning and long-horizon agentic work where Opus falls short.
 
-**Orchestrator responsibilities**: Define the task scope, provide context and constraints, verify subagent work, and coordinate across multiple efforts. Route simple, independent subtasks to faster models to reduce latency and cost. Reserve Opus for genuinely complex problems requiring deep reasoning or when task failure would be costly.
+**Orchestrator responsibilities**: Define the task scope, provide context and constraints, verify subagent work, and coordinate across multiple efforts. Route simple, independent subtasks to Haiku or Sonnet to reduce latency and cost. Reserve Opus and Fable for genuinely complex problems requiring deep reasoning or when task failure would be costly.
 
 **Subagent responsibilities**: Execute focused work within defined scope—code writes, edits, file operations, targeted analysis. Report results clearly so the orchestrator can verify and coordinate the next step.
