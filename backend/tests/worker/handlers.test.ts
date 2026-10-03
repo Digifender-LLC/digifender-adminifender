@@ -13,7 +13,7 @@ describe('HTTP envelope', () => {
     expect(response.status).toBe(200);
     expect(response.headers.get('cache-control')).toBe('no-store');
     const body = await response.json<{ data: { contract: Record<string, number> }; requestId: string }>();
-    expect(body.data.contract).toEqual({ httpSchemaVersion: 1, eventSchemaVersion: 1, controlMigration: 2, archiveMigration: 1 });
+    expect(body.data.contract).toEqual({ httpSchemaVersion: 1, eventSchemaVersion: 1, controlMigration: 3, archiveMigration: 1 });
     expect(body.requestId).toMatch(/^[0-9a-f-]{36}$/);
   });
 

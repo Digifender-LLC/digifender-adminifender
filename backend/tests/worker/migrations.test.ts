@@ -21,9 +21,10 @@ describe('control migration', () => {
     await expect(env.CONTROL_DB.prepare('INSERT INTO owner(id, created_at) VALUES (?, ?)').bind('second', now).run()).rejects.toThrow(/CHECK/);
   });
 
-  it('allows at most one writable archive partition', async () => {
+  it('seeds ARCHIVE_0001 as the only writable archive partition', async () => {
+    const seeded = await env.CONTROL_DB.prepare("SELECT id, binding_name FROM archive_partitions WHERE state = 'writable'").all();
+    expect(seeded.results).toEqual([{ id: 1, binding_name: 'ARCHIVE_0001' }]);
     const insert = env.CONTROL_DB.prepare('INSERT INTO archive_partitions(id, binding_name, state, created_at) VALUES (?, ?, ?, ?)');
-    await insert.bind(1, 'ARCHIVE_0001', 'writable', now).run();
     await insert.bind(2, 'ARCHIVE_0002', 'sealed', now).run();
     await expect(insert.bind(3, 'ARCHIVE_0003', 'writable', now).run()).rejects.toThrow(/UNIQUE/);
   });

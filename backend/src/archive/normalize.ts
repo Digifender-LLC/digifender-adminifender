@@ -1,4 +1,5 @@
 import PostalMime, { type Address, type Email } from 'postal-mime';
+import { sha256Hex } from '../ids';
 import { htmlToText } from './html-text';
 
 export const PARSER_VERSION = 'mime-v1';
@@ -33,15 +34,13 @@ export interface NormalizedEmail {
   headersTruncated: boolean;
   text: string;
   textHash: string;
-  chunks: { ordinal: number; startOffset: number; text: string }[];
+  chunks: { ordinal: number; startOffset: number; text: string; textHash: string }[];
   attachments: NormalizedAttachment[];
   parserVersion: string;
+  /** Raw HTML body for admission link features only; never stored. */
+  html: string | undefined;
 }
 
-async function sha256Hex(data: Uint8Array | ArrayBuffer): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', data);
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
-}
 
 function addresses(value: Address | Address[] | undefined): string[] {
   const list = value === undefined ? [] : Array.isArray(value) ? value : [value];
@@ -141,9 +140,10 @@ export async function normalizeEmail(raw: ArrayBuffer | Uint8Array): Promise<Nor
     headers,
     headersTruncated: truncated,
     text,
-    textHash: await sha256Hex(new TextEncoder().encode(text)),
-    chunks: chunkText(text),
+    textHash: await sha256Hex(text),
+    chunks: await Promise.all(chunkText(text).map(async (chunk) => ({ ...chunk, textHash: await sha256Hex(chunk.text) }))),
     attachments,
     parserVersion: PARSER_VERSION,
+    html: email.html,
   };
 }

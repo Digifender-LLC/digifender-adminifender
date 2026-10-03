@@ -1,4 +1,7 @@
-import { env } from 'cloudflare:workers';
+import { env as workerEnv } from 'cloudflare:workers';
+import { quietEnv } from './support';
+
+const env = quietEnv();
 import { beforeEach, describe, expect, it } from 'vitest';
 import { type InboundEmail, admitEmail } from '../../src/admission/capture';
 
@@ -144,7 +147,7 @@ describe('durable staging', () => {
 
   it('leaves the outbox pending when queue publication fails', async () => {
     const failingQueue = { send: () => Promise.reject(new Error('queue down')) } as unknown as Queue<{ version: 1; jobId: string }>;
-    const outcome = await admitEmail(mail(), { ...env, WORK_QUEUE: failingQueue }, now);
+    const outcome = await admitEmail(mail(), { ...workerEnv, WORK_QUEUE: failingQueue }, now);
     expect(outcome.kind).toBe('staged');
     expect(await count("SELECT COUNT(*) AS n FROM outbox WHERE state = 'pending'")).toBe(1);
   });

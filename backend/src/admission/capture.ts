@@ -1,4 +1,5 @@
 import type { Env } from '../env';
+import { sha256Hex } from '../ids';
 import { parseAddrSpec, parseSingleMailbox } from './addresses';
 import { type BlockRule, findBlockingRule } from './blocking';
 
@@ -25,12 +26,6 @@ export interface InboundEmail {
 
 type AdmissionEnv = Pick<Env, 'CONTROL_DB' | 'ARCHIVE_BUCKET' | 'WORK_QUEUE'>;
 
-const encoder = new TextEncoder();
-
-async function sha256Hex(data: ArrayBuffer | Uint8Array): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', data);
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
-}
 
 function utcDay(now: number): string {
   return new Date(now).toISOString().slice(0, 10);
@@ -100,7 +95,7 @@ export async function admitEmail(message: InboundEmail, env: AdmissionEnv, now =
 
   const recipient = message.to.trim().toLowerCase();
   const contentHash = await sha256Hex(raw);
-  const externalKey = await sha256Hex(encoder.encode(`${recipient}\n${contentHash}`));
+  const externalKey = await sha256Hex(`${recipient}\n${contentHash}`);
 
   const existing = await env.CONTROL_DB
     .prepare("SELECT id FROM source_registry WHERE kind = 'email' AND external_key = ?")
@@ -118,7 +113,7 @@ export async function admitEmail(message: InboundEmail, env: AdmissionEnv, now =
       sha256: contentHash,
       httpMetadata: { contentType: 'message/rfc822' },
       // Lets the reconciler find objects whose registry insert never committed.
-      customMetadata: { recipientHash: await sha256Hex(encoder.encode(recipient)), arrivalId, receivedAt: String(now) },
+      customMetadata: { recipientHash: await sha256Hex(recipient), arrivalId, receivedAt: String(now) },
     });
   } catch {
     return temporaryFailure('stage');
