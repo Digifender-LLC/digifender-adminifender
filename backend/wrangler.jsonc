@@ -9,6 +9,8 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-08-22",
   "workers_dev": false,
+  // Local-only relying party values. Production uses the reviewed owner domain and Play signing origin.
+  "vars": { "RP_ID": "localhost", "RP_NAME": "Adminifender (local)", "EXPECTED_ORIGINS": "http://localhost:8787" },
   "triggers": { "crons": ["* * * * *"] },
   "d1_databases": [
     {
