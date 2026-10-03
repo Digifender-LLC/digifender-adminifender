@@ -1,0 +1,15 @@
+From: Support <support@vendor.example>
+To: inbox@adminifender.example
+Subject: Two different bodies
+Content-Type: multipart/alternative; boundary="b2"
+
+--b2
+Content-Type: text/plain; charset=utf-8
+
+Plain says the refund was approved.
+
+--b2
+Content-Type: text/html; charset=utf-8
+
+<p>HTML says the refund was denied.</p>
+--b2--

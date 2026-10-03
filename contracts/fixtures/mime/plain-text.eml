@@ -1,0 +1,12 @@
+From: Billing <billing@hosting.example>
+To: inbox@adminifender.example
+Subject: Invoice INV-1001 is due
+Date: Fri, 02 Oct 2026 09:00:00 +0000
+Message-ID: <inv-1001@hosting.example>
+Content-Type: text/plain; charset=utf-8
+
+Hello,
+
+Your synthetic invoice INV-1001 for 12.00 USD is due on 13 October.
+
+Thanks
