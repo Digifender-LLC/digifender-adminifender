@@ -8,6 +8,7 @@ import {
 } from '@simplewebauthn/server';
 import type { Env } from '../env';
 import { HttpError, unauthenticated } from '../http/errors';
+import { assertion } from '../db/assert';
 import { readJson, v } from '../http/validate';
 import { consumeAttempt } from './rate-limit';
 import { authenticate, newSession } from './sessions';
@@ -129,7 +130,9 @@ export async function bootstrapOptions(request: Request, env: Env, now: number) 
   await consumeAttempt(env.CONTROL_DB, request, 'bootstrap', 5, now);
   const body = await readJson(request, v.object({ bootstrapToken: v.string({ max: 60, pattern: /^afb_[A-Za-z0-9_-]{43}$/ }), deviceName }));
   const unavailable = new HttpError(403, 'bootstrap_unavailable', 'Enrollment is not available.');
-  if (await env.CONTROL_DB.prepare('SELECT 1 FROM owner').first()) throw unavailable;
+  // Refused while any passkey is live. After a recovery reset (all passkeys revoked) the operator's one-time
+  // credential can enroll the owner again; the owner row and its archive stay.
+  if (await env.CONTROL_DB.prepare('SELECT 1 FROM passkeys WHERE revoked_at IS NULL').first()) throw unavailable;
   const bootstrap = await env.CONTROL_DB.prepare("SELECT id FROM auth_challenges WHERE kind = 'bootstrap' AND challenge_digest = ? AND consumed_at IS NULL AND expires_at > ?")
     .bind(await digest(body.bootstrapToken), now)
     .first<{ id: string }>();
@@ -151,13 +154,15 @@ export async function bootstrapVerify(request: Request, env: Env, now: number) {
   const guard = andGuards(consumedGuard(row.id, marker), consumedGuard(context.bootstrapId, marker));
   const deviceId = crypto.randomUUID();
   const recovery = await insertRecoveryKey(db, now, guard);
-  const session = await newSession(db, { deviceId, authEpoch: 1, recentAuthAt: now, now, guard });
+  const session = await newSession(db, { deviceId, authEpoch: 'current', recentAuthAt: now, now, guard });
   let results: D1Result[];
   try {
     results = await db.batch([
       consume(db, row.id, marker, now),
       consume(db, context.bootstrapId, marker, now),
-      db.prepare(`INSERT INTO owner(id, created_at, auth_epoch) SELECT 'owner', ?, 1 WHERE ${guard.sql}`).bind(now, ...guard.params),
+      // Two enrollments racing after a reset: only one may add a live passkey.
+      assertion(db, 'NOT EXISTS (SELECT 1 FROM passkeys WHERE revoked_at IS NULL)'),
+      db.prepare(`INSERT INTO owner(id, created_at, auth_epoch) SELECT 'owner', ?, 1 WHERE ${guard.sql} ON CONFLICT(id) DO NOTHING`).bind(now, ...guard.params),
       insertPasskey(db, info, now, guard),
       insertDevice(db, deviceId, context.deviceName, {}, now, guard),
       recovery.statement,

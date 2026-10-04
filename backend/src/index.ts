@@ -13,6 +13,7 @@ import { pruneChanges } from './sync/retention';
 import { runJob } from './jobs/runner';
 
 import { evaluateHeartbeats, evaluateReadiness } from './reports/obligations';
+import { recoveryRunId, runRecovery } from './recovery/recovery';
 
 export default {
   fetch(request, env) {
@@ -26,6 +27,11 @@ export default {
   },
 
   async queue(batch, env, _ctx) {
+    // Recovery mode: D1 stays the job authority, so acknowledged messages are re-published by the reconciler later.
+    if (recoveryRunId(env)) {
+      for (const message of batch.messages) message.ack();
+      return;
+    }
     for (const message of batch.messages) {
       // D1 is the job authority (lld.md#jobs); the queue only carries job IDs. Every message is acknowledged:
       // retries are scheduled in D1 and re-published by the scheduled reconciler.
@@ -46,6 +52,12 @@ export default {
 
   async scheduled(_controller, env, _ctx) {
     const now = Date.now();
+    const runId = recoveryRunId(env);
+    if (runId) {
+      // Nothing else runs until the recovery pass has finished and the operator redeploys without the run ID.
+      await runRecovery(env, runId, now);
+      return;
+    }
     await reconcile(env, now);
     await wakeSnoozed(env.CONTROL_DB, now);
     await pruneChanges(env.CONTROL_DB, now);

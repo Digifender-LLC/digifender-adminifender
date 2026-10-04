@@ -24,6 +24,7 @@ import * as notifications from '../notifications/routes';
 import * as health from '../diagnostics/health';
 import * as diagnostics from '../diagnostics/export';
 import { enrollmentAsset } from './enroll';
+import { recoveryRunId } from '../recovery/recovery';
 import { fail, ok } from './envelope';
 import { HttpError } from './errors';
 import { withIdempotency } from './idempotency';
@@ -171,6 +172,8 @@ export async function handleFetch(request: Request, env: Env, now = Date.now()):
   if (page) return page;
   if (!pathname.startsWith(`${PREFIX}/`)) return fail(404, 'not_found', 'Not found.', requestId);
   const path = pathname.slice(PREFIX.length);
+  // Recovery mode serves nothing but liveness until deletions are reapplied and identity is reset.
+  if (recoveryRunId(env) && path !== '/health' && path !== '/meta') return fail(503, 'recovering', 'The service is being restored.', requestId, { retryable: true });
 
   try {
     for (const route of ROUTES) {

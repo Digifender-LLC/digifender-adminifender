@@ -17,6 +17,8 @@ export interface Env {
   CURSOR_SECRET: string;
   /** Worker secret (>= 32 chars) that signs the deletion ledger head. */
   LEDGER_SIGNING_KEY: string;
+  /** Set only for a recovery pass (ops/recovery-drill.md): the API answers 503 and jobs pause until it is removed. */
+  RECOVERY_RUN_ID?: string;
   /**
    * Optional Workers AI binding. Absent locally and until a reviewed environment binds it; routing then treats
    * cloud as unavailable and queues work for the phone.
