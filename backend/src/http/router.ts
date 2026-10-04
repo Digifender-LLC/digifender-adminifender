@@ -16,6 +16,7 @@ import * as chat from '../chat/routes';
 import * as device from '../inference/device';
 import * as inference from '../inference/routes';
 import * as settings from '../inference/settings';
+import * as notifications from '../notifications/routes';
 import { fail, ok } from './envelope';
 import { HttpError } from './errors';
 import { withIdempotency } from './idempotency';
@@ -78,6 +79,8 @@ const ROUTES: Route[] = [
   { method: 'POST', pattern: /^\/auth\/recovery\/verify$/, handler: auth.recoveryVerify },
   { method: 'POST', pattern: /^\/auth\/logout$/, handler: auth.logout },
   { method: 'GET', pattern: /^\/devices$/, handler: auth.listDevices },
+  { method: 'POST', pattern: new RegExp(`^/devices/${ID}/push$`), handler: ownerMutation(notifications.pushBody, notifications.registerPush, { recentAuth: false }) },
+  { method: 'GET', pattern: /^\/notifications$/, handler: notifications.listNotifications },
   { method: 'GET', pattern: /^\/sources$/, handler: sources.listSources },
   { method: 'GET', pattern: new RegExp(`^/sources/${ID}$`), handler: sources.getSource },
   { method: 'GET', pattern: new RegExp(`^/sources/${ID}/chunks$`), handler: sources.getChunks },

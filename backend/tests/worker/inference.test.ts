@@ -329,7 +329,7 @@ describe('settings', () => {
   it('validates limits the owner may only lower and requires the current revision', async () => {
     const raise = await api('PATCH', '/settings', { token, key: key(), body: { expectedRevision: 0, inference: { ...DEFAULT_INFERENCE, limits: { automaticPerDay: 101, interactivePerMonth: 1000 } } } });
     expect(raise.status).toBe(400);
-    expect((await api('GET', '/settings', { token })).body.data).toEqual({ revision: 0, inference: DEFAULT_INFERENCE });
+    expect((await api('GET', '/settings', { token })).body.data).toMatchObject({ revision: 0, policyRevision: 0, inference: DEFAULT_INFERENCE });
     await setInference(CLOUD);
     const stale = await api('PATCH', '/settings', { token, key: key(), body: { expectedRevision: 0, inference: CLOUD } });
     expect(stale.body.error?.code).toBe('stale_revision');

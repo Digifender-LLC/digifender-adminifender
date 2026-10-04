@@ -1,3 +1,5 @@
+import type { PushSender } from './notifications/push';
+
 /** Bindings declared in wrangler.jsonc. Only adapters read these directly. */
 export interface Env {
   CONTROL_DB: D1Database;
@@ -20,6 +22,15 @@ export interface Env {
    * cloud as unavailable and queues work for the phone.
    */
   AI?: Ai;
+  /** Worker secret (>= 32 chars) that encrypts stored push tokens. */
+  PUSH_TOKEN_KEY: string;
+  /**
+   * Optional Worker secret: the Firebase service-account JSON for FCM sends. Backend-only; never logged,
+   * returned or given to a model. Absent locally, so delivery reports `push_unavailable`.
+   */
+  FCM_SERVICE_ACCOUNT?: string;
+  /** Test-only push adapter injected in place of FCM. Never bound in a deployed environment. */
+  PUSH?: PushSender;
 }
 
 export interface QueueEnvelope {

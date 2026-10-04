@@ -6,7 +6,7 @@ import { type Reservation, releaseStatements } from '../inference/budget';
 import type { Message } from '../inference/cloud';
 import { RUNNING_GUARD, anyDeviceReady, dispatchCloud, queueLocalStatement } from '../inference/job';
 import { type Privacy, cloudGate, route } from '../inference/routing';
-import { type Settings, loadSettings } from '../inference/settings';
+import { POLICY_REVISION_SQL, type Settings, loadSettings } from '../inference/settings';
 import { parseModelJson } from '../inference/triage-output';
 import { CLAIM_GUARD, type ClaimedJob, type JobResult, guardParams } from '../jobs/runner';
 import { type ChatAnswer, validateAnswer } from './answer';
@@ -50,7 +50,7 @@ export function evidenceStillEligible(evidence: Evidence[], policyRevision: numb
       sql: "EXISTS (SELECT 1 FROM source_registry WHERE id = ? AND revision = ? AND state = 'ready' AND admission = 'normal' AND privacy = ?)",
       params: [e.sourceId, e.sourceRevision, e.privacy],
     })),
-    { sql: "COALESCE((SELECT revision FROM settings WHERE id = 'owner'), 0) = ?", params: [policyRevision] },
+    { sql: `${POLICY_REVISION_SQL} = ?`, params: [policyRevision] },
   ];
 }
 
@@ -152,7 +152,7 @@ export async function chatJob(job: ClaimedJob, env: Env, now: number): Promise<J
 
   const evidence = await retrieve(env, JSON.parse(turn.scope_json) as Scope, turn.content);
   if (evidence.length === 0) {
-    return { kind: 'complete', output: { state: 'complete', route: 'none' }, statements: [completeTurnStatement(db, turnId, 'running', NO_EVIDENCE, [], { policyRevision: settings.revision, reason: 'no_evidence' }, now, [guard])] };
+    return { kind: 'complete', output: { state: 'complete', route: 'none' }, statements: [completeTurnStatement(db, turnId, 'running', NO_EVIDENCE, [], { policyRevision: settings.policyRevision, reason: 'no_evidence' }, now, [guard])] };
   }
   const decision = route({
     mode: settings.inference.mode,
@@ -168,9 +168,9 @@ export async function chatJob(job: ClaimedJob, env: Env, now: number): Promise<J
     kind: 'complete',
     output: { route: 'local', reason },
     statements: [
-      queueLocalStatement(db, { id: crypto.randomUUID(), jobId: job.id, task: CHAT_TASK, usageKind: 'interactive', source: null, chunkIds: evidence.map((e) => e.chunkId), policyRevision: settings.revision, digest, reason, repair: false }, now, guard),
+      queueLocalStatement(db, { id: crypto.randomUUID(), jobId: job.id, task: CHAT_TASK, usageKind: 'interactive', source: null, chunkIds: evidence.map((e) => e.chunkId), policyRevision: settings.policyRevision, digest, reason, repair: false }, now, guard),
       // Waiting for the phone is still pending: the owner can cancel it.
-      db.prepare(`UPDATE chat_turns SET state = 'pending', reason = ?, policy_revision = ? WHERE id = ? AND state = 'running' AND ${CLAIM_GUARD}`).bind(reason, settings.revision, turnId, ...guardParams(job)),
+      db.prepare(`UPDATE chat_turns SET state = 'pending', reason = ?, policy_revision = ? WHERE id = ? AND state = 'running' AND ${CLAIM_GUARD}`).bind(reason, settings.policyRevision, turnId, ...guardParams(job)),
     ],
   });
   if (decision.route !== 'cloud') return queueLocal(decision.reason);
@@ -185,7 +185,7 @@ async function cloudChat(
   ctx: { turnId: string; evidence: Evidence[]; digest: string; question: string; queueLocal: (reason: string) => JobResult },
 ): Promise<JobResult> {
   const db = env.CONTROL_DB;
-  const eligible = evidenceStillEligible(ctx.evidence, settings.revision);
+  const eligible = evidenceStillEligible(ctx.evidence, settings.policyRevision);
   const outcome = await dispatchCloud(job, env, now, settings, {
     task: CHAT_TASK,
     usageKind: 'interactive',
@@ -195,7 +195,7 @@ async function cloudChat(
     eligible,
     messages: chatMessages(ctx.question, ctx.evidence),
     validate: answerChecker(ctx.evidence),
-    store: async (_attemptId, _modelId, value) => [completeTurnStatement(db, ctx.turnId, 'running', value, ctx.evidence, { policyRevision: settings.revision, reason: 'cloud_allowed' }, now, eligible)],
+    store: async (_attemptId, _modelId, value) => [completeTurnStatement(db, ctx.turnId, 'running', value, ctx.evidence, { policyRevision: settings.policyRevision, reason: 'cloud_allowed' }, now, eligible)],
   });
   const turn = (state: string, errorCode: string | null) => setTurn(db, job, ctx.turnId, state, null, errorCode, now);
   switch (outcome.kind) {

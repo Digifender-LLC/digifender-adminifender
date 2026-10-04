@@ -28,6 +28,8 @@ export const guardParams = (job: ClaimedJob): [string, string] => [job.id, job.l
 export type JobResult =
   | { kind: 'complete'; output: unknown; statements?: D1PreparedStatement[] }
   | { kind: 'retry'; errorCode: string }
+  /** Not yet: wait until `until` without spending a retry (for example quiet hours). */
+  | { kind: 'defer'; until: number }
   /** Terminal failure; dependent statements (for example a visible failed state) commit with it. */
   | { kind: 'fail'; errorCode: string; statements?: D1PreparedStatement[] };
 
@@ -59,6 +61,8 @@ async function settle(db: D1Database, job: ClaimedJob, result: JobResult, now: n
   if (result.kind === 'complete') {
     head = db.prepare(`UPDATE jobs SET state = 'complete', output_json = ?, error_code = NULL, lease_until = NULL ${fence}`).bind(JSON.stringify(result.output ?? null), job.id, job.leaseToken, 'running');
     dependents = result.statements ?? [];
+  } else if (result.kind === 'defer') {
+    head = db.prepare(`UPDATE jobs SET state = 'pending', next_at = ?, attempt = attempt - 1, error_code = NULL, lease_token = NULL, lease_until = NULL ${fence}`).bind(result.until, job.id, job.leaseToken, 'running');
   } else if (result.kind === 'retry' && job.attempt < MAX_ATTEMPTS) {
     head = db.prepare(`UPDATE jobs SET state = 'pending', next_at = ?, error_code = ?, lease_token = NULL, lease_until = NULL ${fence}`).bind(now + retryDelay(job.attempt), result.errorCode, job.id, job.leaseToken, 'running');
   } else {
@@ -80,7 +84,7 @@ async function settle(db: D1Database, job: ClaimedJob, result: JobResult, now: n
 
 export interface RunOutcome {
   jobId: string;
-  status: 'skipped' | 'complete' | 'retry' | 'failed' | 'dead' | 'stale';
+  status: 'skipped' | 'complete' | 'deferred' | 'retry' | 'failed' | 'dead' | 'stale';
 }
 
 export async function runJob(env: Env, handlers: Readonly<Record<string, JobHandler>>, jobId: string, now = Date.now()): Promise<RunOutcome> {
@@ -103,5 +107,6 @@ export async function runJob(env: Env, handlers: Readonly<Record<string, JobHand
   result = settled.result;
   if (result.kind === 'complete') return { jobId, status: 'complete' };
   if (result.kind === 'fail') return { jobId, status: 'failed' };
+  if (result.kind === 'defer') return { jobId, status: 'deferred' };
   return { jobId, status: job.attempt < MAX_ATTEMPTS ? 'retry' : 'dead' };
 }

@@ -6,6 +6,7 @@ import { parseQueueEnvelope } from './jobs/queue-envelope';
 import { wakeSnoozed } from './concerns/lifecycle';
 import { expireExports } from './exports/job';
 import { releaseExpiredReservations } from './inference/budget';
+import { scheduleInactivity } from './notifications/events';
 import { reconcile } from './jobs/reconcile';
 import { pruneChanges } from './sync/retention';
 import { runJob } from './jobs/runner';
@@ -47,5 +48,6 @@ export default {
     await pruneChanges(env.CONTROL_DB, now);
     await expireExports(env, now);
     await releaseExpiredReservations(env.CONTROL_DB, now);
+    await scheduleInactivity(env.CONTROL_DB, now);
   },
 } satisfies ExportedHandler<Env, unknown>;

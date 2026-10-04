@@ -119,7 +119,7 @@ export async function inferenceBudget(request: Request, env: Env, now: number) {
   const settings = await loadSettings(env.CONTROL_DB);
   const { n } = (await env.CONTROL_DB.prepare("SELECT COUNT(*) AS n FROM inference_attempts WHERE route = 'cloud' AND state = 'uncertain'").first<{ n: number }>()) ?? { n: 0 };
   return {
-    policyRevision: settings.revision,
+    policyRevision: settings.policyRevision,
     mode: settings.inference.mode,
     cloudBound: env.AI !== undefined,
     periods: await budgetView(env.CONTROL_DB, now),

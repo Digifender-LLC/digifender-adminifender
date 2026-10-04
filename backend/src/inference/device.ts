@@ -124,21 +124,21 @@ export async function claimWork(env: Env, now: number, body: ReturnType<typeof r
     if (!row) return { work: null, reason: 'no_work' };
 
     const task = TASKS[row.task];
-    const prepared = task && settings.inference.mode !== 'no_ai' ? await task.verify(env, row, settings.revision) : null;
+    const prepared = task && settings.inference.mode !== 'no_ai' ? await task.verify(env, row, settings.policyRevision) : null;
     if (!prepared || prepared.digest !== row.input_digest) {
       await db.prepare("UPDATE inference_attempts SET state = 'cancelled', error_code = 'not_eligible', completed_at = ? WHERE id = ? AND lease_token = ?").bind(now, row.id, token).run();
       continue;
     }
     // Policy changes that still allow local work move the task to the current policy revision.
-    if (row.policy_revision !== settings.revision) {
-      await db.prepare('UPDATE inference_attempts SET policy_revision = ? WHERE id = ? AND lease_token = ?').bind(settings.revision, row.id, token).run();
+    if (row.policy_revision !== settings.policyRevision) {
+      await db.prepare('UPDATE inference_attempts SET policy_revision = ? WHERE id = ? AND lease_token = ?').bind(settings.policyRevision, row.id, token).run();
     }
     return {
       work: {
         attemptId: row.id,
         jobId: row.job_id,
         ...prepared.extra,
-        policyRevision: settings.revision,
+        policyRevision: settings.policyRevision,
         task: row.task,
         inputDigest: row.input_digest,
         chunkIds: prepared.chunkIds,
@@ -186,11 +186,11 @@ export async function submitResult(env: Env, now: number, body: ReturnType<typeo
   if (!attempt || attempt.state !== 'leased' || attempt.lease_token !== body.leaseToken || attempt.device_id !== auth.deviceId || (attempt.lease_until ?? 0) < now) throw leaseLost();
   if (body.inputDigest !== attempt.input_digest) throw new HttpError(409, 'input_changed', 'The source changed after this task was assigned.');
   const settings = await loadSettings(db);
-  if (body.policyRevision !== attempt.policy_revision || body.policyRevision !== settings.revision) throw new HttpError(409, 'policy_changed', 'Inference settings changed. Claim the task again.');
+  if (body.policyRevision !== attempt.policy_revision || body.policyRevision !== settings.policyRevision) throw new HttpError(409, 'policy_changed', 'Inference settings changed. Claim the task again.');
   const task = TASKS[attempt.task];
   if (!task) throw leaseLost();
 
-  const checked = await task.accept(env, attempt, body.outputJson, settings.revision, now);
+  const checked = await task.accept(env, attempt, body.outputJson, settings.policyRevision, now);
   const live = assertion(db, "EXISTS (SELECT 1 FROM inference_attempts WHERE id = ? AND lease_token = ? AND state = 'leased' AND lease_until >= ?)", attempt.id, body.leaseToken, now);
   const usage = JSON.stringify({ modelManifestHash: body.modelManifestHash });
 
@@ -218,7 +218,7 @@ export async function submitResult(env: Env, now: number, body: ReturnType<typeo
                 usageKind: attempt.usage_kind,
                 source: attempt.source_id ? { id: attempt.source_id, revision: attempt.source_revision! } : null,
                 chunkIds: attempt.chunk_ids_json ? (JSON.parse(attempt.chunk_ids_json) as string[]) : null,
-                policyRevision: settings.revision,
+                policyRevision: settings.policyRevision,
                 digest: attempt.input_digest,
                 reason: 'schema_repair',
                 repair: true,
