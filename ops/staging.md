@@ -39,9 +39,16 @@ python3 ../tools/release_preflight.py apk-origin --sha256 <that fingerprint>    
 python3 ../tools/release_preflight.py assetlinks --package com.digifender.adminifender.staging --sha256 <that fingerprint>
 ```
 
-Each Android CI run on a pull request also uploads an `adminifender-apks` artifact with the staging APK, signed with that runner's throwaway debug key, and the unsigned release APK. A CI-built APK installs fine, but its fingerprint changes every run, so register a fingerprint only for an APK you build yourself.
+Each Android CI run on a pull request also uploads an `adminifender-apks` artifact with the staging APK and the unsigned release APK. CI signs the staging APK with the owner's registered debug key from the `ADMINIFENDER_STAGING_DEBUG_KEYSTORE` Actions secret (the base64 of `debug.keystore`), and the run notes the certificate SHA-256 it used. Without the secret, as on forks, the APK gets a throwaway key: it installs but cannot sign in. The debug key's password is the public default, so the secret alone protects it, and it is for staging only. To add or replace it:
 
-**Registered:** the owner's debug key (SHA-256 `FA:8D:6B:9C:…:3E:09:BB`) is in staging `EXPECTED_ORIGINS` as `android:apk-key-hash:-o1rnKJPY5wdBS3AUHeGPt1biuSl6EAiKbs2AnQ-Cbs`. Only a staging APK built on that machine can sign in with a passkey; a CI-built APK can't.
+```sh
+base64 -w0 ~/.android/debug.keystore    # Linux; macOS: base64 -i ~/.android/debug.keystore
+# Windows PowerShell: [Convert]::ToBase64String([IO.File]::ReadAllBytes("$env:USERPROFILE\.android\debug.keystore"))
+```
+
+Paste the output as the repository secret `ADMINIFENDER_STAGING_DEBUG_KEYSTORE` (Settings, Secrets and variables, Actions). A new key also needs its origin and asset-links fingerprint registered as above.
+
+**Registered:** the owner's debug key (SHA-256 `FA:8D:6B:9C:…:3E:09:BB`) is in staging `EXPECTED_ORIGINS` as `android:apk-key-hash:-o1rnKJPY5wdBS3AUHeGPt1biuSl6EAiKbs2AnQ-Cbs`. A staging APK built on that machine, or by CI once the secret below exists, can sign in with a passkey.
 
 The asset-links statement is published on `https://digifender.com/.well-known/assetlinks.json` (the `digifender-website` repository). A debug key is only for staging: production uses Play App Signing.
 
