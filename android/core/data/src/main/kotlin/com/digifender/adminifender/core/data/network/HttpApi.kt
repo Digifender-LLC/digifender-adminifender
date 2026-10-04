@@ -27,6 +27,9 @@ import okhttp3.Response
 /** Supplies the current bearer token; null when signed out. Refresh is the session layer's job. */
 fun interface AccessTokens {
     suspend fun current(): String?
+
+    /** The server refused [token] with 401; the next [current] call should not hand it out again. */
+    suspend fun rejected(token: String) {}
 }
 
 /** Responses larger than this are refused rather than buffered (lld.md#contract-conventions). */
@@ -47,7 +50,9 @@ class HttpApi(private val client: OkHttpClient, private val baseUrl: HttpUrl, pr
 
     private suspend fun execute(request: Request.Builder): Response? {
         val token = tokens.current() ?: return null
-        return withContext(Dispatchers.IO) { client.newCall(request.header("authorization", "Bearer $token").build()).execute() }
+        val response = withContext(Dispatchers.IO) { client.newCall(request.header("authorization", "Bearer $token").build()).execute() }
+        if (response.code == 401) tokens.rejected(token)
+        return response
     }
 
     private fun Response.boundedBody(): String {

@@ -1,4 +1,4 @@
-// Room cache, HTTP client and the sync/outbox engine. The engine depends only on interfaces and runs in JVM tests.
+// Room cache, HTTP client, session layer and the sync/outbox engine. The engine depends only on interfaces and runs in JVM tests.
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.serialization)
@@ -42,6 +42,9 @@ dependencies {
     implementation(libs.serialization.json)
     implementation(libs.okhttp)
     implementation(libs.coroutines.core)
+    implementation(libs.credentials)
+    // Passkeys on devices whose platform provider is Google Play services.
+    runtimeOnly(libs.credentials.play.services)
     testImplementation(libs.junit)
     testImplementation(libs.coroutines.test)
     testImplementation(libs.okhttp.mockwebserver)
