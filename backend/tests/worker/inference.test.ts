@@ -293,12 +293,30 @@ describe('device work', () => {
     expect((await submit(first.attemptId, result(second.leaseToken), later)).body.data.state).toBe('succeeded');
   });
 
+  it('lets the phone decline input over its token limit, visibly and only under its lease', async () => {
+    const id = await queued('Invoice');
+    const work = (await claim()).body.data.work;
+    const decline = (leaseToken: string) => api('POST', `/device-work/${work.attemptId}/decline`, { token, key: key(), body: { leaseToken, reason: 'input_too_large' } });
+    expect((await decline(crypto.randomUUID())).body.error?.code).toBe('lease_lost');
+    expect((await decline(work.leaseToken)).body.data).toMatchObject({ state: 'cancelled', reason: 'input_too_large' });
+    expect(await status(id)).toMatchObject({ state: 'cancelled', reason: 'input_too_large', result: null });
+    // Not handed out again, and a result under the old lease is refused.
+    expect((await claim()).body.data).toEqual({ work: null, reason: 'no_work' });
+    const late = { leaseToken: work.leaseToken, inputDigest: work.inputDigest, policyRevision: work.policyRevision, outputJson: valid(id), modelManifestHash: 'a'.repeat(64) };
+    expect((await submit(work.attemptId, late)).body.error?.code).toBe('lease_lost');
+  });
+
   it('queues one repair for invalid phone output and rejects results under an old policy', async () => {
     const id = await queued('Invoice');
     const work = (await claim()).body.data.work;
     const result = (w: typeof work, outputJson: string) => ({ leaseToken: w.leaseToken, inputDigest: w.inputDigest, policyRevision: w.policyRevision, outputJson, modelManifestHash: 'a'.repeat(64) });
     expect((await submit(work.attemptId, result(work, '{"summary":"x"}'))).body.data).toMatchObject({ state: 'invalid_output', repairQueued: true });
+    expect(work.repair).toBe(false);
+    expect(work.messages[0].role).toBe('system');
+    expect(work.messages[1].content).toContain('Subject: ');
     const repair = (await claim()).body.data.work;
+    expect(repair.repair).toBe(true);
+    expect(repair.messages).toEqual(work.messages);
     expect(repair.attemptId).not.toBe(work.attemptId);
 
     await setInference({ ...DEFAULT_INFERENCE, mode: 'local_only' });

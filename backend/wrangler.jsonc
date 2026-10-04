@@ -1,8 +1,7 @@
-// Local development and test configuration only.
+// Top level: local development and tests only (local Miniflare identifiers, never deployed).
+// env.staging: the provisioned staging environment with synthetic mail and its own resources (ops/staging.md).
+// Production is added later with its own reviewed IDs; staging never binds production storage.
 // compatibility_date is the newest date the pinned test runtime (vitest-pool-workers 0.22.0) supports.
-// IDs below are local Miniflare identifiers, not provisioned Cloudflare resources.
-// Staging and production environments are added with reviewed resource IDs during
-// provisioning (docs/specifications/tdd.md#environments-and-preflight); do not deploy this file as-is.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "adminifender-local",
@@ -40,5 +39,47 @@
         "dead_letter_queue": "adminifender-dead-local"
       }
     ]
+  },
+  "env": {
+    "staging": {
+      "name": "adminifender-staging",
+      "workers_dev": false,
+      // Served on a digifender.com subdomain; passkeys use the digifender.com root as RP ID. The Android
+      // android:apk-key-hash origin is added once the staging signing certificate exists.
+      "routes": [{ "pattern": "adminifender-staging.digifender.com", "custom_domain": true }],
+      "vars": { "RP_ID": "digifender.com", "RP_NAME": "Adminifender (staging)", "EXPECTED_ORIGINS": "https://adminifender-staging.digifender.com" },
+      // Bound, but the app's defaults keep the paid ceiling at 0 and deny cloud until account headroom is attested.
+      "ai": { "binding": "AI" },
+      "triggers": { "crons": ["* * * * *"] },
+      "d1_databases": [
+        {
+          "binding": "CONTROL_DB",
+          "database_name": "adminifender-control-staging",
+          "database_id": "440d5df1-af38-4fb0-8353-07b5b56f9256",
+          "migrations_dir": "migrations/control"
+        },
+        {
+          "binding": "ARCHIVE_0001",
+          "database_name": "adminifender-archive-0001-staging",
+          "database_id": "f66aea31-0fd0-4893-b556-0c0cc878122c",
+          "migrations_dir": "migrations/archive"
+        }
+      ],
+      "r2_buckets": [
+        { "binding": "ARCHIVE_BUCKET", "bucket_name": "adminifender-archive-staging" },
+        { "binding": "DELETION_LEDGER", "bucket_name": "adminifender-deletion-ledger-staging" }
+      ],
+      "queues": {
+        "producers": [{ "binding": "WORK_QUEUE", "queue": "adminifender-work-staging" }],
+        "consumers": [
+          {
+            "queue": "adminifender-work-staging",
+            "max_batch_size": 10,
+            "max_retries": 5,
+            "dead_letter_queue": "adminifender-dead-staging"
+          }
+        ]
+      }
+    }
   }
 }

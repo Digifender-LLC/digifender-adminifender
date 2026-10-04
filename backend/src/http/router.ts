@@ -14,6 +14,7 @@ import * as exportsRoutes from '../exports/job';
 import * as rules from '../triage/routes';
 import * as chat from '../chat/routes';
 import * as device from '../inference/device';
+import * as extraction from '../extraction/device';
 import * as inference from '../inference/routes';
 import * as settings from '../inference/settings';
 import * as notifications from '../notifications/routes';
@@ -133,6 +134,12 @@ const ROUTES: Route[] = [
   { method: 'POST', pattern: /^\/device-work\/claim$/, handler: ownerMutation(device.readinessBody, device.claimWork, { recentAuth: false }) },
   { method: 'POST', pattern: new RegExp(`^/device-work/${ID}/heartbeat$`), handler: ownerMutation(device.heartbeatBody, device.heartbeat, { recentAuth: false }) },
   { method: 'POST', pattern: new RegExp(`^/device-work/${ID}/result$`), handler: ownerMutation(device.resultBody, device.submitResult, { recentAuth: false }) },
+  { method: 'POST', pattern: /^\/device-extraction\/claim$/, handler: ownerMutation(extraction.claimBody, extraction.claimExtraction, { recentAuth: false }) },
+  { method: 'POST', pattern: new RegExp(`^/device-extraction/${ID}/heartbeat$`), handler: ownerMutation(extraction.heartbeatBody, extraction.extractionHeartbeat, { recentAuth: false }) },
+  { method: 'POST', pattern: new RegExp(`^/device-extraction/${ID}/batch$`), handler: ownerMutation(extraction.batchBody, extraction.submitBatch, { recentAuth: false }) },
+  { method: 'POST', pattern: new RegExp(`^/device-extraction/${ID}/fail$`), handler: ownerMutation(extraction.failBody, extraction.failExtraction, { recentAuth: false }) },
+  { method: 'POST', pattern: new RegExp(`^/attachments/${ID}/resume-extraction$`), handler: mutation(extraction.resumeBody, extraction.resumeExtraction) },
+  { method: 'POST', pattern: new RegExp(`^/device-work/${ID}/decline$`), handler: ownerMutation(device.declineBody, device.declineWork, { recentAuth: false }) },
   { method: 'POST', pattern: new RegExp(`^/briefings/${ID}/review$`), handler: mutation(briefings.reviewBody, briefings.reviewBriefing) },
 ];
 

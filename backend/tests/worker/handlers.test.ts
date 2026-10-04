@@ -2,6 +2,7 @@ import { createMessageBatch, getQueueResult } from 'cloudflare:test';
 import { createExecutionContext } from 'cloudflare:test';
 import { env, exports } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
+import { RELEASE_CONTRACT } from '../../src/contracts';
 import worker from '../../src/index';
 import { parseQueueEnvelope } from '../../src/jobs/queue-envelope';
 
@@ -13,7 +14,7 @@ describe('HTTP envelope', () => {
     expect(response.status).toBe(200);
     expect(response.headers.get('cache-control')).toBe('no-store');
     const body = await response.json<{ data: { contract: Record<string, number> }; requestId: string }>();
-    expect(body.data.contract).toEqual({ httpSchemaVersion: 1, eventSchemaVersion: 1, controlMigration: 10, archiveMigration: 1 });
+    expect(body.data.contract).toEqual({ httpSchemaVersion: 1, eventSchemaVersion: 1, controlMigration: 11, archiveMigration: 1 });
     expect(body.requestId).toMatch(/^[0-9a-f-]{36}$/);
   });
 
@@ -46,5 +47,13 @@ describe('queue envelope', () => {
     const result = await getQueueResult(batch, ctx);
     expect(result.explicitAcks.sort()).toEqual(['m1', 'm2']);
     expect(result.retryMessages).toEqual([]);
+  });
+});
+
+describe('release contract', () => {
+  it('names the newest migration of each database, so a deployment reports the schema it expects', () => {
+    const latest = (list: { name: string }[]) => Math.max(...list.map((m) => Number(m.name.slice(0, 4))));
+    expect(RELEASE_CONTRACT.controlMigration).toBe(latest(env.CONTROL_MIGRATIONS));
+    expect(RELEASE_CONTRACT.archiveMigration).toBe(latest(env.ARCHIVE_MIGRATIONS));
   });
 });

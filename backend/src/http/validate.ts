@@ -41,6 +41,14 @@ export const v = {
       return value as T;
     };
   },
+  /** A JSON array of at most [max] items, each checked by [item] with an indexed error path. */
+  array<T>(item: Validator<T>, options: { max: number }): Validator<T[]> {
+    return (value, path) => {
+      if (!Array.isArray(value)) throw invalid(path, 'expected_array');
+      if (value.length > options.max) throw invalid(path, 'too_many');
+      return value.map((entry, index) => item(entry, `${path}[${index}]`));
+    };
+  },
   /** UTC instant in the API's ISO-8601 `Z` form, returned as epoch milliseconds. */
   instant(): Validator<number> {
     return (value, path) => {

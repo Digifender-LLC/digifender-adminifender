@@ -89,7 +89,7 @@ describe('diagnostics export', () => {
     const res = await api('GET', '/diagnostics', { token });
     expect(res.status).toBe(200);
     const d = res.body.data;
-    expect(d.release).toMatchObject({ controlMigration: 10 });
+    expect(d.release).toMatchObject({ controlMigration: 11 });
     expect(d.migrations.control).toContain('0010_observations.sql');
     expect(d.recentFailures).toEqual([expect.objectContaining({ kind: 'triage', state: 'dead', errorCode: 'handler_exception' })]);
     expect(d.jobs).toEqual(expect.arrayContaining([{ kind: 'parse', state: 'complete', count: 1 }]));

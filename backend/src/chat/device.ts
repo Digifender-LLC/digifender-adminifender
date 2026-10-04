@@ -1,17 +1,18 @@
 import { HttpError } from '../http/errors';
 import type { AttemptRow, DeviceTask } from '../inference/device';
-import { answerChecker, chatDigest, completeTurnStatement, evidenceStillEligible } from './job';
+import { answerChecker, chatDigest, chatMessages, completeTurnStatement, evidenceStillEligible } from './job';
 import { loadEvidence } from './retrieval';
 
 interface TurnRef {
   id: string;
   request_hash: string;
   state: string;
+  content: string;
 }
 
 async function turnFor(db: D1Database, row: AttemptRow): Promise<TurnRef | null> {
   return db
-    .prepare("SELECT t.id, t.request_hash, t.state FROM chat_turns t JOIN jobs j ON j.id = ? AND t.id = json_extract(j.input_json, '$.turnId')")
+    .prepare("SELECT t.id, t.request_hash, t.state, t.content FROM chat_turns t JOIN jobs j ON j.id = ? AND t.id = json_extract(j.input_json, '$.turnId')")
     .bind(row.job_id)
     .first<TurnRef>();
 }
@@ -26,7 +27,7 @@ export const chatDeviceTask: DeviceTask = {
     const ids = chunkIds(row);
     const evidence = await loadEvidence(env, ids);
     if (evidence.length !== ids.length) return null;
-    return { chunkIds: ids, digest: await chatDigest(turn.id, turn.request_hash, evidence), extra: { turnId: turn.id } };
+    return { chunkIds: ids, digest: await chatDigest(turn.id, turn.request_hash, evidence), messages: chatMessages(turn.content, evidence), extra: { turnId: turn.id } };
   },
   async accept(env, row, outputJson, policyRevision, now) {
     const turn = await turnFor(env.CONTROL_DB, row);
@@ -40,8 +41,8 @@ export const chatDeviceTask: DeviceTask = {
       store: [completeTurnStatement(env.CONTROL_DB, turn.id, 'pending', checked.value, evidence, { policyRevision, reason: 'local' }, now, evidenceStillEligible(evidence, policyRevision))],
     };
   },
-  async failed(db, row, now) {
+  async failed(db, row, now, code = 'invalid_output') {
     const turn = await turnFor(db, row);
-    return turn ? [db.prepare("UPDATE chat_turns SET state = 'failed', error_code = 'invalid_output', completed_at = ? WHERE id = ? AND state = 'pending'").bind(now, turn.id)] : [];
+    return turn ? [db.prepare("UPDATE chat_turns SET state = 'failed', error_code = ?, completed_at = ? WHERE id = ? AND state = 'pending'").bind(code, now, turn.id)] : [];
   },
 };

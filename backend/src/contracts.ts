@@ -5,7 +5,7 @@
 export const RELEASE_CONTRACT = {
   httpSchemaVersion: 1,
   eventSchemaVersion: 1,
-  controlMigration: 10,
+  controlMigration: 11,
   archiveMigration: 1,
 } as const;
 
