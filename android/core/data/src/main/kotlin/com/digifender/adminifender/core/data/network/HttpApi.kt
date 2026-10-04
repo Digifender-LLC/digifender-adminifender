@@ -292,6 +292,8 @@ class HttpApi(private val client: OkHttpClient, private val baseUrl: HttpUrl, pr
 
     override suspend fun briefing() = read(url("briefings/current"), BriefingDto.serializer())
 
+    override suspend fun operations() = read(url("operations/overview"), OperationsDto.serializer())
+
     override suspend fun reviewBriefing(id: String, idempotencyKey: String) = postUnit("briefings/$id/review", idempotencyKey, JsonObject(emptyMap()))
 
     override suspend fun devices() = read(url("devices"), DevicesDto.serializer())

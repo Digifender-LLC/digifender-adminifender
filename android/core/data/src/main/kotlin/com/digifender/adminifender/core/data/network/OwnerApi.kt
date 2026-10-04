@@ -9,6 +9,9 @@ import kotlinx.serialization.json.JsonObject
 interface OwnerApi {
     suspend fun briefing(): ReadResult<BriefingDto>
 
+    /** P2 operations overview; `feature_disabled` when the deployment has reports off. */
+    suspend fun operations(): ReadResult<OperationsDto>
+
     suspend fun reviewBriefing(id: String, idempotencyKey: String): CallResult<Unit>
 
     suspend fun devices(): ReadResult<DevicesDto>
@@ -57,3 +60,27 @@ data class OperationDto(val operationId: String, val state: String, val receipt:
 
 @Serializable
 data class ExportDto(val id: String, val state: String, val expiresAt: String, val counts: JsonElement? = null, val omissions: JsonElement? = null)
+
+@Serializable
+data class CoverageDto(val scope: String, val status: String, val omittedCount: Int? = null)
+
+@Serializable
+data class ServiceReportDto(
+    val kind: String,
+    val concernKey: String,
+    val summary: String,
+    val coverage: CoverageDto,
+    val reportedAt: String,
+    val receivedAt: String,
+    val freshness: String,
+    val sourceIds: List<String> = emptyList(),
+)
+
+@Serializable
+data class ServiceStatusDto(val id: String, val name: String, val freshness: String, val expectedEverySeconds: Long, val reports: List<ServiceReportDto> = emptyList())
+
+@Serializable
+data class ReportIssueDto(val sourceId: String, val serviceId: String? = null, val code: String, val createdAt: String)
+
+@Serializable
+data class OperationsDto(val services: List<ServiceStatusDto> = emptyList(), val verificationIssues: List<ReportIssueDto> = emptyList())

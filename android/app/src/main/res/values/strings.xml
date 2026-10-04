@@ -314,4 +314,24 @@
     <string name="export_ready">Ready until %1$s.</string>
     <string name="export_save">Save export…</string>
     <string name="export_state_ended">Last export: %1$s</string>
+    <string name="nav_operations">Operations</string>
+    <string name="ops_note">Signed service reports. Current means a report arrived within its expected interval; it is not a live health check.</string>
+    <string name="ops_freshness">%1$s · expected every %2$d h</string>
+    <string name="ops_no_reports">No signed report yet.</string>
+    <string name="ops_issues">Reports that could not be trusted</string>
+    <string name="ops_issue">%1$s · %2$s (kept in quarantine)</string>
+    <string name="ops_times">Reported %1$s · received %2$s · %3$s</string>
+    <string name="ops_current">Current</string>
+    <string name="ops_stale">Stale</string>
+    <string name="ops_unavailable">Unavailable</string>
+    <string name="ops_unobserved">Not observed</string>
+    <string name="ops_scope_single">One observation</string>
+    <string name="ops_scope_snapshot">Service snapshot</string>
+    <string name="ops_complete">complete</string>
+    <string name="ops_partial">partial, omitted count unknown</string>
+    <plurals name="ops_partial_count">
+        <item quantity="one">partial, %1$d item omitted</item>
+        <item quantity="other">partial, %1$d items omitted</item>
+    </plurals>
+    <string name="ops_unknown_coverage">coverage unknown</string>
 </resources>

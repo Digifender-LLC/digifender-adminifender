@@ -28,6 +28,7 @@ private class FakeOwnerApi : OwnerApi {
     var reviewed: Pair<String, JsonObject>? = null
 
     override suspend fun briefing(): ReadResult<BriefingDto> = ReadResult.Unavailable("network")
+    override suspend fun operations(): ReadResult<com.digifender.adminifender.core.data.network.OperationsDto> = ReadResult.Unavailable("feature_disabled")
     override suspend fun reviewBriefing(id: String, idempotencyKey: String): CallResult<Unit> = CallResult.Ok(Unit)
     override suspend fun devices(): ReadResult<DevicesDto> = ReadResult.Unavailable("network")
     override suspend fun createReview(idempotencyKey: String, effect: String, params: JsonObject): CallResult<ReviewDto> {

@@ -34,4 +34,5 @@ Apply migrations before deploying code that needs them. Staging must never bind 
 - **Android passkey origin:** after the staging build is signed, add its `android:apk-key-hash:` origin to `EXPECTED_ORIGINS`.
 - **Digital Asset Links:** `https://digifender.com/.well-known/assetlinks.json` must list both packages with their signing fingerprints. The `digifender-site` Worker serves that domain; generate the file with `python3 tools/release_preflight.py assetlinks`. Until then, Android passkey sign-in cannot work.
 - **Push:** no `FCM_SERVICE_ACCOUNT` secret and no staging Firebase project, so delivery reports `push_unavailable`.
+- **P2 reports:** `REPORTS_ENABLED` is not set, so all P2 routes answer `feature_disabled`. Enabling it on staging needs a `REPORT_KEY_WRAP` secret and a registered alias with a key, as part of the P2 acceptance run.
 - **Email:** no staging email route or address, so capture is untested live. Synthetic mail needs a dedicated staging address, never the production route.

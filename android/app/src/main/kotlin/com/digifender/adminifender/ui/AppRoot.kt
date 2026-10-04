@@ -49,7 +49,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 
 private const val CLOCK_TICK_MS = 30_000L
 
-private enum class Tab { INBOX, ARCHIVE, CHAT, SETTINGS }
+private enum class Tab { INBOX, ARCHIVE, CHAT, OPERATIONS, SETTINGS }
 
 /** One open detail screen. The stack is saved as text: only IDs, never content (lld.md#android). */
 internal sealed interface Route {
@@ -125,6 +125,8 @@ private fun SignedIn(container: AppContainer, destination: MutableStateFlow<Stri
         }
     }
     BackHandler(enabled = stack.isNotEmpty()) { back() }
+    val operationsModel = viewModel { OperationsViewModel(container.owner) }
+    val operations by operationsModel.state.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val modelState by container.models.state.collectAsStateWithLifecycle()
     val pickModel = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -156,6 +158,8 @@ private fun SignedIn(container: AppContainer, destination: MutableStateFlow<Stri
                     NavigationBarItem(selected = tab == Tab.INBOX, onClick = { tab = Tab.INBOX }, icon = {}, label = { Text(stringResource(R.string.nav_inbox)) })
                     NavigationBarItem(selected = tab == Tab.ARCHIVE, onClick = { tab = Tab.ARCHIVE }, icon = {}, label = { Text(stringResource(R.string.nav_archive)) })
                     NavigationBarItem(selected = tab == Tab.CHAT, onClick = { tab = Tab.CHAT }, icon = {}, label = { Text(stringResource(R.string.nav_chat)) })
+                    // Operations appears only after a P2 service is configured (lld.md#android).
+                    if (operations.enabled) NavigationBarItem(selected = tab == Tab.OPERATIONS, onClick = { tab = Tab.OPERATIONS }, icon = {}, label = { Text(stringResource(R.string.nav_operations)) })
                     NavigationBarItem(selected = tab == Tab.SETTINGS, onClick = { tab = Tab.SETTINGS }, icon = {}, label = { Text(stringResource(R.string.nav_settings)) })
                 }
             }
@@ -262,6 +266,7 @@ private fun SignedIn(container: AppContainer, destination: MutableStateFlow<Stri
                         )
                     }
                     Tab.CHAT -> Chat(container, ChatScope.ALL) { open(Route.SourceRoute(it)) }
+                    Tab.OPERATIONS -> OperationsScreen(operations, operationsModel::load, { open(Route.SourceRoute(it)) })
                     Tab.SETTINGS -> SettingsScreen(inbox.freshness, now, inboxModel::refresh, sessionModel::signOut, onNotificationsChanged = { PushRegistrationWorker.enqueue(context) }, model = modelUi, footer = {
                         OwnerSettings(container, passkeys)
                     })

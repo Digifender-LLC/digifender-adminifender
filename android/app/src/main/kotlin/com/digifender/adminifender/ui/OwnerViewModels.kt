@@ -183,3 +183,28 @@ class OwnerSettingsViewModel(private val api: OwnerApi, private val save: suspen
         val FINAL_EXPORT_STATES = setOf("ready", "failed", "invalidated", "expired")
     }
 }
+
+data class OperationsUiState(val loading: Boolean, val overview: com.digifender.adminifender.core.data.network.OperationsDto?, val problem: OnlineProblem?, val enabled: Boolean)
+
+/**
+ * The Operations view (lld.md#android): shown only when the deployment has reports enabled and a service exists.
+ * Freshness is about report expectations, never a live health probe.
+ */
+class OperationsViewModel(private val api: OwnerApi) : ViewModel() {
+    private val _state = MutableStateFlow(OperationsUiState(true, null, null, false))
+    val state: StateFlow<OperationsUiState> = _state.asStateFlow()
+
+    init {
+        load()
+    }
+
+    fun load() {
+        viewModelScope.launch {
+            _state.value = when (val r = api.operations()) {
+                is ReadResult.Ok -> OperationsUiState(false, r.value, null, r.value.services.isNotEmpty())
+                is ReadResult.Unavailable -> if (r.code == "feature_disabled") OperationsUiState(false, null, null, false) else _state.value.copy(loading = false, problem = OnlineProblem.OFFLINE)
+                else -> _state.value.copy(loading = false, problem = problem(r))
+            }
+        }
+    }
+}
