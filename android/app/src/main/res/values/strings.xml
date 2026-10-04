@@ -1,6 +1,98 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Adminifender</string>
-    <string name="scaffold_title">Adminifender</string>
-    <string name="scaffold_body">The app shell is in place. Sign-in, the inbox and sync arrive in the next slices.</string>
+
+    <string name="sign_in_title">Sign in</string>
+    <string name="sign_in_body">Use the passkey you enrolled for Adminifender. Your mail stays on this phone and your own server.</string>
+    <string name="sign_in_button">Sign in with passkey</string>
+    <string name="sign_in_cancelled">Sign-in was cancelled.</string>
+    <string name="sign_in_no_passkey">No Adminifender passkey was found on this phone.</string>
+    <string name="sign_in_refused">The server did not accept the passkey. Try again.</string>
+    <string name="sign_in_unavailable">The server can\'t be reached right now. Try again later.</string>
+    <string name="sign_in_again_banner">Your session ended. Changes wait on this phone until you sign in again.</string>
+    <string name="sign_in_again_button">Sign in</string>
+
+    <string name="nav_inbox">Inbox</string>
+    <string name="nav_settings">Settings</string>
+    <string name="back">Back</string>
+    <string name="refresh">Refresh</string>
+
+    <string name="filter_active">Open</string>
+    <string name="filter_waiting">Waiting</string>
+    <string name="filter_snoozed">Snoozed</string>
+    <string name="filter_resolved">Resolved</string>
+    <string name="inbox_empty">Nothing here.</string>
+    <string name="inbox_loading">Loading cached items…</string>
+
+    <string name="fresh_never">Not synced yet</string>
+    <string name="fresh_just_now">Updated just now</string>
+    <plurals name="fresh_minutes">
+        <item quantity="one">Updated %d minute ago</item>
+        <item quantity="other">Updated %d minutes ago</item>
+    </plurals>
+    <plurals name="fresh_hours">
+        <item quantity="one">Updated %d hour ago</item>
+        <item quantity="other">Updated %d hours ago</item>
+    </plurals>
+    <plurals name="fresh_days">
+        <item quantity="one">Updated %d day ago</item>
+        <item quantity="other">Updated %d days ago</item>
+    </plurals>
+    <string name="fresh_full_download">Full download pending</string>
+    <plurals name="queued_changes">
+        <item quantity="one">%d change waiting to send</item>
+        <item quantity="other">%d changes waiting to send</item>
+    </plurals>
+    <plurals name="needs_owner">
+        <item quantity="one">%d change needs your decision</item>
+        <item quantity="other">%d changes need your decision</item>
+    </plurals>
+
+    <string name="importance_critical">Critical</string>
+    <string name="importance_urgent">Urgent</string>
+    <string name="importance_important">Important</string>
+    <string name="importance_routine">Routine</string>
+    <string name="status_open">Open</string>
+    <string name="status_waiting">Waiting</string>
+    <string name="status_snoozed">Snoozed</string>
+    <string name="status_resolved">Resolved</string>
+    <string name="label_unread">Unread</string>
+    <string name="label_pending">Not sent yet</string>
+    <string name="label_due">Due %1$s</string>
+    <string name="label_snoozed_until">Snoozed until %1$s</string>
+    <string name="label_waiting_on">Waiting on %1$s</string>
+    <string name="label_acknowledged">Acknowledged</string>
+    <plurals name="label_sources">
+        <item quantity="one">%d source email</item>
+        <item quantity="other">%d source emails</item>
+    </plurals>
+
+    <string name="action_acknowledge">Acknowledge</string>
+    <string name="action_resolve">Resolve</string>
+    <string name="action_reopen">Reopen</string>
+    <string name="action_snooze_tomorrow">Snooze until tomorrow</string>
+    <string name="act_queued">Saved on this phone. It will be sent when online.</string>
+    <string name="act_not_available">That isn\'t available for this item any more.</string>
+    <string name="act_snooze_past">Pick a time in the future.</string>
+    <string name="act_gone">This item is no longer on this phone.</string>
+    <string name="concern_missing">This item is no longer on this phone.</string>
+
+    <string name="conflict_title">This change wasn\'t applied</string>
+    <string name="conflict_body">The item changed on the server after you made this change (%1$s). Apply it again on top of the current version, or drop it.</string>
+    <string name="failed_body">The server refused this change (%1$s): %2$s.</string>
+    <string name="conflict_reapply">Apply again</string>
+    <string name="conflict_discard">Drop change</string>
+
+    <string name="settings_sync">Sync</string>
+    <string name="settings_sync_now">Sync now</string>
+    <string name="settings_sign_out">Sign out</string>
+    <string name="settings_sign_out_body">Signing out removes cached mail and settings from this phone.</string>
+    <string name="sign_out_confirm_title">Sign out?</string>
+    <plurals name="sign_out_unsynced">
+        <item quantity="one">%d change has not been sent and will be lost. Sync first if you want to keep it.</item>
+        <item quantity="other">%d changes have not been sent and will be lost. Sync first if you want to keep them.</item>
+    </plurals>
+    <string name="sign_out_cached">Cached mail and settings will be removed from this phone.</string>
+    <string name="sign_out_confirm">Sign out</string>
+    <string name="cancel">Cancel</string>
 </resources>
