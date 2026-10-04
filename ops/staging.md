@@ -48,7 +48,7 @@ base64 -w0 ~/.android/debug.keystore    # Linux; macOS: base64 -i ~/.android/deb
 
 Paste the output as the repository secret `ADMINIFENDER_STAGING_DEBUG_KEYSTORE` (Settings, Secrets and variables, Actions). A new key also needs its origin and asset-links fingerprint registered as above.
 
-**Registered:** the owner's debug key (SHA-256 `FA:8D:6B:9C:…:3E:09:BB`) is in staging `EXPECTED_ORIGINS` as `android:apk-key-hash:-o1rnKJPY5wdBS3AUHeGPt1biuSl6EAiKbs2AnQ-Cbs`. A staging APK built on that machine, or by CI once the secret below exists, can sign in with a passkey.
+**Registered:** the owner's debug key (SHA-256 `FA:8D:6B:9C:…:3E:09:BB`) is in staging `EXPECTED_ORIGINS` as `android:apk-key-hash:-o1rnKJPY5wdBS3AUHeGPt1biuSl6EAiKbs2AnQ-Cbs`. A staging APK built on that machine, or by CI with the secret below (added 2026-10-04), can sign in with a passkey.
 
 The asset-links statement is published on `https://digifender.com/.well-known/assetlinks.json` (the `digifender-website` repository). A debug key is only for staging: production uses Play App Signing.
 

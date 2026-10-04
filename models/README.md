@@ -2,7 +2,7 @@
 
 Manifests and evaluation records for the on-device model ([TDD](../docs/specifications/tdd.md#version-freeze-and-model-manifest)). Model bytes never go in this repository or in the app.
 
-**Status:** no manifest is pinned yet. The selected profile is Gemma 3 1B IT int4 for LiteRT-LM with a 2,048-token context, at most 1,536 input and 256 output tokens. An artifact is pinned only after it is obtained through its documented authorized download and evaluated on the owner's S24+.
+**Status:** deferred by the owner on 2026-10-04; no manifest is pinned. The selected profile is Gemma 3 1B IT int4 for LiteRT-LM with a 2,048-token context, at most 1,536 input and 256 output tokens. An artifact is pinned only after it is obtained through its documented authorized download and evaluated on the owner's S24+.
 
 ## Manifest format
 
