@@ -12,7 +12,8 @@
     <string name="sign_in_again_banner">Your session ended. Changes wait on this phone until you sign in again.</string>
     <string name="sign_in_again_button">Sign in</string>
 
-    <string name="nav_inbox">Inbox</string>
+    <string name="nav_inbox">Attention</string>
+    <string name="inbox_title">Needs attention</string>
     <string name="nav_settings">Settings</string>
     <string name="back">Back</string>
     <string name="refresh">Refresh</string>
@@ -194,7 +195,9 @@
     <string name="chat_empty">Ask a question. Answers cite the mail they come from.</string>
     <string name="chat_empty_question">Type a question first.</string>
     <string name="chat_gap">Not covered: %1$s</string>
-    <string name="chat_input">Your question</string>
+    <string name="chat_input">Ask about your mail</string>
+    <string name="chat_title">Ask your mail</string>
+    <string name="chat_sources">Sources</string>
     <string name="chat_offline">The server can\'t be reached right now.</string>
     <string name="chat_opening">Opening the conversation…</string>
     <string name="chat_scope_unavailable">This email or item can\'t be used in chat.</string>
@@ -221,7 +224,7 @@
     <string name="model_remove">Remove model</string>
     <string name="model_wrong_hash">That file is not %1$s: its SHA-256 does not match. Nothing was installed.</string>
     <string name="model_wrong_size">That file is not %1$s: its size does not match. Nothing was installed.</string>
-    <string name="nav_chat">Chat</string>
+    <string name="nav_chat">Ask</string>
     <string name="save">Save</string>
     <string name="scope_all">Asking about all your mail</string>
     <string name="scope_concern">Asking about this item\'s mail only</string>
@@ -318,6 +321,11 @@
     <string name="export_save">Save export…</string>
     <string name="export_state_ended">Last export: %1$s</string>
     <string name="nav_operations">Operations</string>
+    <string name="review_title">Review before confirming</string>
+    <string name="review_passkey_note">This needs a fresh passkey check, even though you are signed in.</string>
+    <string name="review_uncertain_title">We can\'t tell if this went through</string>
+    <string name="review_check_status">Check status</string>
+    <string name="review_leave">Leave as is</string>
     <string name="ops_note">Signed service reports. Current means a report arrived within its expected interval; it is not a live health check.</string>
     <string name="ops_freshness">%1$s · expected every %2$d h</string>
     <string name="ops_no_reports">No signed report yet.</string>

@@ -20,6 +20,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -40,6 +41,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.digifender.adminifender.AppContainer
 import com.digifender.adminifender.R
+import com.digifender.adminifender.ui.theme.Glyphs
+import androidx.compose.ui.graphics.vector.ImageVector
 import com.digifender.adminifender.core.data.platform.CredentialManagerPasskeys
 import com.digifender.adminifender.core.data.session.SessionState
 import com.digifender.adminifender.push.BRIEFING_DESTINATION
@@ -155,12 +158,18 @@ private fun SignedIn(container: AppContainer, destination: MutableStateFlow<Stri
         bottomBar = {
             if (stack.isEmpty()) {
                 NavigationBar {
-                    NavigationBarItem(selected = tab == Tab.INBOX, onClick = { tab = Tab.INBOX }, icon = {}, label = { Text(stringResource(R.string.nav_inbox)) })
-                    NavigationBarItem(selected = tab == Tab.ARCHIVE, onClick = { tab = Tab.ARCHIVE }, icon = {}, label = { Text(stringResource(R.string.nav_archive)) })
-                    NavigationBarItem(selected = tab == Tab.CHAT, onClick = { tab = Tab.CHAT }, icon = {}, label = { Text(stringResource(R.string.nav_chat)) })
-                    // Operations appears only after a P2 service is configured (lld.md#android).
-                    if (operations.enabled) NavigationBarItem(selected = tab == Tab.OPERATIONS, onClick = { tab = Tab.OPERATIONS }, icon = {}, label = { Text(stringResource(R.string.nav_operations)) })
-                    NavigationBarItem(selected = tab == Tab.SETTINGS, onClick = { tab = Tab.SETTINGS }, icon = {}, label = { Text(stringResource(R.string.nav_settings)) })
+                    val items = buildList<Triple<Tab, ImageVector, Int>> {
+                        add(Triple(Tab.INBOX, Glyphs.tray, R.string.nav_inbox))
+                        add(Triple(Tab.ARCHIVE, Glyphs.search, R.string.nav_archive))
+                        add(Triple(Tab.CHAT, Glyphs.ask, R.string.nav_chat))
+                        // Operations appears only after a P2 service is configured (lld.md#android).
+                        if (operations.enabled) add(Triple(Tab.OPERATIONS, Glyphs.pulse, R.string.nav_operations))
+                        add(Triple(Tab.SETTINGS, Glyphs.sliders, R.string.nav_settings))
+                    }
+                    // Labels stay visible; the icons repeat them and are hidden from accessibility services.
+                    items.forEach { (t, glyph, label) ->
+                        NavigationBarItem(selected = tab == t, onClick = { tab = t }, icon = { Icon(glyph, contentDescription = null) }, label = { Text(stringResource(label)) })
+                    }
                 }
             }
         },
@@ -241,10 +250,7 @@ private fun SignedIn(container: AppContainer, destination: MutableStateFlow<Stri
                     Chat(container, route.scope) { open(Route.SourceRoute(it)) }
                 }
                 null -> when (tab) {
-                    Tab.INBOX -> Column {
-                        TextButton(onClick = { open(Route.BriefingRoute) }, modifier = Modifier.padding(horizontal = 8.dp)) { Text(stringResource(R.string.briefing_open)) }
-                        InboxScreen(inbox, now, inboxModel::select, inboxModel::refresh, { open(Route.ConcernRoute(it)) })
-                    }
+                    Tab.INBOX -> InboxScreen(inbox, now, inboxModel::select, inboxModel::refresh, { open(Route.ConcernRoute(it)) }, onBriefing = { open(Route.BriefingRoute) })
                     Tab.ARCHIVE -> {
                         val archiveModel = viewModel { ArchiveViewModel(container.archive, container.clock) }
                         val archive by archiveModel.state.collectAsStateWithLifecycle()

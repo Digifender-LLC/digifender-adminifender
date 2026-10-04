@@ -22,6 +22,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.digifender.adminifender.R
+import com.digifender.adminifender.ui.theme.LedgerCard
 import com.digifender.adminifender.core.data.repository.AttachmentInfo
 
 @Composable
@@ -50,7 +51,7 @@ fun SourceScreen(
             return@Column
         }
         if (summary != null) {
-            Text(summary.subject?.ifBlank { null } ?: stringResource(R.string.no_subject), style = MaterialTheme.typography.headlineSmall)
+            Text(summary.subject?.ifBlank { null } ?: stringResource(R.string.no_subject), style = MaterialTheme.typography.headlineMedium)
             if (summary.from.isNotEmpty()) Text(stringResource(R.string.source_from, summary.from.joinToString(", ")))
             Text(stringResource(R.string.source_received, dateTime(summary.receivedAtMs)), style = MaterialTheme.typography.labelLarge)
             Text(sourceLabels(summary), style = MaterialTheme.typography.bodySmall)
@@ -88,7 +89,7 @@ fun SourceScreen(
         Text(stringResource(R.string.source_concerns), style = MaterialTheme.typography.titleMedium)
         if (state.concerns.isEmpty()) Text(stringResource(R.string.source_no_concerns))
         state.concerns.forEach { c ->
-            Card(Modifier.fillMaxWidth().clickable(role = Role.Button) { onOpenConcern(c.id) }) {
+            Card(Modifier.fillMaxWidth().clickable(role = Role.Button) { onOpenConcern(c.id) }, colors = LedgerCard.colors(), border = LedgerCard.border) {
                 Column(Modifier.padding(16.dp)) {
                     Text(c.title, style = MaterialTheme.typography.titleSmall)
                     Text(listOf(statusText(c.status), importanceText(c.importance)).joinToString(" · "), style = MaterialTheme.typography.bodySmall)

@@ -30,6 +30,7 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.digifender.adminifender.R
+import com.digifender.adminifender.ui.theme.ScreenHeader
 import com.digifender.adminifender.core.data.repository.Freshness
 import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -76,6 +77,7 @@ fun SettingsScreen(
         onNotificationsChanged()
     }
     Column(modifier.padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        ScreenHeader(stringResource(R.string.nav_settings), inset = 4.dp)
         Text(stringResource(R.string.settings_local_model), style = MaterialTheme.typography.titleMedium)
         Text(modelText(model.state))
         when (model.state) {

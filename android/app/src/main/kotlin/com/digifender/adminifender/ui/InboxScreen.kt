@@ -15,29 +15,35 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.digifender.adminifender.R
+import com.digifender.adminifender.ui.theme.Glyphs
 import com.digifender.adminifender.ui.theme.LedgerCard
+import com.digifender.adminifender.ui.theme.ScreenHeader
 import com.digifender.adminifender.core.data.repository.ConcernView
 import com.digifender.adminifender.core.data.repository.InboxFilter
 
 @Composable
-fun InboxScreen(state: InboxUiState, nowMs: Long, onFilter: (InboxFilter) -> Unit, onRefresh: () -> Unit, onOpen: (String) -> Unit, modifier: Modifier = Modifier) {
-    Column(modifier.padding(horizontal = 16.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Column(Modifier.weight(1f).padding(vertical = 8.dp)) {
+fun InboxScreen(state: InboxUiState, nowMs: Long, onFilter: (InboxFilter) -> Unit, onRefresh: () -> Unit, onOpen: (String) -> Unit, modifier: Modifier = Modifier, onBriefing: () -> Unit = {}) {
+    Column(modifier) {
+        ScreenHeader(stringResource(R.string.inbox_title), icon = Glyphs.cloud, subtitle = state.freshness?.let { freshnessText(it, nowMs) }) {
+            TextButton(onClick = onRefresh) { Text(stringResource(R.string.refresh)) }
+        }
+    Column(Modifier.padding(horizontal = 20.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
                 state.freshness?.let { f ->
-                    Text(freshnessText(f, nowMs), style = MaterialTheme.typography.labelLarge)
                     if (f.needsFullDownload && f.lastSyncedAtMs != null) Text(stringResource(R.string.fresh_full_download), style = MaterialTheme.typography.bodySmall)
                     if (f.queued > 0) Text(pluralStringResource(R.plurals.queued_changes, f.queued, f.queued), style = MaterialTheme.typography.bodySmall)
                     if (f.needsOwner > 0) Text(pluralStringResource(R.plurals.needs_owner, f.needsOwner, f.needsOwner), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                 }
             }
-            TextButton(onClick = onRefresh) { Text(stringResource(R.string.refresh)) }
+            TextButton(onClick = onBriefing) { Text(stringResource(R.string.briefing_open)) }
         }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             InboxFilter.entries.forEach { f ->
@@ -48,10 +54,11 @@ fun InboxScreen(state: InboxUiState, nowMs: Long, onFilter: (InboxFilter) -> Uni
         when {
             items == null -> Text(stringResource(R.string.inbox_loading), Modifier.padding(vertical = 24.dp))
             items.isEmpty() -> Text(stringResource(R.string.inbox_empty), Modifier.padding(vertical = 24.dp))
-            else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
+            else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 8.dp)) {
                 items(items, key = { it.server.id }) { ConcernCard(it, onOpen) }
             }
         }
+    }
     }
 }
 

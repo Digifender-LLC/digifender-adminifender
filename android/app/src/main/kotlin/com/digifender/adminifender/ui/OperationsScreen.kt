@@ -18,6 +18,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.digifender.adminifender.R
+import com.digifender.adminifender.ui.theme.ScreenHeader
+import com.digifender.adminifender.ui.theme.LedgerCard
 import com.digifender.adminifender.core.data.network.CoverageDto
 import com.digifender.adminifender.core.data.network.ServiceReportDto
 import java.time.Instant
@@ -26,6 +28,7 @@ import java.time.Instant
 @Composable
 fun OperationsScreen(state: OperationsUiState, onRefresh: () -> Unit, onOpenSource: (String) -> Unit, modifier: Modifier = Modifier) {
     Column(modifier.padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        ScreenHeader(stringResource(R.string.nav_operations), inset = 4.dp)
         Text(stringResource(R.string.ops_note), style = MaterialTheme.typography.bodySmall)
         state.problem?.let { Text(onlineProblem(it), color = MaterialTheme.colorScheme.error) }
         TextButton(onClick = onRefresh) { Text(stringResource(R.string.refresh)) }
@@ -52,7 +55,7 @@ fun OperationsScreen(state: OperationsUiState, onRefresh: () -> Unit, onOpenSour
 private fun ReportCard(r: ServiceReportDto, onOpenSource: (String) -> Unit) {
     val source = r.sourceIds.firstOrNull()
     val mod = if (source != null) Modifier.fillMaxWidth().clickable(role = Role.Button) { onOpenSource(source) } else Modifier.fillMaxWidth()
-    Card(mod) {
+    Card(mod, colors = LedgerCard.colors(), border = LedgerCard.border) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(r.summary, style = MaterialTheme.typography.titleSmall)
             Text("${r.kind} · ${r.concernKey}", style = MaterialTheme.typography.bodySmall)

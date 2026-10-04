@@ -30,6 +30,7 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.digifender.adminifender.R
+import com.digifender.adminifender.ui.theme.LedgerCard
 import com.digifender.adminifender.core.data.network.SourceSummary
 import com.digifender.adminifender.core.data.repository.ConcernView
 import com.digifender.adminifender.core.data.sync.QueuedMutation
@@ -58,7 +59,7 @@ fun ConcernScreen(
             return@Column
         }
         val c = view.shown
-        Text(c.title, style = MaterialTheme.typography.headlineSmall)
+        Text(c.title, style = MaterialTheme.typography.headlineMedium)
         Text(listOf(statusText(c.status), importanceText(c.importance)).joinToString(" · "), style = MaterialTheme.typography.labelLarge)
         c.due?.atMs?.let { Text(stringResource(R.string.label_due, dateTime(it))) }
         c.snoozeUntilMs?.let { Text(stringResource(R.string.label_snoozed_until, dateTime(it))) }
@@ -111,7 +112,7 @@ private fun WaitForm(party: String?, note: String?, onSave: (String, String, Int
     var partyText by rememberSaveable { mutableStateOf(party.orEmpty()) }
     var noteText by rememberSaveable { mutableStateOf(note.orEmpty()) }
     var days by rememberSaveable { mutableStateOf<Int?>(FOLLOW_UP_DAYS[2]) }
-    Card(Modifier.fillMaxWidth()) {
+    Card(Modifier.fillMaxWidth(), colors = LedgerCard.colors(), border = LedgerCard.border) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(stringResource(R.string.wait_title), style = MaterialTheme.typography.titleSmall)
             OutlinedTextField(partyText, { partyText = it.take(AWAITED_PARTY_MAX) }, label = { Text(stringResource(R.string.wait_party)) }, singleLine = true, modifier = Modifier.fillMaxWidth())

@@ -13,17 +13,13 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.digifender.adminifender.R
 import com.digifender.adminifender.core.model.Concern
 import com.digifender.adminifender.core.model.Status
+import com.digifender.adminifender.ui.theme.Glyphs
 import com.digifender.adminifender.ui.theme.LedgerTones
 import com.digifender.adminifender.ui.theme.Tone
 
@@ -77,17 +73,4 @@ private fun Pill(tone: Tone, icon: ImageVector, text: String, modifier: Modifier
         Icon(icon, contentDescription = null, tint = tone.content, modifier = Modifier.size(14.dp))
         Text(text, style = MaterialTheme.typography.labelLarge, color = tone.content)
     }
-}
-
-/** Stroke icons from the design canvas, drawn in the current content color. */
-object Glyphs {
-    private fun stroke(name: String, vararg paths: String): ImageVector =
-        ImageVector.Builder(name, 24.dp, 24.dp, 24f, 24f).apply {
-            paths.forEach { addPath(addPathNodes(it), stroke = SolidColor(Color.Black), strokeLineWidth = 2f, strokeLineCap = StrokeCap.Round, strokeLineJoin = StrokeJoin.Round) }
-        }.build()
-
-    val alert = stroke("alert", "M12 4l9 16H3z", "M12 10v4", "M12 17v0.01")
-    val clock = stroke("clock", "M12 3.5a8.5 8.5 0 1 0 0 17a8.5 8.5 0 1 0 0 -17z", "M12 7.5V12l3 2")
-    val hourglass = stroke("hourglass", "M7 4h10", "M7 20h10", "M8 4c0 5 8 5 8 8s-8 3-8 8")
-    val check = stroke("check", "M5 12.5l4.5 4.5L19 7.5")
 }

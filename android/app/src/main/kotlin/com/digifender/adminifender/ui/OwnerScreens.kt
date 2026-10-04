@@ -1,5 +1,20 @@
 package com.digifender.adminifender.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Surface
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import com.digifender.adminifender.ui.theme.Glyphs
+import com.digifender.adminifender.ui.theme.LedgerCard
+import com.digifender.adminifender.ui.theme.LedgerTones
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -31,7 +46,7 @@ import java.time.Instant
 @Composable
 fun BriefingScreen(state: BriefingUiState, onRetry: () -> Unit, onReviewed: () -> Unit, onOpenConcern: (String) -> Unit, modifier: Modifier = Modifier) {
     Column(modifier.padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(stringResource(R.string.briefing_title), style = MaterialTheme.typography.headlineSmall)
+        Text(stringResource(R.string.briefing_title), style = MaterialTheme.typography.headlineMedium)
         state.problem?.let {
             Text(onlineProblem(it), color = MaterialTheme.colorScheme.error)
             TextButton(onClick = onRetry) { Text(stringResource(R.string.try_again)) }
@@ -63,7 +78,7 @@ private fun Section(title: Int, items: List<ConcernDto>, onOpen: (String) -> Uni
     if (items.isEmpty()) Text(stringResource(R.string.briefing_none), style = MaterialTheme.typography.bodySmall)
     items.forEach { dto ->
         val c = dto.toDomain() ?: return@forEach
-        Card(Modifier.fillMaxWidth().clickable(role = Role.Button) { onOpen(c.id) }) {
+        Card(Modifier.fillMaxWidth().clickable(role = Role.Button) { onOpen(c.id) }, colors = LedgerCard.colors(), border = LedgerCard.border) {
             Column(Modifier.padding(12.dp)) {
                 Text(c.title, style = MaterialTheme.typography.titleSmall)
                 Text(listOfNotNull(statusText(c.status), importanceText(c.importance), c.due?.atMs?.let { stringResource(R.string.label_due, dateTime(it)) }).joinToString(" · "), style = MaterialTheme.typography.bodySmall)
@@ -85,30 +100,60 @@ fun onlineProblem(p: OnlineProblem) = stringResource(
 @Composable
 fun ReviewPanel(state: ReviewUiState, onConfirm: () -> Unit, onDismiss: () -> Unit, onDone: () -> Unit) {
     if (state is ReviewUiState.Idle) return
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer), modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    val danger = (state as? ReviewUiState.Ready)?.review?.effect == "archive.delete"
+    Surface(color = MaterialTheme.colorScheme.surfaceContainerLow, border = LedgerCard.border, shape = MaterialTheme.shapes.extraLarge, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             when (state) {
                 ReviewUiState.Preparing -> Text(stringResource(R.string.review_preparing))
-                is ReviewUiState.Ready -> {
-                    previewLines(state.review).forEach { Text(it) }
-                    Text(stringResource(R.string.review_expires, dateTime(Instant.parse(state.review.expiresAt).toEpochMilli())), style = MaterialTheme.typography.bodySmall)
-                    state.note?.let { Text(reviewNote(it), color = MaterialTheme.colorScheme.error) }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TextButton(onClick = onConfirm, enabled = !state.confirming && state.review.previewOrNull() != null) { Text(stringResource(R.string.review_confirm)) }
-                        TextButton(onClick = onDismiss, enabled = !state.confirming) { Text(stringResource(R.string.cancel)) }
+                is ReviewUiState.Ready -> if (state.note == ReviewNote.UNKNOWN) {
+                    // The request may have been applied: say so plainly; checking re-sends the same key, never a new effect.
+                    Box(Modifier.size(56.dp).background(LedgerTones.dueSoon.container, CircleShape), contentAlignment = Alignment.Center) {
+                        Icon(Glyphs.alert, contentDescription = null, tint = LedgerTones.dueSoon.content, modifier = Modifier.size(28.dp))
                     }
+                    Text(stringResource(R.string.review_uncertain_title), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
+                    Text(stringResource(R.string.review_unknown), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    previewLines(state.review).forEach { Text(it, style = MaterialTheme.typography.bodyMedium) }
+                    PillButtons(primary = stringResource(R.string.review_check_status), onPrimary = onConfirm, secondary = stringResource(R.string.review_leave), onSecondary = onDismiss, enabled = !state.confirming)
+                } else {
+                    Text(stringResource(R.string.review_title), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
+                    previewLines(state.review).forEach { Text(it, style = MaterialTheme.typography.bodyLarge) }
+                    Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainer, MaterialTheme.shapes.medium).padding(12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Glyphs.shield, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                        Text(stringResource(R.string.review_passkey_note), style = MaterialTheme.typography.bodyMedium)
+                    }
+                    Text(stringResource(R.string.review_expires, dateTime(Instant.parse(state.review.expiresAt).toEpochMilli())), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    state.note?.let { Text(reviewNote(it), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
+                    PillButtons(
+                        primary = stringResource(R.string.review_confirm), onPrimary = onConfirm,
+                        secondary = stringResource(R.string.cancel), onSecondary = onDismiss,
+                        enabled = !state.confirming, primaryEnabled = state.review.previewOrNull() != null, danger = danger,
+                    )
                 }
                 is ReviewUiState.Done -> {
-                    Text(stringResource(R.string.review_done))
-                    TextButton(onClick = onDone) { Text(stringResource(R.string.review_close)) }
+                    Text(stringResource(R.string.review_done), style = MaterialTheme.typography.bodyLarge)
+                    OutlinedButton(onClick = onDone, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(stringResource(R.string.review_close)) }
                 }
                 is ReviewUiState.Failed -> {
-                    Text(reviewNote(state.note))
-                    TextButton(onClick = onDismiss) { Text(stringResource(R.string.review_close)) }
+                    Text(reviewNote(state.note), style = MaterialTheme.typography.bodyLarge)
+                    OutlinedButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(stringResource(R.string.review_close)) }
                 }
                 ReviewUiState.Idle -> Unit
             }
         }
+    }
+}
+
+/** Full-width pill buttons stacked as on the canvas: one filled action, one outlined way out. */
+@Composable
+private fun PillButtons(primary: String, onPrimary: () -> Unit, secondary: String, onSecondary: () -> Unit, enabled: Boolean, primaryEnabled: Boolean = true, danger: Boolean = false) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Button(
+            onClick = onPrimary,
+            enabled = enabled && primaryEnabled,
+            colors = if (danger) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error, contentColor = MaterialTheme.colorScheme.onError) else ButtonDefaults.buttonColors(),
+            modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
+        ) { Text(primary) }
+        OutlinedButton(onClick = onSecondary, enabled = enabled, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) { Text(secondary) }
     }
 }
 
