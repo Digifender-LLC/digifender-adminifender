@@ -1,0 +1,5 @@
+{
+  "changes": [{ "seq": 2, "entityType": "concern", "entityId": "0b4e6f8a-2c3d-4e5f-8a9b-1c2d3e4f5a6b", "revision": 2, "deleted": true, "projection": { "id": "x" } }],
+  "throughSeq": 2,
+  "hasMore": false
+}

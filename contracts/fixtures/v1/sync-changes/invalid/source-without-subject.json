@@ -1,0 +1,14 @@
+{
+  "changes": [
+    {
+      "seq": 3,
+      "entityType": "source",
+      "entityId": "6f1c2a10-8b1e-4c6d-9a51-3e0b7d2f4a11",
+      "revision": 2,
+      "deleted": false,
+      "projection": { "id": "6f1c2a10-8b1e-4c6d-9a51-3e0b7d2f4a11", "kind": "email", "state": "ready", "admission": "normal", "privacy": "hybrid", "partitionId": 1, "revision": 2, "receivedAt": "2026-10-03T12:00:00.000Z" }
+    }
+  ],
+  "throughSeq": 3,
+  "hasMore": false
+}

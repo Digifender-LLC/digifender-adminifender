@@ -1,0 +1,58 @@
+{
+  "changes": [
+    {
+      "seq": 41,
+      "entityType": "source",
+      "entityId": "6f1c2a10-8b1e-4c6d-9a51-3e0b7d2f4a11",
+      "revision": 2,
+      "deleted": false,
+      "projection": {
+        "id": "6f1c2a10-8b1e-4c6d-9a51-3e0b7d2f4a11",
+        "kind": "email",
+        "state": "ready",
+        "admission": "normal",
+        "privacy": "hybrid",
+        "revision": 2,
+        "receivedAt": "2026-10-03T12:00:00.000Z",
+        "subject": "Invoice 42",
+        "from": ["billing@vendor.example"],
+        "to": ["inbox@adminifender.example"]
+      }
+    },
+    {
+      "seq": 42,
+      "entityType": "concern",
+      "entityId": "0b4e6f8a-2c3d-4e5f-8a9b-1c2d3e4f5a6b",
+      "revision": 3,
+      "deleted": false,
+      "projection": {
+        "id": "0b4e6f8a-2c3d-4e5f-8a9b-1c2d3e4f5a6b",
+        "revision": 3,
+        "title": "Invoice 42",
+        "status": "waiting",
+        "importance": "important",
+        "criticalBasis": null,
+        "serviceId": null,
+        "readAt": "2026-10-03T12:05:00.000Z",
+        "acknowledgedAt": null,
+        "resolvedAt": null,
+        "snoozeUntil": null,
+        "waiting": { "note": "Asked for a corrected invoice", "awaitedParty": "Vendor billing", "followUpAt": "2026-10-06T09:00:00.000Z" },
+        "due": { "at": "2026-10-10T17:00:00.000Z", "zone": "Europe/Berlin", "sourceText": "by Friday next week", "revision": 1 },
+        "sourceIds": ["6f1c2a10-8b1e-4c6d-9a51-3e0b7d2f4a11"],
+        "updatedAt": "2026-10-03T12:06:00.000Z"
+      }
+    },
+    {
+      "seq": 43,
+      "entityType": "attachment",
+      "entityId": "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d",
+      "revision": 2,
+      "deleted": false,
+      "projection": { "id": "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d", "sourceId": "6f1c2a10-8b1e-4c6d-9a51-3e0b7d2f4a11", "state": "ready", "detail": null, "revision": 2 }
+    },
+    { "seq": 44, "entityType": "concern", "entityId": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d", "revision": 5, "deleted": true, "projection": null }
+  ],
+  "throughSeq": 44,
+  "hasMore": false
+}

@@ -7,4 +7,4 @@ Versioned JSON Schemas (draft 2020-12) and synthetic fixtures shared by the Work
 
 `npm test` in `backend/` checks every fixture against its schema, and runs the Worker's own parsers against the same fixtures where a parser exists. Fixtures are synthetic; never add real mail, tokens or report payloads.
 
-Status: **locally verified** for the schemas present. Kotlin DTO parity checks are added with the Android project.
+Status: **locally verified** for the schemas present. The Android JVM tests parse `fixtures/v1/sync-changes/` with the app's DTOs, and a Worker test checks that live sync projections carry the same fields.
