@@ -3,12 +3,13 @@ import * as auth from '../auth/routes';
 import * as briefings from '../briefings/routes';
 import * as grouping from '../concerns/grouping';
 import * as concerns from '../concerns/routes';
-import { authenticate } from '../auth/sessions';
+import { type AuthContext, authenticate, hasRecentAuth } from '../auth/sessions';
 import { RELEASE_CONTRACT } from '../contracts';
 import type { Env } from '../env';
 import * as searchRoutes from '../search/routes';
 import * as sources from '../sources/routes';
 import * as sync from '../sync/routes';
+import * as reviews from '../reviews/routes';
 import * as rules from '../triage/routes';
 import { fail, ok } from './envelope';
 import { HttpError } from './errors';
@@ -34,6 +35,18 @@ function mutation<B>(validator: Validator<B>, handler: MutationHandler<B>): Hand
     const body = await readJson(request, validator);
     const path = new URL(request.url).pathname;
     const stored = await withIdempotency(env.CONTROL_DB, request, path, body, now, async () => ({ status: 200, body: { data: await handler(env, now, body, ...params) } }));
+    return new StoredResponse(stored.status, stored.body as Record<string, unknown>);
+  };
+}
+
+/** Like `mutation`, passing the session to the handler and optionally requiring recent passkey authentication. */
+function ownerMutation<B>(validator: Validator<B>, handler: (env: Env, now: number, body: B, auth: AuthContext, ...params: string[]) => Promise<unknown>, options: { recentAuth: boolean }): Handler {
+  return async (request, env, now, params) => {
+    const auth = await authenticate(request, env, now);
+    if (options.recentAuth && !hasRecentAuth(auth, now)) throw new HttpError(403, 'recent_auth_required', 'Confirm with your passkey first.');
+    const body = await readJson(request, validator);
+    const path = new URL(request.url).pathname;
+    const stored = await withIdempotency(env.CONTROL_DB, request, path, body, now, async () => ({ status: 200, body: { data: await handler(env, now, body, auth, ...params) } }));
     return new StoredResponse(stored.status, stored.body as Record<string, unknown>);
   };
 }
@@ -69,6 +82,9 @@ const ROUTES: Route[] = [
   { method: 'GET', pattern: /^\/spam-overrides$/, handler: admission.listSpamOverrides },
   { method: 'POST', pattern: /^\/spam-overrides$/, handler: mutation(admission.spamOverrideBody, admission.createSpamOverride) },
   { method: 'PATCH', pattern: new RegExp(`^/spam-overrides/${ID}$`), handler: mutation(admission.spamOverridePatch, admission.updateSpamOverride) },
+  { method: 'POST', pattern: /^\/reviews$/, handler: ownerMutation(reviews.reviewBody, reviews.createReview, { recentAuth: false }) },
+  { method: 'POST', pattern: new RegExp(`^/reviews/${ID}/confirm$`), handler: ownerMutation(reviews.confirmBody, reviews.confirmReview, { recentAuth: true }) },
+  { method: 'GET', pattern: new RegExp(`^/operations/${ID}$`), handler: reviews.getOperation },
   { method: 'GET', pattern: /^\/sync\/bootstrap$/, handler: sync.bootstrap },
   { method: 'GET', pattern: /^\/sync\/changes$/, handler: sync.changes },
   { method: 'GET', pattern: /^\/rules$/, handler: rules.listRules },

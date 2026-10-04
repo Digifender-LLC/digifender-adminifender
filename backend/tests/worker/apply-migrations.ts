@@ -27,6 +27,8 @@ beforeEach(async () => {
   await clear(env.CONTROL_DB);
   await clear(env.ARCHIVE_0001);
   await env.CONTROL_DB.prepare("INSERT INTO archive_partitions(id, binding_name, state, created_at) VALUES (1, 'ARCHIVE_0001', 'writable', 0)").run();
-  const listed = await env.ARCHIVE_BUCKET.list();
-  if (listed.objects.length > 0) await env.ARCHIVE_BUCKET.delete(listed.objects.map((object) => object.key));
+  for (const bucket of [env.ARCHIVE_BUCKET, env.DELETION_LEDGER]) {
+    const listed = await bucket.list();
+    if (listed.objects.length > 0) await bucket.delete(listed.objects.map((object) => object.key));
+  }
 });

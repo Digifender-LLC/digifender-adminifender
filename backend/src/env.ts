@@ -3,6 +3,8 @@ export interface Env {
   CONTROL_DB: D1Database;
   ARCHIVE_0001: D1Database;
   ARCHIVE_BUCKET: R2Bucket;
+  /** Separate private bucket for the content-free deletion suppression ledger; no ordinary lifecycle deletion. */
+  DELETION_LEDGER: R2Bucket;
   WORK_QUEUE: Queue<QueueEnvelope>;
   /** WebAuthn relying party ID: the owner's HTTPS domain. */
   RP_ID: string;
@@ -11,6 +13,8 @@ export interface Env {
   EXPECTED_ORIGINS: string;
   /** Worker secret (>= 32 chars) that authenticates list and search cursors. */
   CURSOR_SECRET: string;
+  /** Worker secret (>= 32 chars) that signs the deletion ledger head. */
+  LEDGER_SIGNING_KEY: string;
 }
 
 export interface QueueEnvelope {

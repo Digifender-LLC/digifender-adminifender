@@ -27,7 +27,8 @@
     }
   ],
   "r2_buckets": [
-    { "binding": "ARCHIVE_BUCKET", "bucket_name": "adminifender-archive-local" }
+    { "binding": "ARCHIVE_BUCKET", "bucket_name": "adminifender-archive-local" },
+    { "binding": "DELETION_LEDGER", "bucket_name": "adminifender-deletion-ledger-local" }
   ],
   "queues": {
     "producers": [{ "binding": "WORK_QUEUE", "queue": "adminifender-work-local" }],
