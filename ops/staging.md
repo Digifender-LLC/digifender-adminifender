@@ -41,13 +41,14 @@ python3 ../tools/release_preflight.py assetlinks --package com.digifender.admini
 
 Each Android CI run on a pull request also uploads an `adminifender-apks` artifact with the staging APK, signed with that runner's throwaway debug key, and the unsigned release APK. A CI-built APK installs fine, but its fingerprint changes every run, so register a fingerprint only for an APK you build yourself.
 
+**Registered:** the owner's debug key (SHA-256 `FA:8D:6B:9C:…:3E:09:BB`) is in staging `EXPECTED_ORIGINS` as `android:apk-key-hash:-o1rnKJPY5wdBS3AUHeGPt1biuSl6EAiKbs2AnQ-Cbs`. Only a staging APK built on that machine can sign in with a passkey; a CI-built APK can't.
+
 The asset-links statement is published on `https://digifender.com/.well-known/assetlinks.json` (the `digifender-website` repository). A debug key is only for staging: production uses Play App Signing.
 
 ## Not configured yet
 
 - **Owner enrollment:** create a bootstrap token with `tools/bootstrap-token.mjs` and enroll a staging passkey from the staging app.
-- **Android passkey origin:** after the staging build is signed, add its `android:apk-key-hash:` origin to `EXPECTED_ORIGINS`.
-- **Digital Asset Links:** `https://digifender.com/.well-known/assetlinks.json` must list both packages with their signing fingerprints. The `digifender-site` Worker serves that domain; generate the file with `python3 tools/release_preflight.py assetlinks`. Until then, Android passkey sign-in cannot work.
+- **Digital Asset Links:** the statement for `com.digifender.adminifender.staging` and the owner's debug key is in review as [digifender-website#3](https://github.com/Digifender-LLC/digifender-website/pull/3). Android passkey sign-in fails until that PR merges and `https://digifender.com/.well-known/assetlinks.json` serves it. The production package gets its own statement once Play App Signing exists.
 - **Push:** no `FCM_SERVICE_ACCOUNT` secret and no staging Firebase project, so delivery reports `push_unavailable`.
 - **P2 reports:** `REPORTS_ENABLED` is not set, so all P2 routes answer `feature_disabled`. Enabling it on staging needs a `REPORT_KEY_WRAP` secret and a registered alias with a key, as part of the P2 acceptance run.
 - **Email:** no staging email route or address, so capture is untested live. Synthetic mail needs a dedicated staging address, never the production route.

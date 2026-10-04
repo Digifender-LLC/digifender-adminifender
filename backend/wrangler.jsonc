@@ -47,7 +47,7 @@
       // Served on a digifender.com subdomain; passkeys use the digifender.com root as RP ID. The Android
       // android:apk-key-hash origin is added once the staging signing certificate exists.
       "routes": [{ "pattern": "adminifender-staging.digifender.com", "custom_domain": true }],
-      "vars": { "RP_ID": "digifender.com", "RP_NAME": "Adminifender (staging)", "EXPECTED_ORIGINS": "https://adminifender-staging.digifender.com" },
+      "vars": { "RP_ID": "digifender.com", "RP_NAME": "Adminifender (staging)", "EXPECTED_ORIGINS": "https://adminifender-staging.digifender.com,android:apk-key-hash:-o1rnKJPY5wdBS3AUHeGPt1biuSl6EAiKbs2AnQ-Cbs" },
       // Bound, but the app's defaults keep the paid ceiling at 0 and deny cloud until account headroom is attested.
       "ai": { "binding": "AI" },
       "triggers": { "crons": ["* * * * *"] },
