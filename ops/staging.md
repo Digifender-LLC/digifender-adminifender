@@ -39,6 +39,8 @@ python3 ../tools/release_preflight.py apk-origin --sha256 <that fingerprint>    
 python3 ../tools/release_preflight.py assetlinks --package com.digifender.adminifender.staging --sha256 <that fingerprint>
 ```
 
+Each Android CI run on a pull request also uploads an `adminifender-apks` artifact with the staging APK, signed with that runner's throwaway debug key, and the unsigned release APK. A CI-built APK installs fine, but its fingerprint changes every run, so register a fingerprint only for an APK you build yourself.
+
 The asset-links statement is published on `https://digifender.com/.well-known/assetlinks.json` (the `digifender-website` repository). A debug key is only for staging: production uses Play App Signing.
 
 ## Not configured yet

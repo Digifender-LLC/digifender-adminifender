@@ -38,3 +38,14 @@ jobs:
         run: ./gradlew --no-daemon :core:model:test :core:data:testDebugUnitTest :app:testDebugUnitTest
       - name: Compile, lint and unsigned release build
         run: ./gradlew --no-daemon :core:data:lintDebug :core:data:assembleDebugAndroidTest :app:assembleDebug :app:lintDebug :app:assembleRelease :app:assembleStaging
+      # Installable staging APK (signed with this runner's throwaway debug key, so its fingerprint changes every run)
+      # and the unsigned release APK. No keys, secrets or google-services.json are in either.
+      - name: Upload APKs
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: adminifender-apks
+          path: |
+            android/app/build/outputs/apk/staging/app-staging.apk
+            android/app/build/outputs/apk/release/app-release-unsigned.apk
+          retention-days: 14
+          if-no-files-found: error
