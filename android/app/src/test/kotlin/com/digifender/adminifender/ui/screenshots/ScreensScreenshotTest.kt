@@ -91,6 +91,12 @@ class ScreensScreenshotTest {
         ask("ask-large-text")
     }
 
+    @Test @Config(qualifiers = "+night") fun attentionDark() = attentionAt("attention-dark")
+
+    @Test @Config(qualifiers = "+night") fun askDark() = ask("ask-dark")
+
+    @Test @Config(qualifiers = "+night") fun uncertainDark() = shot("uncertain-dark") { Box(Modifier.padding(16.dp)) { ReviewPanel(ReviewUiState.Ready(review, note = ReviewNote.UNKNOWN), {}, {}, {}) } }
+
     @Test fun ask() = ask("ask")
 
     private fun ask(name: String) = shot(name) {

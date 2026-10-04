@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.Adminifender" parent="android:Theme.Material.NoActionBar" />
+    <!-- Window behind Compose: matches the Calm Ledger background so launch shows no flash of another color. -->
+    <style name="Theme.Adminifender" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/ledger_background</item>
+    </style>
 </resources>
