@@ -27,7 +27,7 @@ Tracks delivery of the [baseline phases](specifications/baseline.md#delivery-pha
 All P1 slices have their code. What remains is evidence and owner setup ([ops/release.md](../ops/release.md), [ops/staging.md](../ops/staging.md)):
 
 1. Emulator instrumentation runs (Room v2/v3 migrations, Keystore vault, chat invalidation), screenshots and TalkBack checks.
-2. Owner accounts: set up Play App Signing and the internal track, create the Firebase apps (`google-services.json` per environment, never committed) and a staging email address, and enroll the owner on staging.
+2. Owner accounts: set up Play App Signing and the internal track, create the Firebase apps (`google-services.json` per environment, never committed). The owner is enrolled on staging, and mail for the five owner domains is routed to it ([ops/staging.md](../ops/staging.md)).
 3. The local model, **deferred by the owner (2026-10-04)**: the device runner ships with no pinned manifest, so phone-routed work stays visibly queued and the server falls back to cloud or waits as routed. To resume, download `gemma3-1b-it-int4.litertlm` through its license page, record its SHA-256 and size in `models/`, and evaluate it on the S24+.
 4. Physical S24+ acceptance: live FCM, OCR accuracy, memory and thermal behavior, and the Play-installed build (local inference latency once the model is resumed).
 5. The recovery drill ([ops/recovery-drill.md](../ops/recovery-drill.md)) on staging, then production.
