@@ -1,16 +1,43 @@
+import * as admission from '../admission/routes';
 import * as auth from '../auth/routes';
+import { authenticate } from '../auth/sessions';
 import { RELEASE_CONTRACT } from '../contracts';
 import type { Env } from '../env';
+import * as searchRoutes from '../search/routes';
+import * as sources from '../sources/routes';
 import { fail, ok } from './envelope';
 import { HttpError } from './errors';
+import { withIdempotency } from './idempotency';
+import { type Validator, readJson } from './validate';
 
 const PREFIX = '/api/v1';
+const ID = '([0-9a-f-]{36})';
 
 type Handler = (request: Request, env: Env, now: number, params: string[]) => Promise<unknown>;
+type MutationHandler<B> = (env: Env, now: number, body: B, ...params: string[]) => Promise<unknown>;
+
 interface Route {
   method: 'GET' | 'POST' | 'PATCH';
   pattern: RegExp;
   handler: Handler;
+}
+
+/** Authenticated, idempotent JSON mutation (lld.md#contract-conventions). */
+function mutation<B>(validator: Validator<B>, handler: MutationHandler<B>): Handler {
+  return async (request, env, now, params) => {
+    await authenticate(request, env, now);
+    const body = await readJson(request, validator);
+    const path = new URL(request.url).pathname;
+    const stored = await withIdempotency(env.CONTROL_DB, request, path, body, now, async () => ({ status: 200, body: { data: await handler(env, now, body, ...params) } }));
+    return new StoredResponse(stored.status, stored.body as Record<string, unknown>);
+  };
+}
+
+class StoredResponse {
+  constructor(
+    readonly status: number,
+    readonly body: Record<string, unknown>,
+  ) {}
 }
 
 const ROUTES: Route[] = [
@@ -24,6 +51,19 @@ const ROUTES: Route[] = [
   { method: 'POST', pattern: /^\/auth\/recovery\/verify$/, handler: auth.recoveryVerify },
   { method: 'POST', pattern: /^\/auth\/logout$/, handler: auth.logout },
   { method: 'GET', pattern: /^\/devices$/, handler: auth.listDevices },
+  { method: 'GET', pattern: /^\/sources$/, handler: sources.listSources },
+  { method: 'GET', pattern: new RegExp(`^/sources/${ID}$`), handler: sources.getSource },
+  { method: 'GET', pattern: new RegExp(`^/sources/${ID}/chunks$`), handler: sources.getChunks },
+  { method: 'POST', pattern: new RegExp(`^/sources/${ID}/quarantine$`), handler: mutation(admission.quarantineBody, admission.quarantineSource) },
+  { method: 'POST', pattern: new RegExp(`^/sources/${ID}/release$`), handler: mutation(admission.releaseBody, admission.releaseSource) },
+  { method: 'GET', pattern: new RegExp(`^/attachments/${ID}/content$`), handler: sources.getAttachmentContent },
+  { method: 'GET', pattern: /^\/search$/, handler: searchRoutes.search },
+  { method: 'GET', pattern: /^\/block-rules$/, handler: admission.listBlockRules },
+  { method: 'POST', pattern: /^\/block-rules$/, handler: mutation(admission.blockRuleBody, admission.createBlockRule) },
+  { method: 'PATCH', pattern: new RegExp(`^/block-rules/${ID}$`), handler: mutation(admission.blockRulePatch, admission.updateBlockRule) },
+  { method: 'GET', pattern: /^\/spam-overrides$/, handler: admission.listSpamOverrides },
+  { method: 'POST', pattern: /^\/spam-overrides$/, handler: mutation(admission.spamOverrideBody, admission.createSpamOverride) },
+  { method: 'PATCH', pattern: new RegExp(`^/spam-overrides/${ID}$`), handler: mutation(admission.spamOverridePatch, admission.updateSpamOverride) },
 ];
 
 export async function handleFetch(request: Request, env: Env, now = Date.now()): Promise<Response> {
@@ -35,7 +75,16 @@ export async function handleFetch(request: Request, env: Env, now = Date.now()):
   try {
     for (const route of ROUTES) {
       const match = route.pattern.exec(path);
-      if (match && route.method === request.method) return ok(await route.handler(request, env, now, match.slice(1)), requestId);
+      if (!match || route.method !== request.method) continue;
+      const result = await route.handler(request, env, now, match.slice(1));
+      if (result instanceof Response) return result;
+      if (result instanceof StoredResponse) {
+        return new Response(JSON.stringify({ ...result.body, requestId }), {
+          status: result.status,
+          headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' },
+        });
+      }
+      return ok(result, requestId);
     }
     return fail(404, 'not_found', 'Not found.', requestId);
   } catch (error) {

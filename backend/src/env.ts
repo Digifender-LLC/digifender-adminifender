@@ -9,6 +9,8 @@ export interface Env {
   RP_NAME: string;
   /** Comma-separated: the HTTPS enrollment origin and the exact android:apk-key-hash origin of the Play signing certificate. */
   EXPECTED_ORIGINS: string;
+  /** Worker secret (>= 32 chars) that authenticates list and search cursors. */
+  CURSOR_SECRET: string;
 }
 
 export interface QueueEnvelope {
