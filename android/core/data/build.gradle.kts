@@ -19,6 +19,19 @@ android {
         warningsAsErrors = true
         abortOnError = true
     }
+
+    // Room tests live in src/sharedTest and run twice: on a device (androidTest) and on the JVM under Robolectric
+    // (test). The Keystore test stays device-only: Robolectric has no hardware-backed Keystore.
+    sourceSets {
+        getByName("androidTest").kotlin.directories.add("src/sharedTest/kotlin")
+        getByName("test").kotlin.directories.add("src/sharedTest/kotlin")
+        // MigrationTestHelper reads the committed schema JSON from assets.
+        getByName("test").assets.directories.add("$projectDir/schemas")
+    }
+
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
 }
 
 kotlin {
@@ -47,6 +60,9 @@ dependencies {
     // Passkeys on devices whose platform provider is Google Play services.
     runtimeOnly(libs.credentials.play.services)
     testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.room.testing)
+    testImplementation(libs.androidx.test.ext.junit)
     testImplementation(libs.coroutines.test)
     testImplementation(libs.okhttp.mockwebserver)
     androidTestImplementation(libs.androidx.test.runner)

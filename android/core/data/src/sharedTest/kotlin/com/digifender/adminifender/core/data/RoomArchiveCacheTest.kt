@@ -23,7 +23,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/** Cached text and cached-only search on Room (compiled in CI; runs on a device or emulator). */
+/** Cached text and cached-only search on Room (runs on the JVM under Robolectric and on a device or emulator). */
 @RunWith(AndroidJUnit4::class)
 class RoomArchiveCacheTest {
     private lateinit var db: AppDatabase
@@ -81,7 +81,10 @@ class RoomArchiveCacheTest {
             10,
         )
         cache.putText("b", text(body = "pay the water company"), 10)
-        assertEquals(listOf("a"), cache.search(listOf("water", "bill"), ArchiveView.ARCHIVE, null, null, null, 50).map { it.source.id })
+        // Every term must match somewhere (subject, sender or cached text): only b has both "water" and "holiday",
+        // and nothing has "invoice". ("bill" would match b too, through its billing@ sender.)
+        assertEquals(listOf("b"), cache.search(listOf("water", "holiday"), ArchiveView.ARCHIVE, null, null, null, 50).map { it.source.id })
+        assertEquals(emptyList<String>(), cache.search(listOf("water", "invoice"), ArchiveView.ARCHIVE, null, null, null, 50).map { it.source.id })
         assertEquals(listOf("a", "b"), cache.search(listOf("water"), ArchiveView.ARCHIVE, null, null, null, 50).map { it.source.id })
         assertEquals(listOf("q"), cache.search(listOf("water"), ArchiveView.QUARANTINE, null, null, null, 50).map { it.source.id })
         // LIKE wildcards in owner text are literal.
