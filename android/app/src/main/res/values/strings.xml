@@ -248,4 +248,70 @@
     <string name="wait_note">Note</string>
     <string name="wait_party">Who you\'re waiting on</string>
     <string name="wait_title">Waiting on someone</string>
+
+    <string name="briefing_open">Today\'s briefing</string>
+    <string name="briefing_title">Briefing</string>
+    <string name="briefing_loading">Loading the briefing…</string>
+    <string name="briefing_since">Since your last review on %1$s</string>
+    <string name="briefing_first">Everything waiting since you started using Adminifender</string>
+    <plurals name="briefing_new_mail">
+        <item quantity="one">%d new email arrived</item>
+        <item quantity="other">%d new emails arrived</item>
+    </plurals>
+    <string name="briefing_new">New</string>
+    <string name="briefing_changed">Changed</string>
+    <string name="briefing_overdue">Overdue</string>
+    <string name="briefing_unacknowledged">Not yet acknowledged</string>
+    <string name="briefing_none">Nothing here.</string>
+    <string name="briefing_mark_reviewed">Mark reviewed</string>
+    <string name="briefing_mark_note">Marks this briefing as seen. It does not acknowledge or resolve any item.</string>
+    <string name="briefing_reviewed">Marked reviewed.</string>
+    <string name="online_offline">The server can\'t be reached right now.</string>
+    <string name="online_sign_in">Sign in again to continue.</string>
+    <string name="online_refused">The server did not accept this.</string>
+    <string name="review_preparing">Preparing the exact change for your review…</string>
+    <plurals name="review_delete_sources">
+        <item quantity="one">Permanently delete %d email:</item>
+        <item quantity="other">Permanently delete %d emails:</item>
+    </plurals>
+    <plurals name="review_delete_attachments">
+        <item quantity="one">%d attachment and its extracted text</item>
+        <item quantity="other">%d attachments and their extracted text</item>
+    </plurals>
+    <plurals name="review_delete_erased">
+        <item quantity="one">%d item with no other evidence will be erased</item>
+        <item quantity="other">%d items with no other evidence will be erased</item>
+    </plurals>
+    <plurals name="review_delete_detached">
+        <item quantity="one">%d item keeps its other evidence</item>
+        <item quantity="other">%d items keep their other evidence</item>
+    </plurals>
+    <string name="review_delete_derived">Also removed: archive text, search index, raw message, triage results and exports that include it.</string>
+    <string name="review_delete_permanent">This can\'t be undone. A content-free record keeps it deleted after a restore.</string>
+    <string name="review_revoke">Sign out %1$s and revoke its access.</string>
+    <string name="review_revoke_current">This is the phone you are using; it will need to sign in again.</string>
+    <string name="review_unreadable">The change could not be shown, so it can\'t be confirmed.</string>
+    <string name="review_expires">This review expires at %1$s.</string>
+    <string name="review_confirm">Confirm with passkey</string>
+    <string name="review_done">Done. The server confirmed the change.</string>
+    <string name="review_close">Close</string>
+    <string name="review_again">Something changed since this review. Review it again; nothing was changed.</string>
+    <string name="review_passkey_cancelled">Passkey confirmation was cancelled; nothing was changed.</string>
+    <string name="review_unknown">No answer arrived, so it is not known whether the change happened. Confirming again is safe.</string>
+    <string name="source_delete">Delete from archive…</string>
+    <string name="attachment_save">Save…</string>
+    <string name="save_done">Saved where you chose.</string>
+    <string name="save_failed">Saving failed; nothing was kept on this phone.</string>
+    <string name="save_expired">That file is no longer available.</string>
+    <string name="settings_devices">Devices</string>
+    <string name="device_this_phone">(this phone)</string>
+    <string name="device_last_seen">Last seen %1$s</string>
+    <string name="device_revoke">Revoke…</string>
+    <string name="settings_export">Archive export</string>
+    <string name="export_note">A ZIP of every email, attachment and record with a checksum manifest, for your own offline copy. It is kept for 7 days.</string>
+    <string name="export_create">Create export</string>
+    <string name="export_preparing">Preparing the export on the server…</string>
+    <string name="export_ready">Ready until %1$s.</string>
+    <string name="export_save">Save export…</string>
+    <string name="export_state_ended">Last export: %1$s</string>
 </resources>

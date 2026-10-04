@@ -15,7 +15,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
 /** Attachment inventory entry; the bytes are downloaded separately and only on request. */
-data class AttachmentInfo(val id: String, val name: String, val declaredType: String?, val sizeBytes: Long, val extraction: String, val extractionDetail: String?)
+data class AttachmentInfo(val id: String, val name: String, val declaredType: String?, val sizeBytes: Long, val extraction: String, val extractionDetail: String?, val sha256: String? = null)
 
 /**
  * A source's body text and attachment inventory. [complete] is false when the body was longer than the phone keeps,
@@ -186,7 +186,7 @@ class ArchiveRepository(private val api: ArchiveApi, private val cache: ArchiveC
     }
 }
 
-fun AttachmentDto.toInfo() = AttachmentInfo(id, name, declaredType, sizeBytes, extraction, extractionDetail)
+fun AttachmentDto.toInfo() = AttachmentInfo(id, name, declaredType, sizeBytes, extraction, extractionDetail, sha256)
 
 /**
  * A short excerpt of [text] around the first matching term, marked with brackets like the server's snippets.

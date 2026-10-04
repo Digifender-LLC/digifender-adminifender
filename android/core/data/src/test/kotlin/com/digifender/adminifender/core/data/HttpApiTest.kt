@@ -12,6 +12,7 @@ import com.digifender.adminifender.core.model.ConcernAction
 import com.digifender.adminifender.core.model.SendResult
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.put
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
 import okhttp3.OkHttpClient
@@ -169,5 +170,27 @@ class HttpApiTest {
         val submit = server.takeRequest()
         assertEquals("/api/v1/device-work/$id/result", submit.target)
         assertEquals("""{"leaseToken":"lease","inputDigest":"d","policyRevision":4,"outputJson":"{}","modelManifestHash":"h"}""", submit.body?.utf8())
+    }
+
+    @Test
+    fun reviewsAreCreatedAndConfirmedWithTheirDigest() = runTest {
+        server.enqueue(json(200, """{"data":{"reviewId":"$id","effect":"archive.delete","params":{},"paramsDigest":"${"d".repeat(64)}","preconditions":{},"preview":{"expectedCount":1},"expiresAt":"2026-10-04T00:10:00.000Z","requiresRecentAuth":true}}"""))
+        server.enqueue(json(403, """{"error":{"code":"recent_auth_required","message":"m"}}"""))
+        val review = (api.createReview("00000000-0000-4000-8000-000000000001", "archive.delete", kotlinx.serialization.json.buildJsonObject { put("sourceIds", kotlinx.serialization.json.JsonArray(listOf(kotlinx.serialization.json.JsonPrimitive(id)))) }) as CallResult.Ok).value
+        assertEquals(CallResult.Refused("recent_auth_required"), api.confirmReview(review.reviewId, "00000000-0000-4000-8000-000000000002", review.paramsDigest))
+        assertEquals("""{"effect":"archive.delete","params":{"sourceIds":["$id"]}}""", server.takeRequest().body?.utf8())
+        assertEquals("""{"paramsDigest":"${"d".repeat(64)}"}""", server.takeRequest().body?.utf8())
+    }
+
+    @Test
+    fun aSavedAttachmentMustMatchItsHashAndSize() = runTest {
+        val bytes = "attachment".toByteArray()
+        val sha = java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+        repeat(3) { server.enqueue(MockResponse.Builder().code(200).body(okio.Buffer().write(bytes)).build()) }
+        val out = java.io.ByteArrayOutputStream()
+        assertEquals(com.digifender.adminifender.core.data.network.StreamResult.OK, api.saveAttachment(id, out, 100, sha))
+        assertEquals("attachment", out.toString())
+        assertEquals(com.digifender.adminifender.core.data.network.StreamResult.WRONG_HASH, api.saveAttachment(id, java.io.ByteArrayOutputStream(), 100, "0".repeat(64)))
+        assertEquals(com.digifender.adminifender.core.data.network.StreamResult.TOO_LARGE, api.saveAttachment(id, java.io.ByteArrayOutputStream(), 4, sha))
     }
 }

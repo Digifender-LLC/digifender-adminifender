@@ -55,6 +55,7 @@ fun SettingsScreen(
     onSignOut: () -> Unit,
     onNotificationsChanged: () -> Unit,
     model: ModelUi,
+    footer: @Composable () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var confirming by rememberSaveable { mutableStateOf(false) }
@@ -107,6 +108,7 @@ fun SettingsScreen(
         OutlinedButton(onClick = onSyncNow) { Text(stringResource(R.string.settings_sync_now)) }
         Text(stringResource(R.string.settings_sign_out_body), style = MaterialTheme.typography.bodyMedium)
         OutlinedButton(onClick = { confirming = true }) { Text(stringResource(R.string.settings_sign_out)) }
+        footer()
     }
     if (confirming) {
         // Unsynced edits are named before they are dropped (lld.md#sync).

@@ -4,6 +4,7 @@ import android.text.format.Formatter
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -31,6 +32,8 @@ fun SourceScreen(
     onOpenConcern: (String) -> Unit,
     onAsk: () -> Unit,
     onResume: (String) -> Unit,
+    onSaveAttachment: (AttachmentInfo) -> Unit,
+    footer: @Composable () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier.padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -79,7 +82,7 @@ fun SourceScreen(
 
             Text(stringResource(R.string.source_attachments), style = MaterialTheme.typography.titleMedium)
             if (text.attachments.isEmpty()) Text(stringResource(R.string.source_no_attachments))
-            text.attachments.forEach { AttachmentRow(it, onResume) }
+            text.attachments.forEach { AttachmentRow(it, onResume, onSaveAttachment) }
         }
 
         Text(stringResource(R.string.source_concerns), style = MaterialTheme.typography.titleMedium)
@@ -92,17 +95,22 @@ fun SourceScreen(
                 }
             }
         }
+        footer()
     }
 }
 
 @Composable
-private fun AttachmentRow(a: AttachmentInfo, onResume: (String) -> Unit) {
+private fun AttachmentRow(a: AttachmentInfo, onResume: (String) -> Unit, onSave: (AttachmentInfo) -> Unit) {
     val context = LocalContext.current
     val size = Formatter.formatShortFileSize(context, a.sizeBytes)
     Column {
         Text(a.name, style = MaterialTheme.typography.bodyMedium)
         Text(listOfNotNull(a.declaredType, size, extractionText(a.extraction, a.extractionDetail)).joinToString(" · "), style = MaterialTheme.typography.bodySmall)
-        if (a.extraction == "deferred" && a.extractionDetail == "pages_remaining") TextButton(onClick = { onResume(a.id) }) { Text(stringResource(R.string.extraction_resume)) }
+        Row {
+            // Saved only where the owner chooses; the file is checked against its stored hash first.
+            TextButton(onClick = { onSave(a) }) { Text(stringResource(R.string.attachment_save)) }
+            if (a.extraction == "deferred" && a.extractionDetail == "pages_remaining") TextButton(onClick = { onResume(a.id) }) { Text(stringResource(R.string.extraction_resume)) }
+        }
     }
 }
 

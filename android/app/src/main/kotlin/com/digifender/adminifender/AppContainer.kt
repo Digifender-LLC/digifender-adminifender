@@ -3,6 +3,13 @@ package com.digifender.adminifender
 import android.content.Context
 import android.os.Build
 import android.util.Base64
+import android.net.Uri
+import android.provider.DocumentsContract
+import com.digifender.adminifender.core.data.network.OwnerApi
+import com.digifender.adminifender.core.data.network.StreamResult
+import com.digifender.adminifender.core.data.repository.AttachmentInfo
+import com.digifender.adminifender.core.data.repository.ReviewFlow
+import com.digifender.adminifender.ui.SaveNote
 import com.digifender.adminifender.core.data.device.DeviceWorkRunner
 import com.digifender.adminifender.core.data.extraction.ExtractionRunner
 import com.digifender.adminifender.core.data.platform.DeviceWorkWorker
@@ -51,6 +58,8 @@ class AppContainer(context: Context) {
     val archive = ArchiveRepository(api, cache.archive, cache.source, clock)
     val push = HttpPushApi(http, baseUrl, session)
     val chat = ChatRepository(cache.chat, api, clock)
+    val owner: OwnerApi = api
+    val reviews = ReviewFlow(api, { passkeys -> session.confirmRecent(passkeys) })
 
     val probe = DeviceProbe(app)
     val models = ModelStore(app, BuildConfig.MODEL_MANIFEST_B64.takeIf { it.isNotEmpty() }?.let { String(Base64.decode(it, Base64.DEFAULT)) })
@@ -75,6 +84,27 @@ class AppContainer(context: Context) {
     fun runLocalChatNow() {
         if (models.state.value !is ModelState.Installed) return
         foregroundWork.launch { deviceWork.runOnce(WorkKind.INTERACTIVE) }
+    }
+
+    /** Writes an attachment to the owner's chosen document after checking its size and hash. */
+    suspend fun saveAttachment(target: Uri, a: AttachmentInfo): SaveNote {
+        // The hash comes from the server's source detail; text cached before it was kept must be downloaded again.
+        val sha = a.sha256 ?: return SaveNote.FAILED.also { withContext(Dispatchers.IO) { DocumentsContract.deleteDocument(app.contentResolver, target) } }
+        return writeTo(target) { out -> api.saveAttachment(a.id, out, a.sizeBytes, sha) }
+    }
+
+    suspend fun saveExport(target: Uri, exportId: String): SaveNote = writeTo(target) { out -> api.saveExport(exportId, out) }
+
+    private suspend fun writeTo(target: Uri, copy: suspend (java.io.OutputStream) -> StreamResult): SaveNote {
+        val result = withContext(Dispatchers.IO) {
+            app.contentResolver.openOutputStream(target, "wt")?.use { out -> copy(out) } ?: StreamResult.UNAVAILABLE
+        }
+        if (result != StreamResult.OK) withContext(Dispatchers.IO) { DocumentsContract.deleteDocument(app.contentResolver, target) }
+        return when (result) {
+            StreamResult.OK -> SaveNote.SAVED
+            StreamResult.GONE, StreamResult.EXPIRED -> SaveNote.EXPIRED
+            else -> SaveNote.FAILED
+        }
     }
 
     /** The owner's "Resume next pages"; the phone picks the work up on its next charging run. */

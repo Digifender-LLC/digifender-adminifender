@@ -16,6 +16,7 @@ import com.digifender.adminifender.core.model.Readiness
 import com.digifender.adminifender.core.model.SendResult
 import java.io.File
 import java.io.IOException
+import java.io.OutputStream
 import java.security.MessageDigest
 import java.time.Instant
 import kotlinx.coroutines.Dispatchers
@@ -54,7 +55,7 @@ const val MAX_RESPONSE_BYTES = 8L * 1024 * 1024
  * OkHttp adapter for [AdminifenderApi]. Error bodies are reduced to their fixed codes; nothing from a response is
  * logged.
  */
-class HttpApi(private val client: OkHttpClient, private val baseUrl: HttpUrl, private val tokens: AccessTokens) : AdminifenderApi, ArchiveApi, ChatApi, DeviceWorkApi, ExtractionApi {
+class HttpApi(private val client: OkHttpClient, private val baseUrl: HttpUrl, private val tokens: AccessTokens) : AdminifenderApi, ArchiveApi, ChatApi, DeviceWorkApi, ExtractionApi, OwnerApi {
     private val jsonType = "application/json; charset=utf-8".toMediaType()
 
     private fun url(path: String, query: Map<String, String?> = emptyMap()): HttpUrl {
@@ -287,6 +288,57 @@ class HttpApi(private val client: OkHttpClient, private val baseUrl: HttpUrl, pr
         }
     } catch (_: IOException) {
         DownloadResult.UNAVAILABLE
+    }
+
+    override suspend fun briefing() = read(url("briefings/current"), BriefingDto.serializer())
+
+    override suspend fun reviewBriefing(id: String, idempotencyKey: String) = postUnit("briefings/$id/review", idempotencyKey, JsonObject(emptyMap()))
+
+    override suspend fun devices() = read(url("devices"), DevicesDto.serializer())
+
+    override suspend fun createReview(idempotencyKey: String, effect: String, params: JsonObject) =
+        post("reviews", idempotencyKey, buildJsonObject { put("effect", effect); put("params", params) }, ReviewDto.serializer())
+
+    override suspend fun confirmReview(id: String, idempotencyKey: String, paramsDigest: String) =
+        post("reviews/$id/confirm", idempotencyKey, buildJsonObject { put("paramsDigest", paramsDigest) }, OperationDto.serializer())
+
+    override suspend fun createExport(idempotencyKey: String) = post("exports", idempotencyKey, JsonObject(emptyMap()), ExportDto.serializer())
+
+    override suspend fun export(id: String) = read(url("exports/$id"), ExportDto.serializer())
+
+    override suspend fun saveExport(id: String, out: OutputStream) = stream(url("exports/$id/content"), out, maxBytes = null, sha256 = null)
+
+    override suspend fun saveAttachment(id: String, out: OutputStream, maxBytes: Long, sha256: String) = stream(url("attachments/$id/content"), out, maxBytes, sha256)
+
+    /** Copies a binary response to [out] in blocks, with an optional size cap and SHA-256 check. */
+    private suspend fun stream(target: HttpUrl, out: OutputStream, maxBytes: Long?, sha256: String?): StreamResult = try {
+        val response = execute(Request.Builder().url(target).get()) ?: return StreamResult.SESSION_EXPIRED
+        response.use {
+            when {
+                it.code == 401 -> StreamResult.SESSION_EXPIRED
+                it.code == 404 -> StreamResult.GONE
+                it.code == 410 -> StreamResult.EXPIRED
+                !it.isSuccessful -> StreamResult.UNAVAILABLE
+                else -> withContext(Dispatchers.IO) {
+                    val digest = MessageDigest.getInstance("SHA-256")
+                    var total = 0L
+                    val buffer = ByteArray(1 shl 16)
+                    it.body.byteStream().use { input ->
+                        while (true) {
+                            val n = input.read(buffer)
+                            if (n < 0) break
+                            total += n
+                            if (maxBytes != null && total > maxBytes) return@withContext StreamResult.TOO_LARGE
+                            digest.update(buffer, 0, n)
+                            out.write(buffer, 0, n)
+                        }
+                    }
+                    if (sha256 == null || digest.digest().joinToString("") { b -> "%02x".format(b) } == sha256) StreamResult.OK else StreamResult.WRONG_HASH
+                }
+            }
+        }
+    } catch (_: IOException) {
+        StreamResult.UNAVAILABLE
     }
 
     companion object {

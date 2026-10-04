@@ -1,5 +1,10 @@
 package com.digifender.adminifender.ui
 
+import androidx.compose.material3.OutlinedButton
+import kotlinx.coroutines.CompletableDeferred
+import com.digifender.adminifender.core.data.session.PasskeyAuthenticator
+import com.digifender.adminifender.core.data.repository.AttachmentInfo
+import android.net.Uri
 import kotlinx.coroutines.launch
 import com.digifender.adminifender.inference.ModelState
 import com.digifender.adminifender.core.data.repository.ChatScope
@@ -51,6 +56,7 @@ internal sealed interface Route {
     data class ConcernRoute(val id: String) : Route
     data class SourceRoute(val id: String) : Route
     data class ChatRoute(val scope: ChatScope) : Route
+    data object BriefingRoute : Route
 }
 
 private val ROUTE_ID = Regex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
@@ -60,6 +66,7 @@ internal fun encode(stack: List<Route>) = stack.joinToString("|") {
         is Route.ConcernRoute -> "c:${it.id}"
         is Route.SourceRoute -> "s:${it.id}"
         is Route.ChatRoute -> "t:${it.scope.kind.wire}:${it.scope.id ?: ""}"
+        Route.BriefingRoute -> "b:"
     }
 }
 
@@ -70,6 +77,7 @@ internal fun decode(text: String): List<Route> = text.split("|").mapNotNull { en
         parts.size == 2 && parts[0] == "c" && ROUTE_ID.matches(parts[1]) -> Route.ConcernRoute(parts[1])
         parts.size == 2 && parts[0] == "s" && ROUTE_ID.matches(parts[1]) -> Route.SourceRoute(parts[1])
         parts == listOf("t", "all", "") -> Route.ChatRoute(ChatScope.ALL)
+        parts == listOf("b", "") -> Route.BriefingRoute
         parts.size == 3 && parts[0] == "t" && ROUTE_ID.matches(parts[2]) -> when (parts[1]) {
             "concern" -> Route.ChatRoute(ChatScope(ChatScope.Kind.CONCERN, parts[2]))
             "source" -> Route.ChatRoute(ChatScope(ChatScope.Kind.SOURCE, parts[2]))
@@ -87,14 +95,14 @@ fun AppRoot(container: AppContainer, activity: Activity, destination: MutableSta
         SessionState.Unknown -> Unit
         SessionState.SignedOut -> SignInScreen(session) { sessionModel.signIn(CredentialManagerPasskeys(activity)) }
         // Cached data stays readable while the server wants a fresh sign-in (FR-002).
-        SessionState.SignInRequired, is SessionState.SignedIn -> SignedIn(container, destination, needsSignIn = session.session == SessionState.SignInRequired, busy = session.busy) {
+        SessionState.SignInRequired, is SessionState.SignedIn -> SignedIn(container, destination, needsSignIn = session.session == SessionState.SignInRequired, busy = session.busy, passkeys = { CredentialManagerPasskeys(activity) }) {
             sessionModel.signIn(CredentialManagerPasskeys(activity))
         }
     }
 }
 
 @Composable
-private fun SignedIn(container: AppContainer, destination: MutableStateFlow<String?>, needsSignIn: Boolean, busy: Boolean, onSignIn: () -> Unit) {
+private fun SignedIn(container: AppContainer, destination: MutableStateFlow<String?>, needsSignIn: Boolean, busy: Boolean, passkeys: () -> PasskeyAuthenticator, onSignIn: () -> Unit) {
     // Same instance as in AppRoot: one SessionViewModel per activity.
     val sessionModel = viewModel { SessionViewModel(container.session, container::startSync, container::signOut) }
     val inboxModel = viewModel { InboxViewModel(container.concerns) }
@@ -122,13 +130,21 @@ private fun SignedIn(container: AppContainer, destination: MutableStateFlow<Stri
     val pickModel = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) scope.launch { if (container.models.install(uri) is ModelState.Installed) container.startSync() }
     }
+    // Attachments and exports are written only to a place the owner picks, never to shared storage by default.
+    var pendingAttachment by remember { mutableStateOf<AttachmentInfo?>(null) }
+    var saveNote by remember { mutableStateOf<SaveNote?>(null) }
+    val saveAttachment = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
+        val a = pendingAttachment
+        pendingAttachment = null
+        if (uri != null && a != null) scope.launch { saveNote = container.saveAttachment(uri, a) }
+    }
     val modelUi = ModelUi(modelState, { pickModel.launch(arrayOf("application/octet-stream", "*/*")) }, { scope.launch { container.models.remove() } })
     // A notification tap names a concern; the detail screen reads it from the cache like any other open.
     val target by destination.collectAsStateWithLifecycle()
     LaunchedEffect(target) {
         val t = target ?: return@LaunchedEffect
         tab = Tab.INBOX
-        saved = if (t == BRIEFING_DESTINATION) "" else encode(listOf(Route.ConcernRoute(t)))
+        saved = encode(listOf(if (t == BRIEFING_DESTINATION) Route.BriefingRoute else Route.ConcernRoute(t)))
         destination.value = null
     }
 
@@ -192,14 +208,39 @@ private fun SignedIn(container: AppContainer, destination: MutableStateFlow<Stri
                         { open(Route.ConcernRoute(it)) },
                         { open(Route.ChatRoute(ChatScope(ChatScope.Kind.SOURCE, id))) },
                         { attachment -> scope.launch { container.resumeExtraction(attachment) }.invokeOnCompletion { sourceModel.download() } },
+                        { a ->
+                            pendingAttachment = a
+                            saveAttachment.launch(a.name)
+                        },
+                        footer = {
+                            val reviewModel = viewModel(key = "review-source-$id") { ReviewViewModel(container.reviews) }
+                            val review by reviewModel.state.collectAsStateWithLifecycle()
+                            saveNote?.let {
+                                Text(stringResource(when (it) { SaveNote.SAVED -> R.string.save_done; SaveNote.FAILED -> R.string.save_failed; SaveNote.EXPIRED -> R.string.save_expired }))
+                            }
+                            if (review is ReviewUiState.Idle) OutlinedButton(onClick = { reviewModel.deleteSource(id) }) { Text(stringResource(R.string.source_delete)) }
+                            ReviewPanel(review, { reviewModel.confirm(passkeys()) }, reviewModel::dismiss) {
+                                reviewModel.dismiss()
+                                back()
+                            }
+                        },
                     )
+                }
+                Route.BriefingRoute -> {
+                    val briefingModel = viewModel { BriefingViewModel(container.owner) }
+                    val briefing by briefingModel.state.collectAsStateWithLifecycle()
+                    TextButton(onClick = ::back, modifier = Modifier.padding(horizontal = 8.dp)) { Text(stringResource(R.string.back)) }
+                    BriefingScreen(briefing, briefingModel::load, briefingModel::markReviewed, { open(Route.ConcernRoute(it)) })
                 }
                 is Route.ChatRoute -> {
                     TextButton(onClick = ::back, modifier = Modifier.padding(horizontal = 8.dp)) { Text(stringResource(R.string.back)) }
                     Chat(container, route.scope) { open(Route.SourceRoute(it)) }
                 }
                 null -> when (tab) {
-                    Tab.INBOX -> InboxScreen(inbox, now, inboxModel::select, inboxModel::refresh, { open(Route.ConcernRoute(it)) })
+                    Tab.INBOX -> Column {
+                        TextButton(onClick = { open(Route.BriefingRoute) }, modifier = Modifier.padding(horizontal = 8.dp)) { Text(stringResource(R.string.briefing_open)) }
+                        InboxScreen(inbox, now, inboxModel::select, inboxModel::refresh, { open(Route.ConcernRoute(it)) })
+                    }
                     Tab.ARCHIVE -> {
                         val archiveModel = viewModel { ArchiveViewModel(container.archive, container.clock) }
                         val archive by archiveModel.state.collectAsStateWithLifecycle()
@@ -221,7 +262,9 @@ private fun SignedIn(container: AppContainer, destination: MutableStateFlow<Stri
                         )
                     }
                     Tab.CHAT -> Chat(container, ChatScope.ALL) { open(Route.SourceRoute(it)) }
-                    Tab.SETTINGS -> SettingsScreen(inbox.freshness, now, inboxModel::refresh, sessionModel::signOut, onNotificationsChanged = { PushRegistrationWorker.enqueue(context) }, model = modelUi)
+                    Tab.SETTINGS -> SettingsScreen(inbox.freshness, now, inboxModel::refresh, sessionModel::signOut, onNotificationsChanged = { PushRegistrationWorker.enqueue(context) }, model = modelUi, footer = {
+                        OwnerSettings(container, passkeys)
+                    })
                 }
             }
         }
@@ -233,4 +276,33 @@ private fun Chat(container: AppContainer, scope: ChatScope, onSource: (String) -
     val chatModel = viewModel(key = "chat-${scope.kind.wire}-${scope.id}") { ChatViewModel(scope, container.chat, container::runLocalChatNow) }
     val chat by chatModel.state.collectAsStateWithLifecycle()
     ChatScreen(chat, chatModel::open, chatModel::ask, chatModel::resend, chatModel::checkAgain, chatModel::cancel, onSource)
+}
+
+@Composable
+private fun OwnerSettings(container: AppContainer, passkeys: () -> PasskeyAuthenticator) {
+    val scope = rememberCoroutineScope()
+    var pendingExport by remember { mutableStateOf<CompletableDeferred<Uri?>?>(null) }
+    val saveExport = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri -> pendingExport?.complete(uri) }
+    val ownerModel = viewModel {
+        OwnerSettingsViewModel(container.owner) { id ->
+            val chosen = CompletableDeferred<Uri?>().also { pendingExport = it }
+            saveExport.launch("adminifender-export.zip")
+            chosen.await()?.let { container.saveExport(it, id) } ?: SaveNote.FAILED
+        }
+    }
+    val owner by ownerModel.state.collectAsStateWithLifecycle()
+    val reviewModel = viewModel(key = "review-devices") { ReviewViewModel(container.reviews) }
+    val review by reviewModel.state.collectAsStateWithLifecycle()
+    OwnerSettingsSection(
+        owner,
+        review,
+        onRevoke = reviewModel::revokeDevice,
+        onConfirm = { reviewModel.confirm(passkeys()) },
+        onDismiss = {
+            reviewModel.dismiss()
+            scope.launch { ownerModel.loadDevices() }
+        },
+        onExport = ownerModel::createExport,
+        onSaveExport = ownerModel::saveExport,
+    )
 }
