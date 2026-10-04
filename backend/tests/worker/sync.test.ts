@@ -2,6 +2,7 @@ import { env } from 'cloudflare:workers';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { CHANGE_RETENTION_MS, pruneChanges } from '../../src/sync/retention';
 import { SNAPSHOT_TTL_MS } from '../../src/sync/routes';
+import fixture from '../../../contracts/fixtures/v1/sync-changes/valid/concern-source-tombstone.json';
 import { T0, api, enrollOwner } from './support';
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -101,5 +102,41 @@ describe('retention', () => {
     await env.CONTROL_DB.prepare('UPDATE sync_snapshots SET expires_at = ?').bind(T0).run();
     expect(await pruneChanges(env.CONTROL_DB, T0)).toEqual({ superseded: 1, tombstones: 0 });
     expect(await seqs()).toEqual(['a@2']);
+  });
+});
+
+describe('source projections', () => {
+  it('publishes the same list fields a later source change carries', async () => {
+    const { ingest } = await import('./support');
+    const id = await ingest('From: Billing <billing@vendor.example>\r\nTo: inbox@adminifender.example\r\nSubject: Invoice 42\r\n\r\nAmount due.\r\n');
+    const feed = await api('GET', '/sync/changes?after=0', { token });
+    const published = feed.body.data.changes.find((c: { entityType: string; entityId: string }) => c.entityType === 'source' && c.entityId === id);
+    expect(published.projection).toEqual({
+      id,
+      kind: 'email',
+      state: 'ready',
+      admission: 'normal',
+      privacy: 'hybrid',
+      revision: 2,
+      receivedAt: new Date(T0).toISOString(),
+      subject: 'Invoice 42',
+      from: ['billing@vendor.example'],
+      to: ['inbox@adminifender.example'],
+    });
+    const quarantined = await api('POST', `/sources/${id}/quarantine`, { token, key: '00000000-0000-4000-8000-00000000a001', body: { expectedRevision: 2 } });
+    expect(quarantined.status).toBe(200);
+    const later = (await api('GET', `/sync/changes?after=${feed.body.data.throughSeq}`, { token })).body.data.changes.find((c: { entityType: string }) => c.entityType === 'source');
+    expect(Object.keys(later.projection).sort()).toEqual(Object.keys(published.projection).sort());
+  });
+
+  it('matches the shared sync-changes fixture the phone parses', async () => {
+    const { ingest, runPending } = await import('./support');
+    await ingest('From: billing@vendor.example\r\nTo: inbox@adminifender.example\r\nSubject: Invoice 42\r\n\r\nAmount due.\r\n');
+    expect(await runPending('triage')).toEqual(['complete']);
+    const page = (await api('GET', '/sync/changes?after=0', { token })).body.data;
+    const keysOf = (type: string, changes: { entityType: string; projection: object | null }[]) => Object.keys(changes.find((c) => c.entityType === type)!.projection!).sort();
+    expect(Object.keys(page).sort()).toEqual(Object.keys(fixture).sort());
+    expect(Object.keys(page.changes[0]).sort()).toEqual(Object.keys(fixture.changes[0]!).sort());
+    for (const type of ['source', 'concern']) expect(keysOf(type, page.changes)).toEqual(keysOf(type, fixture.changes));
   });
 });

@@ -153,7 +153,19 @@ export async function parseJob(job: ClaimedJob, env: Env, now: number): Promise<
   // 3. Control publication, fenced by the claim: ready pointer, admission, change record, attachment state.
   const admissionValue = verdict.quarantine ? 'quarantine' : 'normal';
   const control = env.CONTROL_DB;
-  const projection = JSON.stringify({ id: sourceId, kind: 'email', state: 'ready', admission: admissionValue, privacy: source.privacy, partitionId: partition.id, receivedAt: new Date(source.received_at).toISOString(), revision: source.revision + 1 });
+  // Same shape as every later source projection (sourceProjection), so a synced phone has the list fields from the start.
+  const projection = JSON.stringify({
+    id: sourceId,
+    kind: 'email',
+    state: 'ready',
+    admission: admissionValue,
+    privacy: source.privacy,
+    revision: source.revision + 1,
+    receivedAt: new Date(source.received_at).toISOString(),
+    subject: normalized.subject,
+    from: normalized.envelope.from,
+    to: normalized.envelope.to,
+  });
   return {
     kind: 'complete',
     output: { partitionId: partition.id, admission: admissionValue, manifestHash },

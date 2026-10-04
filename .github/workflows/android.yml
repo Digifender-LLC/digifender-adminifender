@@ -30,7 +30,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v5
         with:
           validate-wrappers: true
-      - name: Domain JVM tests
-        run: ./gradlew --no-daemon :core:model:test
+      - name: Domain and data JVM tests
+        run: ./gradlew --no-daemon :core:model:test :core:data:testDebugUnitTest
       - name: Compile, lint and unsigned release build
-        run: ./gradlew --no-daemon :app:assembleDebug :app:lintDebug :app:assembleRelease
+        run: ./gradlew --no-daemon :core:data:lintDebug :core:data:assembleDebugAndroidTest :app:assembleDebug :app:lintDebug :app:assembleRelease
