@@ -21,6 +21,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.digifender.adminifender.R
+import com.digifender.adminifender.ui.theme.LedgerCard
 import com.digifender.adminifender.core.data.repository.ConcernView
 import com.digifender.adminifender.core.data.repository.InboxFilter
 
@@ -67,18 +68,18 @@ private fun filterText(f: InboxFilter) = stringResource(
 @Composable
 private fun ConcernCard(view: ConcernView, onOpen: (String) -> Unit) {
     val c = view.shown
-    Card(Modifier.fillMaxWidth().clickable(role = Role.Button) { onOpen(c.id) }) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Card(Modifier.fillMaxWidth().clickable(role = Role.Button) { onOpen(c.id) }, colors = LedgerCard.colors(), border = LedgerCard.border) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(c.title, style = MaterialTheme.typography.titleMedium)
+            itemStatus(c, System.currentTimeMillis())?.let { StatusPill(it) }
             // State is spelled out in words, never by color alone (NFR-006).
             val labels = buildList {
                 add(importanceText(c.importance))
                 if (c.readAtMs == null) add(stringResource(R.string.label_unread))
-                c.due?.atMs?.let { add(stringResource(R.string.label_due, dateTime(it))) }
                 if (view.pending > 0) add(stringResource(R.string.label_pending))
                 if (view.conflicts.isNotEmpty() || view.failed.isNotEmpty()) add(pluralStringResource(R.plurals.needs_owner, view.conflicts.size + view.failed.size, view.conflicts.size + view.failed.size))
             }
-            Text(labels.joinToString(" · "), style = MaterialTheme.typography.bodyMedium)
+            Text(labels.joinToString(" · "), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

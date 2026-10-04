@@ -59,6 +59,9 @@
     <string name="label_unread">Unread</string>
     <string name="label_pending">Not sent yet</string>
     <string name="label_due">Due %1$s</string>
+    <string name="status_overdue">Overdue since %1$s</string>
+    <string name="status_waiting_on">Waiting on %1$s</string>
+    <string name="status_done">Done</string>
     <string name="label_snoozed_until">Snoozed until %1$s</string>
     <string name="label_waiting_on">Waiting on %1$s</string>
     <string name="label_acknowledged">Acknowledged</string>
