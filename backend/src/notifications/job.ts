@@ -117,7 +117,15 @@ export async function notifyJob(job: ClaimedJob, env: Env, now: number): Promise
   const sender = pushSender(env);
   if (!sender) return settle('failed', 'push_unavailable');
   const { results: devices } = await db
-    .prepare("SELECT id, fcm_token_cipher, push_updated_at FROM devices WHERE revoked_at IS NULL AND fcm_token_cipher IS NOT NULL AND push_permission = 'granted' AND push_invalid_at IS NULL ORDER BY id")
+    .prepare(
+      // A signed-out device keeps its registration row but has no live session, so it receives nothing.
+      `SELECT id, fcm_token_cipher, push_updated_at FROM devices d
+       WHERE revoked_at IS NULL AND fcm_token_cipher IS NOT NULL AND push_permission = 'granted' AND push_invalid_at IS NULL
+         AND EXISTS (SELECT 1 FROM sessions s WHERE s.device_id = d.id AND s.revoked_at IS NULL AND s.consumed_at IS NULL AND s.refresh_expires > ?
+                     AND s.auth_epoch = (SELECT auth_epoch FROM owner))
+       ORDER BY id`,
+    )
+    .bind(now)
     .all<{ id: string; fcm_token_cipher: number[]; push_updated_at: number }>();
   if (devices.length === 0) return settle('failed', 'no_push_device');
 

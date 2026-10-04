@@ -3,6 +3,10 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+// Firebase config is per environment and never committed (AGENTS.md). Without it the app builds and runs with push
+// reported as unavailable; the owner adds app/google-services.json for the adminifend project to enable FCM.
+if (file("google-services.json").exists()) apply(plugin = libs.plugins.google.services.get().pluginId)
+
 android {
     namespace = "com.digifender.adminifender"
     compileSdk = 37
@@ -51,6 +55,9 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.coroutines.core)
     implementation(libs.lifecycle.runtime.compose)
+    implementation(libs.work.runtime)
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.messaging)
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
     implementation(libs.compose.material3)

@@ -1,5 +1,4 @@
 import type { PushMessage, PushOutcome, PushSender } from './push';
-import { PUSH_TEXT, PUSH_TITLE } from './push';
 
 /**
  * Firebase Cloud Messaging HTTP v1 adapter. The service-account key stays in a Worker secret and is used only
@@ -59,14 +58,16 @@ async function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
   }
 }
 
-/** FCM v1 request body: data-only identity plus generic display text, collapsed on the device by event ID. */
+/**
+ * FCM v1 request body: a data-only message with identity fields, collapsed by event ID. The app posts the generic
+ * text itself on the right channel, so a signed-out phone can stay silent and no provider-drawn copy exists.
+ */
 export function fcmMessage(token: string, message: PushMessage) {
   return {
     message: {
       token,
       data: { eventId: message.eventId, kind: message.kind, destinationId: message.destinationId },
-      notification: { title: PUSH_TITLE, body: PUSH_TEXT },
-      android: { priority: message.critical ? 'high' : 'normal', ttl: `${message.ttlSeconds}s`, collapse_key: message.eventId, notification: { tag: message.eventId } },
+      android: { priority: message.critical ? 'high' : 'normal', ttl: `${message.ttlSeconds}s`, collapse_key: message.eventId },
     },
   };
 }

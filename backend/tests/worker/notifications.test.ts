@@ -154,6 +154,18 @@ describe('delivery failures', () => {
     expect((await events(T0 + MIN))[0]).toMatchObject({ state: 'failed', reason: 'push_unavailable' });
   });
 
+  it('sends nothing to a device that signed out', async () => {
+    await register();
+    expect((await api('POST', '/auth/logout', { token })).status).toBe(200);
+    await triaged(mail({ subject: 'Outage' }));
+    const { push, sends } = fakePush();
+    expect(await notify(T0, push)).toEqual(['complete']);
+    expect(sends).toHaveLength(0);
+    // The session is gone, so read the outcome from the database rather than the API.
+    const row = await env.CONTROL_DB.prepare("SELECT state, reason FROM notification_events WHERE kind = 'critical'").first();
+    expect(row).toEqual({ state: 'failed', reason: 'no_push_device' });
+  });
+
   it('disables an invalid token until the phone registers a rotated one', async () => {
     await register();
     await triaged(mail({ subject: 'Outage' }));
