@@ -29,6 +29,9 @@ interface ConcernDao {
 
     @Query("SELECT * FROM concerns WHERE id = :id")
     fun observe(id: String): Flow<ConcernEntity?>
+
+    @Query("SELECT * FROM concerns")
+    fun observeAll(): Flow<List<ConcernEntity>>
 }
 
 @Dao
@@ -74,6 +77,9 @@ interface MutationDao {
 interface SyncStateDao {
     @Query("SELECT * FROM sync_state WHERE id = 0")
     suspend fun get(): SyncStateEntity?
+
+    @Query("SELECT * FROM sync_state WHERE id = 0")
+    fun observe(): Flow<SyncStateEntity?>
 
     @Upsert
     suspend fun put(row: SyncStateEntity)
