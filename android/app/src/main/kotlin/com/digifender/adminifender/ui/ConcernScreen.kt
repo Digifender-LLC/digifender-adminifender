@@ -11,10 +11,20 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -25,6 +35,8 @@ import com.digifender.adminifender.core.data.repository.ConcernView
 import com.digifender.adminifender.core.data.sync.QueuedMutation
 import com.digifender.adminifender.core.model.ActionKind
 import com.digifender.adminifender.core.model.ConcernAction
+import com.digifender.adminifender.core.model.availableActions
+import java.time.LocalDate
 import java.time.ZoneId
 
 @Composable
@@ -36,6 +48,7 @@ fun ConcernScreen(
     onDiscard: (String) -> Unit,
     sources: List<SourceSummary>,
     onOpenSource: (String) -> Unit,
+    onAsk: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val view = state.view
@@ -70,6 +83,11 @@ fun ConcernScreen(
                 OutlinedButton(onClick = { onAct(action) }) { Text(stringResource(label)) }
             }
         }
+        val actions = availableActions(c.status)
+        if (ActionKind.WAIT in actions) WaitForm(c.waiting?.awaitedParty, c.waiting?.note) { party, note, days -> onAct(waitAction(party, note, days, nowMs, ZoneId.systemDefault())) }
+        if (ActionKind.SET_DUE in actions) DueForm(hasDue = c.due?.atMs != null) { date -> onAct(dueAction(date, ZoneId.systemDefault())) }
+        // Chat about this item uses only its own mail (FR-025).
+        if (c.sourceIds.isNotEmpty()) OutlinedButton(onClick = onAsk) { Text(stringResource(R.string.ask_about_concern)) }
 
         if (c.sourceIds.isNotEmpty()) {
             Text(stringResource(R.string.concern_sources), style = MaterialTheme.typography.titleMedium)
@@ -79,6 +97,67 @@ fun ConcernScreen(
                 val source = byId[id]
                 if (source != null) SourceCard(source, onOpenSource) else Text(stringResource(R.string.concern_source_not_cached), style = MaterialTheme.typography.bodySmall)
             }
+        }
+    }
+}
+
+@Composable
+private fun WaitForm(party: String?, note: String?, onSave: (String, String, Int?) -> Unit) {
+    var open by rememberSaveable { mutableStateOf(false) }
+    if (!open) {
+        OutlinedButton(onClick = { open = true }) { Text(stringResource(R.string.action_wait)) }
+        return
+    }
+    var partyText by rememberSaveable { mutableStateOf(party.orEmpty()) }
+    var noteText by rememberSaveable { mutableStateOf(note.orEmpty()) }
+    var days by rememberSaveable { mutableStateOf<Int?>(FOLLOW_UP_DAYS[2]) }
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(stringResource(R.string.wait_title), style = MaterialTheme.typography.titleSmall)
+            OutlinedTextField(partyText, { partyText = it.take(AWAITED_PARTY_MAX) }, label = { Text(stringResource(R.string.wait_party)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(noteText, { noteText = it.take(WAIT_NOTE_MAX) }, label = { Text(stringResource(R.string.wait_note)) }, modifier = Modifier.fillMaxWidth())
+            Text(stringResource(R.string.wait_follow_up), style = MaterialTheme.typography.labelLarge)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FOLLOW_UP_DAYS.forEach { d ->
+                    FilterChip(
+                        selected = days == d,
+                        onClick = { days = d },
+                        label = { Text(if (d == null) stringResource(R.string.wait_no_follow_up) else pluralStringResource(R.plurals.wait_days, d, d)) },
+                    )
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = {
+                    onSave(partyText, noteText, days)
+                    open = false
+                }) { Text(stringResource(R.string.save)) }
+                TextButton(onClick = { open = false }) { Text(stringResource(R.string.cancel)) }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DueForm(hasDue: Boolean, onSet: (LocalDate?) -> Unit) {
+    var picking by rememberSaveable { mutableStateOf(false) }
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedButton(onClick = { picking = true }) { Text(stringResource(if (hasDue) R.string.due_change else R.string.due_set)) }
+        if (hasDue) TextButton(onClick = { onSet(null) }) { Text(stringResource(R.string.due_clear)) }
+    }
+    if (picking) {
+        val picker = rememberDatePickerState()
+        DatePickerDialog(
+            onDismissRequest = { picking = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    picker.selectedDateMillis?.let { onSet(pickedDate(it)) }
+                    picking = false
+                }, enabled = picker.selectedDateMillis != null) { Text(stringResource(R.string.save)) }
+            },
+            dismissButton = { TextButton(onClick = { picking = false }) { Text(stringResource(R.string.cancel)) } },
+        ) {
+            DatePicker(state = picker, title = { Text(stringResource(R.string.due_picker_title), Modifier.padding(16.dp)) })
         }
     }
 }

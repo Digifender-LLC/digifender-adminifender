@@ -1,5 +1,11 @@
 package com.digifender.adminifender.ui
 
+import kotlinx.coroutines.launch
+import com.digifender.adminifender.inference.ModelState
+import com.digifender.adminifender.core.data.repository.ChatScope
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.compose.rememberLauncherForActivityResult
 import android.app.Activity
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Column
@@ -38,19 +44,40 @@ import kotlinx.coroutines.flow.MutableStateFlow
 
 private const val CLOCK_TICK_MS = 30_000L
 
-private enum class Tab { INBOX, ARCHIVE, SETTINGS }
+private enum class Tab { INBOX, ARCHIVE, CHAT, SETTINGS }
 
 /** One open detail screen. The stack is saved as text: only IDs, never content (lld.md#android). */
-private sealed interface Route {
-    val id: String
-
-    data class ConcernRoute(override val id: String) : Route
-    data class SourceRoute(override val id: String) : Route
+internal sealed interface Route {
+    data class ConcernRoute(val id: String) : Route
+    data class SourceRoute(val id: String) : Route
+    data class ChatRoute(val scope: ChatScope) : Route
 }
 
-private fun encode(stack: List<Route>) = stack.joinToString("|") { (if (it is Route.ConcernRoute) "c:" else "s:") + it.id }
+private val ROUTE_ID = Regex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 
-private fun decode(text: String): List<Route> = text.split("|").filter { it.length > 2 }.map { if (it.startsWith("c:")) Route.ConcernRoute(it.drop(2)) else Route.SourceRoute(it.drop(2)) }
+internal fun encode(stack: List<Route>) = stack.joinToString("|") {
+    when (it) {
+        is Route.ConcernRoute -> "c:${it.id}"
+        is Route.SourceRoute -> "s:${it.id}"
+        is Route.ChatRoute -> "t:${it.scope.kind.wire}:${it.scope.id ?: ""}"
+    }
+}
+
+/** Restores a saved stack; anything that is not a known kind with a well-formed ID is dropped. */
+internal fun decode(text: String): List<Route> = text.split("|").mapNotNull { entry ->
+    val parts = entry.split(":")
+    when {
+        parts.size == 2 && parts[0] == "c" && ROUTE_ID.matches(parts[1]) -> Route.ConcernRoute(parts[1])
+        parts.size == 2 && parts[0] == "s" && ROUTE_ID.matches(parts[1]) -> Route.SourceRoute(parts[1])
+        parts == listOf("t", "all", "") -> Route.ChatRoute(ChatScope.ALL)
+        parts.size == 3 && parts[0] == "t" && ROUTE_ID.matches(parts[2]) -> when (parts[1]) {
+            "concern" -> Route.ChatRoute(ChatScope(ChatScope.Kind.CONCERN, parts[2]))
+            "source" -> Route.ChatRoute(ChatScope(ChatScope.Kind.SOURCE, parts[2]))
+            else -> null
+        }
+        else -> null
+    }
+}
 
 @Composable
 fun AppRoot(container: AppContainer, activity: Activity, destination: MutableStateFlow<String?>) {
@@ -90,6 +117,12 @@ private fun SignedIn(container: AppContainer, destination: MutableStateFlow<Stri
         }
     }
     BackHandler(enabled = stack.isNotEmpty()) { back() }
+    val scope = rememberCoroutineScope()
+    val modelState by container.models.state.collectAsStateWithLifecycle()
+    val pickModel = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) scope.launch { if (container.models.install(uri) is ModelState.Installed) container.startSync() }
+    }
+    val modelUi = ModelUi(modelState, { pickModel.launch(arrayOf("application/octet-stream", "*/*")) }, { scope.launch { container.models.remove() } })
     // A notification tap names a concern; the detail screen reads it from the cache like any other open.
     val target by destination.collectAsStateWithLifecycle()
     LaunchedEffect(target) {
@@ -106,6 +139,7 @@ private fun SignedIn(container: AppContainer, destination: MutableStateFlow<Stri
                 NavigationBar {
                     NavigationBarItem(selected = tab == Tab.INBOX, onClick = { tab = Tab.INBOX }, icon = {}, label = { Text(stringResource(R.string.nav_inbox)) })
                     NavigationBarItem(selected = tab == Tab.ARCHIVE, onClick = { tab = Tab.ARCHIVE }, icon = {}, label = { Text(stringResource(R.string.nav_archive)) })
+                    NavigationBarItem(selected = tab == Tab.CHAT, onClick = { tab = Tab.CHAT }, icon = {}, label = { Text(stringResource(R.string.nav_chat)) })
                     NavigationBarItem(selected = tab == Tab.SETTINGS, onClick = { tab = Tab.SETTINGS }, icon = {}, label = { Text(stringResource(R.string.nav_settings)) })
                 }
             }
@@ -143,7 +177,7 @@ private fun SignedIn(container: AppContainer, destination: MutableStateFlow<Stri
                             modifier = Modifier.padding(horizontal = 16.dp),
                         )
                     }
-                    ConcernScreen(concern, now, concernModel::act, concernModel::reapply, concernModel::discard, sources, { open(Route.SourceRoute(it)) })
+                    ConcernScreen(concern, now, concernModel::act, concernModel::reapply, concernModel::discard, sources, { open(Route.SourceRoute(it)) }, { open(Route.ChatRoute(ChatScope(ChatScope.Kind.CONCERN, id))) })
                 }
                 is Route.SourceRoute -> {
                     val id = route.id
@@ -151,7 +185,18 @@ private fun SignedIn(container: AppContainer, destination: MutableStateFlow<Stri
                     val source by sourceModel.state.collectAsStateWithLifecycle()
                     val busy by sourceModel.busy.collectAsStateWithLifecycle()
                     TextButton(onClick = ::back, modifier = Modifier.padding(horizontal = 8.dp)) { Text(stringResource(R.string.back)) }
-                    SourceScreen(source, busy, sourceModel::download, { open(Route.ConcernRoute(it)) })
+                    SourceScreen(
+                        source,
+                        busy,
+                        sourceModel::download,
+                        { open(Route.ConcernRoute(it)) },
+                        { open(Route.ChatRoute(ChatScope(ChatScope.Kind.SOURCE, id))) },
+                        { attachment -> scope.launch { container.resumeExtraction(attachment) }.invokeOnCompletion { sourceModel.download() } },
+                    )
+                }
+                is Route.ChatRoute -> {
+                    TextButton(onClick = ::back, modifier = Modifier.padding(horizontal = 8.dp)) { Text(stringResource(R.string.back)) }
+                    Chat(container, route.scope) { open(Route.SourceRoute(it)) }
                 }
                 null -> when (tab) {
                     Tab.INBOX -> InboxScreen(inbox, now, inboxModel::select, inboxModel::refresh, { open(Route.ConcernRoute(it)) })
@@ -175,9 +220,17 @@ private fun SignedIn(container: AppContainer, destination: MutableStateFlow<Stri
                             onOpen = { open(Route.SourceRoute(it)) },
                         )
                     }
-                    Tab.SETTINGS -> SettingsScreen(inbox.freshness, now, inboxModel::refresh, sessionModel::signOut, onNotificationsChanged = { PushRegistrationWorker.enqueue(context) })
+                    Tab.CHAT -> Chat(container, ChatScope.ALL) { open(Route.SourceRoute(it)) }
+                    Tab.SETTINGS -> SettingsScreen(inbox.freshness, now, inboxModel::refresh, sessionModel::signOut, onNotificationsChanged = { PushRegistrationWorker.enqueue(context) }, model = modelUi)
                 }
             }
         }
     }
+}
+
+@Composable
+private fun Chat(container: AppContainer, scope: ChatScope, onSource: (String) -> Unit) {
+    val chatModel = viewModel(key = "chat-${scope.kind.wire}-${scope.id}") { ChatViewModel(scope, container.chat, container::runLocalChatNow) }
+    val chat by chatModel.state.collectAsStateWithLifecycle()
+    ChatScreen(chat, chatModel::open, chatModel::ask, chatModel::resend, chatModel::checkAgain, chatModel::cancel, onSource)
 }

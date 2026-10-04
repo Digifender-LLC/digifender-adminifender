@@ -11,6 +11,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -23,7 +24,15 @@ import com.digifender.adminifender.R
 import com.digifender.adminifender.core.data.repository.AttachmentInfo
 
 @Composable
-fun SourceScreen(state: SourceUiState, busy: Boolean, onRetry: () -> Unit, onOpenConcern: (String) -> Unit, modifier: Modifier = Modifier) {
+fun SourceScreen(
+    state: SourceUiState,
+    busy: Boolean,
+    onRetry: () -> Unit,
+    onOpenConcern: (String) -> Unit,
+    onAsk: () -> Unit,
+    onResume: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Column(modifier.padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         val summary = state.summary
         if (state.status == TextStatus.GONE) {
@@ -42,6 +51,8 @@ fun SourceScreen(state: SourceUiState, busy: Boolean, onRetry: () -> Unit, onOpe
             if (summary.from.isNotEmpty()) Text(stringResource(R.string.source_from, summary.from.joinToString(", ")))
             Text(stringResource(R.string.source_received, dateTime(summary.receivedAtMs)), style = MaterialTheme.typography.labelLarge)
             Text(sourceLabels(summary), style = MaterialTheme.typography.bodySmall)
+            // Quarantined and no-AI mail never reaches chat (FR-005, FR-025).
+            if (!summary.quarantined && summary.privacy != "no_ai") OutlinedButton(onClick = onAsk) { Text(stringResource(R.string.ask_about_email)) }
         }
 
         Text(stringResource(R.string.source_text), style = MaterialTheme.typography.titleMedium)
@@ -68,7 +79,7 @@ fun SourceScreen(state: SourceUiState, busy: Boolean, onRetry: () -> Unit, onOpe
 
             Text(stringResource(R.string.source_attachments), style = MaterialTheme.typography.titleMedium)
             if (text.attachments.isEmpty()) Text(stringResource(R.string.source_no_attachments))
-            text.attachments.forEach { AttachmentRow(it) }
+            text.attachments.forEach { AttachmentRow(it, onResume) }
         }
 
         Text(stringResource(R.string.source_concerns), style = MaterialTheme.typography.titleMedium)
@@ -85,21 +96,28 @@ fun SourceScreen(state: SourceUiState, busy: Boolean, onRetry: () -> Unit, onOpe
 }
 
 @Composable
-private fun AttachmentRow(a: AttachmentInfo) {
+private fun AttachmentRow(a: AttachmentInfo, onResume: (String) -> Unit) {
     val context = LocalContext.current
     val size = Formatter.formatShortFileSize(context, a.sizeBytes)
     Column {
         Text(a.name, style = MaterialTheme.typography.bodyMedium)
-        Text(listOfNotNull(a.declaredType, size, extractionText(a.extraction)).joinToString(" · "), style = MaterialTheme.typography.bodySmall)
+        Text(listOfNotNull(a.declaredType, size, extractionText(a.extraction, a.extractionDetail)).joinToString(" · "), style = MaterialTheme.typography.bodySmall)
+        if (a.extraction == "deferred" && a.extractionDetail == "pages_remaining") TextButton(onClick = { onResume(a.id) }) { Text(stringResource(R.string.extraction_resume)) }
     }
 }
 
 @Composable
-private fun extractionText(state: String) = stringResource(
+private fun extractionText(state: String, detail: String?) = stringResource(
     when (state) {
         "ready" -> R.string.extraction_ready
-        "queued", "extracting", "deferred" -> R.string.extraction_pending
-        "unsupported" -> R.string.extraction_unsupported
+        "deferred" -> when (detail) {
+            "device_unavailable" -> R.string.extraction_waits_phone
+            "pages_remaining" -> R.string.extraction_pages_remaining
+            "resume_requested" -> R.string.extraction_resume_requested
+            else -> R.string.extraction_pending
+        }
+        "queued", "extracting" -> R.string.extraction_pending
+        "unsupported" -> if (detail == "encrypted") R.string.extraction_encrypted else R.string.extraction_unsupported
         "failed" -> R.string.extraction_failed
         else -> R.string.extraction_stored
     },
