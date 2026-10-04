@@ -4,7 +4,9 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.RawQuery
 import androidx.room.Upsert
+import androidx.sqlite.db.SupportSQLiteQuery
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -47,6 +49,48 @@ interface SourceDao {
 
     @Query("SELECT * FROM sources WHERE quarantined = :quarantined ORDER BY receivedAt DESC, id LIMIT :limit")
     fun observe(quarantined: Boolean, limit: Int): Flow<List<SourceEntity>>
+
+    @Query("SELECT * FROM sources WHERE id = :id")
+    fun observe(id: String): Flow<SourceEntity?>
+
+    @Query("SELECT * FROM sources WHERE id IN (:ids)")
+    fun observeIds(ids: List<String>): Flow<List<SourceEntity>>
+
+    @Query("SELECT revision FROM sources WHERE id = :id")
+    suspend fun revision(id: String): Int?
+
+    @Query("SELECT COUNT(*) FROM sources WHERE quarantined = :quarantined")
+    fun count(quarantined: Boolean): Flow<Int>
+
+    /** Cached-only search; built by `CachedSearch` with bound LIKE parameters only. */
+    @RawQuery(observedEntities = [SourceEntity::class, SourceTextEntity::class])
+    suspend fun search(query: SupportSQLiteQuery): List<CachedHit>
+}
+
+/** One cached search row: source metadata plus the cached body when the owner has opened it before. */
+data class CachedHit(
+    val id: String,
+    val revision: Int,
+    val state: String,
+    val quarantined: Boolean,
+    val privacy: String,
+    val receivedAt: Long,
+    val subject: String?,
+    val fromJson: String,
+    val text: String?,
+)
+
+@Dao
+interface SourceTextDao {
+    @Upsert
+    suspend fun put(row: SourceTextEntity)
+
+    @Query("SELECT * FROM source_texts WHERE sourceId = :id")
+    fun observe(id: String): Flow<SourceTextEntity?>
+
+    /** Drops text whose source is gone or has moved to another revision. */
+    @Query("DELETE FROM source_texts WHERE NOT EXISTS (SELECT 1 FROM sources s WHERE s.id = source_texts.sourceId AND s.revision = source_texts.revision)")
+    suspend fun pruneStale()
 }
 
 @Dao

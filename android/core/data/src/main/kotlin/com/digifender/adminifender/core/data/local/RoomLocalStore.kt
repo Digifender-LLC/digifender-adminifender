@@ -67,6 +67,8 @@ class RoomLocalStore(private val db: AppDatabase) : LocalStore {
                 is SyncChange.Ignored -> Unit
             }
         }
+        // Cached text survives only for an unchanged source; deletion and revision changes drop it here.
+        db.sourceTexts().pruneStale()
     }
 
     override suspend fun applyChanges(changes: List<SyncChange>, throughSeq: Long, nowMs: Long) = db.withTransaction {

@@ -38,7 +38,19 @@ import kotlinx.coroutines.flow.MutableStateFlow
 
 private const val CLOCK_TICK_MS = 30_000L
 
-private enum class Tab { INBOX, SETTINGS }
+private enum class Tab { INBOX, ARCHIVE, SETTINGS }
+
+/** One open detail screen. The stack is saved as text: only IDs, never content (lld.md#android). */
+private sealed interface Route {
+    val id: String
+
+    data class ConcernRoute(override val id: String) : Route
+    data class SourceRoute(override val id: String) : Route
+}
+
+private fun encode(stack: List<Route>) = stack.joinToString("|") { (if (it is Route.ConcernRoute) "c:" else "s:") + it.id }
+
+private fun decode(text: String): List<Route> = text.split("|").filter { it.length > 2 }.map { if (it.startsWith("c:")) Route.ConcernRoute(it.drop(2)) else Route.SourceRoute(it.drop(2)) }
 
 @Composable
 fun AppRoot(container: AppContainer, activity: Activity, destination: MutableStateFlow<String?>) {
@@ -62,7 +74,14 @@ private fun SignedIn(container: AppContainer, destination: MutableStateFlow<Stri
     val inbox by inboxModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var tab by rememberSaveable { mutableStateOf(Tab.INBOX) }
-    var openId by rememberSaveable { mutableStateOf<String?>(null) }
+    var saved by rememberSaveable { mutableStateOf("") }
+    val stack = decode(saved)
+    fun open(route: Route) {
+        saved = encode(stack + route)
+    }
+    fun back() {
+        saved = encode(stack.dropLast(1))
+    }
     var now by remember { mutableLongStateOf(container.clock()) }
     LaunchedEffect(Unit) {
         while (true) {
@@ -70,22 +89,23 @@ private fun SignedIn(container: AppContainer, destination: MutableStateFlow<Stri
             now = container.clock()
         }
     }
-    BackHandler(enabled = openId != null) { openId = null }
+    BackHandler(enabled = stack.isNotEmpty()) { back() }
     // A notification tap names a concern; the detail screen reads it from the cache like any other open.
     val target by destination.collectAsStateWithLifecycle()
     LaunchedEffect(target) {
         val t = target ?: return@LaunchedEffect
         tab = Tab.INBOX
-        openId = if (t == BRIEFING_DESTINATION) null else t
+        saved = if (t == BRIEFING_DESTINATION) "" else encode(listOf(Route.ConcernRoute(t)))
         destination.value = null
     }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         bottomBar = {
-            if (openId == null) {
+            if (stack.isEmpty()) {
                 NavigationBar {
                     NavigationBarItem(selected = tab == Tab.INBOX, onClick = { tab = Tab.INBOX }, icon = {}, label = { Text(stringResource(R.string.nav_inbox)) })
+                    NavigationBarItem(selected = tab == Tab.ARCHIVE, onClick = { tab = Tab.ARCHIVE }, icon = {}, label = { Text(stringResource(R.string.nav_archive)) })
                     NavigationBarItem(selected = tab == Tab.SETTINGS, onClick = { tab = Tab.SETTINGS }, icon = {}, label = { Text(stringResource(R.string.nav_settings)) })
                 }
             }
@@ -100,13 +120,15 @@ private fun SignedIn(container: AppContainer, destination: MutableStateFlow<Stri
                     }
                 }
             }
-            val id = openId
-            when {
-                id != null -> {
+            when (val route = stack.lastOrNull()) {
+                is Route.ConcernRoute -> {
+                    val id = route.id
                     val concernModel = viewModel(key = "concern-$id") { ConcernViewModel(id, container.concerns) }
                     val concern by concernModel.state.collectAsStateWithLifecycle()
                     val message by concernModel.message.collectAsStateWithLifecycle()
-                    TextButton(onClick = { openId = null }, modifier = Modifier.padding(horizontal = 8.dp)) { Text(stringResource(R.string.back)) }
+                    val sourceIds = concern.view?.shown?.sourceIds.orEmpty()
+                    val sources by remember(sourceIds) { container.archive.sources(sourceIds) }.collectAsStateWithLifecycle(emptyList())
+                    TextButton(onClick = ::back, modifier = Modifier.padding(horizontal = 8.dp)) { Text(stringResource(R.string.back)) }
                     message?.let {
                         Text(
                             stringResource(
@@ -121,10 +143,40 @@ private fun SignedIn(container: AppContainer, destination: MutableStateFlow<Stri
                             modifier = Modifier.padding(horizontal = 16.dp),
                         )
                     }
-                    ConcernScreen(concern, now, concernModel::act, concernModel::reapply, concernModel::discard)
+                    ConcernScreen(concern, now, concernModel::act, concernModel::reapply, concernModel::discard, sources, { open(Route.SourceRoute(it)) })
                 }
-                tab == Tab.INBOX -> InboxScreen(inbox, now, inboxModel::select, inboxModel::refresh, { openId = it })
-                else -> SettingsScreen(inbox.freshness, now, inboxModel::refresh, sessionModel::signOut, onNotificationsChanged = { PushRegistrationWorker.enqueue(context) })
+                is Route.SourceRoute -> {
+                    val id = route.id
+                    val sourceModel = viewModel(key = "source-$id") { SourceViewModel(id, container.archive) }
+                    val source by sourceModel.state.collectAsStateWithLifecycle()
+                    val busy by sourceModel.busy.collectAsStateWithLifecycle()
+                    TextButton(onClick = ::back, modifier = Modifier.padding(horizontal = 8.dp)) { Text(stringResource(R.string.back)) }
+                    SourceScreen(source, busy, sourceModel::download, { open(Route.ConcernRoute(it)) })
+                }
+                null -> when (tab) {
+                    Tab.INBOX -> InboxScreen(inbox, now, inboxModel::select, inboxModel::refresh, { open(Route.ConcernRoute(it)) })
+                    Tab.ARCHIVE -> {
+                        val archiveModel = viewModel { ArchiveViewModel(container.archive, container.clock) }
+                        val archive by archiveModel.state.collectAsStateWithLifecycle()
+                        val query by archiveModel.query.collectAsStateWithLifecycle()
+                        val sender by archiveModel.sender.collectAsStateWithLifecycle()
+                        val range by archiveModel.range.collectAsStateWithLifecycle()
+                        ArchiveScreen(
+                            archive,
+                            SearchFields(query, sender, range),
+                            onQuery = { archiveModel.query.value = it },
+                            onSender = { archiveModel.sender.value = it },
+                            onRange = { archiveModel.range.value = it },
+                            onView = archiveModel::selectView,
+                            onSubmit = archiveModel::submit,
+                            onClear = archiveModel::clearSearch,
+                            onMoreResults = archiveModel::loadMore,
+                            onMoreList = archiveModel::showMore,
+                            onOpen = { open(Route.SourceRoute(it)) },
+                        )
+                    }
+                    Tab.SETTINGS -> SettingsScreen(inbox.freshness, now, inboxModel::refresh, sessionModel::signOut, onNotificationsChanged = { PushRegistrationWorker.enqueue(context) })
+                }
             }
         }
     }

@@ -20,6 +20,7 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.digifender.adminifender.R
+import com.digifender.adminifender.core.data.network.SourceSummary
 import com.digifender.adminifender.core.data.repository.ConcernView
 import com.digifender.adminifender.core.data.sync.QueuedMutation
 import com.digifender.adminifender.core.model.ActionKind
@@ -33,6 +34,8 @@ fun ConcernScreen(
     onAct: (ConcernAction) -> Unit,
     onReapply: (String) -> Unit,
     onDiscard: (String) -> Unit,
+    sources: List<SourceSummary>,
+    onOpenSource: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val view = state.view
@@ -65,6 +68,16 @@ fun ConcernScreen(
                     else -> return@forEach
                 }
                 OutlinedButton(onClick = { onAct(action) }) { Text(stringResource(label)) }
+            }
+        }
+
+        if (c.sourceIds.isNotEmpty()) {
+            Text(stringResource(R.string.concern_sources), style = MaterialTheme.typography.titleMedium)
+            val byId = sources.associateBy { it.id }
+            // Listed in the order the server gave; a source not synced yet is named but cannot be opened.
+            c.sourceIds.forEach { id ->
+                val source = byId[id]
+                if (source != null) SourceCard(source, onOpenSource) else Text(stringResource(R.string.concern_source_not_cached), style = MaterialTheme.typography.bodySmall)
             }
         }
     }
