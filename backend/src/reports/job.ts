@@ -3,6 +3,7 @@ import { sha256Hex } from '../ids';
 import { openToken } from '../notifications/push';
 import { archiveFor, REGISTRY_COLUMNS, REGISTRY_FROM, type RegistryRow, sourceChange, sourceProjection } from '../sources/registry';
 import { CLAIM_GUARD, type ClaimedJob, type JobResult, guardParams } from '../jobs/runner';
+import { heartbeatStatements } from './obligations';
 import { REPORT_FILENAME, parseWrapper, validateReport, verifySignature } from './verify';
 
 export const REPORT_TASK = 'report';
@@ -101,6 +102,8 @@ export async function reportJob(job: ClaimedJob, env: Env, now: number): Promise
   if (existing && existing.payload_hash !== payloadHash) return reject('conflicting_event', key.service_id);
   if (existing) return { kind: 'complete', output: { trusted: true, duplicate: true } };
 
+  const guard = { sql: CLAIM_GUARD, params: [guardId, guardToken] };
+  const heartbeat = report.kind === 'heartbeat' ? await heartbeatStatements(db, report.serviceId, report.sequence, source.received_at, now, guard) : [];
   return {
     kind: 'complete',
     output: { trusted: true, serviceId: report.serviceId, kind: report.kind, sequence: report.sequence },
@@ -114,6 +117,7 @@ export async function reportJob(job: ClaimedJob, env: Env, now: number): Promise
         `INSERT INTO service_report_heads(service_id, kind, concern_key, sequence, event_id) SELECT ?, ?, ?, ?, ? WHERE ${CLAIM_GUARD}
          ON CONFLICT(service_id, kind, concern_key) DO UPDATE SET sequence = excluded.sequence, event_id = excluded.event_id WHERE excluded.sequence > service_report_heads.sequence`,
       ).bind(report.serviceId, report.kind, report.concernKey, report.sequence, report.eventId, guardId, guardToken),
+      ...heartbeat,
     ],
   };
 }

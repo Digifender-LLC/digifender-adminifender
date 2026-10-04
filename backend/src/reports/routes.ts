@@ -39,6 +39,7 @@ export async function listServices(request: Request, env: Env, now: number) {
   requireReports(env);
   const db = env.CONTROL_DB;
   const services = (await db.prepare('SELECT id, revision, name, aliases_json, targets_json, created_at FROM service_catalog ORDER BY name, id').all<ServiceRow>()).results;
+  const deps = (await db.prepare('SELECT parent_id, child_id, relation FROM service_dependencies ORDER BY parent_id, child_id').all<{ parent_id: string; child_id: string; relation: string }>()).results;
   const keys = (await db.prepare('SELECT id, service_id, alias, created_at, revoked_at FROM report_keys ORDER BY created_at').all<{ id: string; service_id: string; alias: string | null; created_at: number | null; revoked_at: number | null }>()).results;
   return {
     services: services.map((s) => ({
@@ -48,6 +49,7 @@ export async function listServices(request: Request, env: Env, now: number) {
       aliases: JSON.parse(s.aliases_json) as string[],
       targets: JSON.parse(s.targets_json) as string[],
       createdAt: iso(s.created_at),
+      dependencies: deps.filter((d) => d.parent_id === s.id).map((d) => ({ childId: d.child_id, relation: d.relation })),
       reportKeys: keys.filter((k) => k.service_id === s.id).map((k) => ({ id: k.id, alias: k.alias, createdAt: iso(k.created_at), revoked: k.revoked_at !== null })),
     })),
   };
@@ -135,7 +137,9 @@ export async function operationsOverview(request: Request, env: Env, now: number
   await authenticate(request, env, now);
   requireReports(env);
   const db = env.CONTROL_DB;
-  const services = (await db.prepare('SELECT id, name FROM service_catalog ORDER BY name, id').all<{ id: string; name: string }>()).results;
+  const services = (await db.prepare(
+    'SELECT s.id, s.name, e.interval_ms, e.grace_ms FROM service_catalog s LEFT JOIN heartbeat_expectations e ON e.service_id = s.id ORDER BY s.name, s.id',
+  ).all<{ id: string; name: string; interval_ms: number | null; grace_ms: number | null }>()).results;
   const { results: heads } = await db
     .prepare(
       `SELECT r.service_id, r.kind, r.concern_key, r.sequence, r.occurred_at, r.received_at, r.source_id, r.report_json
@@ -150,10 +154,13 @@ export async function operationsOverview(request: Request, env: Env, now: number
   return {
     services: services.map((s) => {
       const mine = heads.filter((h) => h.service_id === s.id);
+      // "Current" means within the configured report expectation, never an active health probe.
+      const expected = s.interval_ms === null ? DEFAULT_EXPECTATION_MS : s.interval_ms + (s.grace_ms ?? 0);
       return {
         id: s.id,
         name: s.name,
-        freshness: mine.length === 0 ? 'unobserved' : now - Math.max(...mine.map((h) => h.received_at)) <= DEFAULT_EXPECTATION_MS ? 'current' : 'stale',
+        expectedEverySeconds: expected / 1000,
+        freshness: mine.length === 0 ? 'unobserved' : now - Math.max(...mine.map((h) => h.received_at)) <= expected ? 'current' : 'stale',
         reports: mine.map((h) => {
           const report = JSON.parse(h.report_json) as { summary: string; facts: unknown; coverage: unknown; links: unknown };
           return {
@@ -168,7 +175,7 @@ export async function operationsOverview(request: Request, env: Env, now: number
             receivedAt: iso(h.received_at),
             verifiedSignature: true,
             sourceIds: [h.source_id],
-            freshness: now - h.received_at <= DEFAULT_EXPECTATION_MS ? 'current' : 'stale',
+            freshness: now - h.received_at <= expected ? 'current' : 'stale',
           };
         }),
       };

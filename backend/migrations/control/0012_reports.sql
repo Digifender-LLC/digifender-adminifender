@@ -28,3 +28,8 @@ CREATE TABLE service_report_heads(
 );
 -- One verification issue per source whose recognized report could not be trusted.
 CREATE TABLE report_issues(source_id TEXT PRIMARY KEY REFERENCES source_registry(id), service_id TEXT, code TEXT NOT NULL, created_at INTEGER NOT NULL);
+-- Heartbeat expectations (FR-044): when the expectation was set, and which concern currently tracks its absence.
+ALTER TABLE heartbeat_expectations ADD COLUMN created_at INTEGER;
+ALTER TABLE heartbeat_expectations ADD COLUMN concern_revision INTEGER;
+-- Readiness reminders (FR-041): one concern per service, resource and dated obligation.
+CREATE TABLE readiness_concerns(service_id TEXT NOT NULL, resource_ref TEXT NOT NULL, kind TEXT NOT NULL, due_at INTEGER NOT NULL, concern_id TEXT NOT NULL, PRIMARY KEY(service_id, resource_ref, kind, due_at));

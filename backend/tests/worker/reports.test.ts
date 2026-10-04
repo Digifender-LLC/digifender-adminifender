@@ -1,5 +1,6 @@
 import { env } from 'cloudflare:workers';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { evaluateHeartbeats, evaluateReadiness } from '../../src/reports/obligations';
 import { FUTURE_SKEW_MS, parseWrapper, validateReport } from '../../src/reports/verify';
 import { T0, api, enrollOwner, ingest, runPending } from './support';
 
@@ -64,11 +65,15 @@ const payload = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
-async function deliver(body: object, to = ALIAS, wrapperSecret = secret, wrapperKey = keyId): Promise<string> {
-  const id = await ingest(reportMail(await signed(wrapperSecret, wrapperKey, body)), { to, env: ON });
-  await runPending('report', T0, ON);
+async function deliver(body: object, to = ALIAS, wrapperSecret = secret, wrapperKey = keyId, now = T0): Promise<string> {
+  const id = await ingest(reportMail(await signed(wrapperSecret, wrapperKey, body)), { to, env: ON, now });
+  await runPending('report', now, ON);
   return id;
 }
+
+const HOUR = 3_600_000;
+const concernsFor = async (sid: string) =>
+  (await env.CONTROL_DB.prepare('SELECT id, title, importance, status, due_at FROM concerns WHERE service_id = ? ORDER BY updated_at, id').bind(sid).all<{ id: string; title: string; importance: string; status: string; due_at: number | null }>()).results;
 
 const overview = async () => (await on('GET', '/operations/overview')).body.data;
 const registry = (id: string) => env.CONTROL_DB.prepare('SELECT admission, privacy, privacy_floor FROM source_registry WHERE id = ?').bind(id).first<{ admission: string; privacy: string; privacy_floor: string }>();
@@ -171,6 +176,91 @@ describe('signed reports (P2, enabled)', () => {
     expect(res.body.error?.code).toBe('alias_in_use');
     const other = await on('POST', '/services', { name: 'Other', aliases: [ALIAS], targets: [] });
     expect(other.body.error?.code).toBe('alias_taken');
+  });
+});
+
+describe('report obligations and records (P2, enabled)', () => {
+  beforeEach(async () => {
+    serviceId = (await on('POST', '/services', { name: 'Hosting', aliases: [ALIAS], targets: ['domain:example.com'] })).body.data.id;
+    const created = await on('POST', `/services/${serviceId}/report-keys`, { alias: ALIAS });
+    keyId = created.body.data.keyId;
+    secret = created.body.data.secretBase64url;
+  });
+
+  const heartbeat = (sequence: number) => payload({ kind: 'heartbeat', concernKey: 'heartbeat', sequence, summary: 'Alive', facts: { state: 'ok', expectedIntervalSeconds: 3600 } });
+
+  it('raises one evolving concern for a missing heartbeat and lets only a newer one resume it', async () => {
+    expect((await on('POST', '/heartbeat-expectations', { serviceId, intervalSeconds: 3600, graceSeconds: 0 })).status).toBe(201);
+    await deliver(heartbeat(5));
+    expect(await evaluateHeartbeats({ ...env, ...ON }, T0 + HOUR / 2)).toBe(0);
+    expect(await evaluateHeartbeats({ ...env, ...ON }, T0 + 2 * HOUR)).toBe(1);
+    expect(await evaluateHeartbeats({ ...env, ...ON }, T0 + 3 * HOUR)).toBe(0);
+    let concerns = await concernsFor(serviceId);
+    expect(concerns).toEqual([expect.objectContaining({ importance: 'important', status: 'open' })]);
+    expect(concerns[0]!.title).toContain('No heartbeat received from Hosting since');
+
+    // A replayed older heartbeat does not count as evidence that it resumed.
+    await deliver(heartbeat(4), ALIAS, secret, keyId, T0 + 3 * HOUR);
+    expect((await concernsFor(serviceId))[0]!.title).toContain('No heartbeat received');
+    await deliver(heartbeat(6), ALIAS, secret, keyId, T0 + 3 * HOUR);
+    concerns = await concernsFor(serviceId);
+    expect(concerns).toHaveLength(1);
+    expect(concerns[0]).toMatchObject({ importance: 'routine', status: 'open' });
+    expect(concerns[0]!.title).toContain('Heartbeat resumed from Hosting');
+    expect((await on('GET', '/operations/overview')).body.data.services[0]).toMatchObject({ expectedEverySeconds: 3600 });
+  });
+
+  it('does nothing about heartbeats while reports are disabled', async () => {
+    await on('POST', '/heartbeat-expectations', { serviceId, intervalSeconds: 3600, graceSeconds: 0 });
+    expect(await evaluateHeartbeats(env, T0 + 48 * HOUR)).toBe(0);
+  });
+
+  it('reminds about dated readiness items once and never invents a date', async () => {
+    const facts = { resourceRef: 'domain:example.com', kind: 'domain_expiry', state: 'due', evidenceAt: '2026-10-01T00:00:00Z' };
+    await deliver(payload({ kind: 'readiness', concernKey: 'readiness:undated', sequence: 1, summary: 'Expiry unknown', facts: { ...facts, dueAt: null } }));
+    await deliver(payload({ kind: 'readiness', concernKey: 'readiness:domain', sequence: 2, summary: 'Domain renewal due', facts: { ...facts, dueAt: '2026-10-20T00:00:00Z' } }));
+    expect(await evaluateReadiness({ ...env, ...ON }, T0)).toBe(1);
+    expect(await evaluateReadiness({ ...env, ...ON }, T0 + HOUR)).toBe(0);
+    const concerns = await concernsFor(serviceId);
+    expect(concerns).toEqual([expect.objectContaining({ due_at: Date.parse('2026-10-20T00:00:00Z'), importance: 'important' })]);
+    expect(concerns[0]!.title).toContain('Domain renewal for domain:example.com');
+  });
+
+  it('keeps costs as proposals until the owner confirms, and an amount edit withdraws the confirmation', async () => {
+    const sourceId = await deliver(payload());
+    const created = await on('POST', '/cost-entries', { sourceId, serviceId, currency: 'USD', amountMicros: 12_500_000, evidenceKind: 'invoice' });
+    expect(created.body.data).toMatchObject({ revision: 1, ownerConfirmed: false });
+    const id = created.body.data.id;
+    expect((await on('PATCH', `/cost-entries/${id}`, { expectedRevision: 1, ownerConfirmed: true })).body.data.ownerConfirmed).toBe(true);
+    expect((await on('PATCH', `/cost-entries/${id}`, { expectedRevision: 2, amountMicros: 13_000_000 })).body.data.ownerConfirmed).toBe(false);
+    expect((await on('PATCH', `/cost-entries/${id}`, { expectedRevision: 2, ownerConfirmed: true })).body.error?.code).toBe('stale_revision');
+  });
+
+  it('returns a reviewed runbook to draft when its content changes', async () => {
+    const created = await on('POST', '/runbooks', { title: 'Restart health job', serviceId, steps: [{ text: 'Check the queue depth' }, { text: 'Activate the previous version', actionKind: 'cloudflare.worker.version.activate' }], evidenceRefs: [] });
+    const id = created.body.data.id;
+    expect((await on('PATCH', `/runbooks/${id}`, { expectedRevision: 1, ownerReviewed: true })).body.data.ownerReviewed).toBe(true);
+    expect((await on('PATCH', `/runbooks/${id}`, { expectedRevision: 2, steps: [{ text: 'Changed step' }] })).body.data.ownerReviewed).toBe(false);
+  });
+
+  it('shows releases of related services that preceded an incident, without claiming cause', async () => {
+    const cdnAlias = 'reports-cdn@ops.example';
+    const cdn = (await on('POST', '/services', { name: 'CDN', aliases: [cdnAlias], targets: [] })).body.data.id;
+    const cdnKey = (await on('POST', `/services/${cdn}/report-keys`, { alias: cdnAlias })).body.data;
+    expect((await on('POST', `/services/${serviceId}/dependencies`, { expectedRevision: 1, childId: cdn, relation: 'depends_on' })).status).toBe(200);
+    expect((await on('POST', `/services/${cdn}/dependencies`, { expectedRevision: 1, childId: serviceId, relation: 'depends_on' })).status).toBe(200);
+    await deliver(
+      { ...payload({ kind: 'release', concernKey: 'release', sequence: 3, summary: 'CDN release', occurredAt: '2026-10-03T10:00:00Z', facts: { releaseId: 'r-1', deploymentState: 'deployed', acceptanceState: 'unverified' } }), serviceId: cdn },
+      cdnAlias,
+      cdnKey.secretBase64url,
+      cdnKey.keyId,
+    );
+    await deliver(payload({ occurredAt: '2026-10-03T11:00:00Z' }));
+    const t = (await on('GET', `/operations/timeline?serviceId=${serviceId}`)).body.data;
+    expect(t.relatedServiceIds.sort()).toEqual([serviceId, cdn].sort());
+    expect(t.incidents).toHaveLength(1);
+    expect(t.incidents[0].precededBy).toEqual([expect.objectContaining({ serviceId: cdn, kind: 'release', summary: 'CDN release' })]);
+    expect(t.note).toBe('preceded_is_time_only');
   });
 });
 

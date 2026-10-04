@@ -12,6 +12,8 @@ import { reconcile } from './jobs/reconcile';
 import { pruneChanges } from './sync/retention';
 import { runJob } from './jobs/runner';
 
+import { evaluateHeartbeats, evaluateReadiness } from './reports/obligations';
+
 export default {
   fetch(request, env) {
     return handleFetch(request, env);
@@ -50,6 +52,9 @@ export default {
     await expireExports(env, now);
     await releaseExpiredReservations(env.CONTROL_DB, now);
     await scheduleInactivity(env.CONTROL_DB, now);
+    // P2 obligations; both return immediately unless reports are enabled.
+    await evaluateHeartbeats(env, now);
+    await evaluateReadiness(env, now);
     // Recorded only when every step above finished, so health shows a missed or failing pass as stale.
     await observe(env.CONTROL_DB, SCHEDULED_PASS, now);
   },

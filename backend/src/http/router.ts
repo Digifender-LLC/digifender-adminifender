@@ -16,6 +16,8 @@ import * as chat from '../chat/routes';
 import * as device from '../inference/device';
 import * as extraction from '../extraction/device';
 import * as reports from '../reports/routes';
+import * as records from '../reports/records';
+import * as obligations from '../reports/obligations';
 import * as inference from '../inference/routes';
 import * as settings from '../inference/settings';
 import * as notifications from '../notifications/routes';
@@ -141,6 +143,17 @@ const ROUTES: Route[] = [
   { method: 'POST', pattern: new RegExp(`^/services/${ID}/report-keys$`), handler: reports.createReportKey },
   { method: 'POST', pattern: new RegExp(`^/report-keys/${ID}/revoke$`), handler: ownerMutation(reports.revokeBody, reports.revokeReportKey, { recentAuth: true }) },
   { method: 'GET', pattern: /^\/operations\/overview$/, handler: reports.operationsOverview },
+  { method: 'GET', pattern: /^\/operations\/timeline$/, handler: records.timeline },
+  { method: 'POST', pattern: new RegExp(`^/services/${ID}/dependencies$`), handler: mutation(records.dependencyBody, records.changeDependency) },
+  { method: 'GET', pattern: /^\/heartbeat-expectations$/, handler: obligations.listExpectations },
+  { method: 'POST', pattern: /^\/heartbeat-expectations$/, handler: mutation(obligations.expectationBody, obligations.createExpectation) },
+  { method: 'PATCH', pattern: new RegExp(`^/heartbeat-expectations/${ID}$`), handler: mutation(obligations.expectationPatch, obligations.updateExpectation) },
+  { method: 'GET', pattern: /^\/cost-entries$/, handler: records.listCosts },
+  { method: 'POST', pattern: /^\/cost-entries$/, handler: mutation(records.costBody, records.createCost) },
+  { method: 'PATCH', pattern: new RegExp(`^/cost-entries/${ID}$`), handler: mutation(records.costPatch, records.updateCost) },
+  { method: 'GET', pattern: /^\/runbooks$/, handler: records.listRunbooks },
+  { method: 'POST', pattern: /^\/runbooks$/, handler: mutation(records.runbookBody, records.createRunbook) },
+  { method: 'PATCH', pattern: new RegExp(`^/runbooks/${ID}$`), handler: mutation(records.runbookPatch, records.updateRunbook) },
   { method: 'POST', pattern: /^\/device-extraction\/claim$/, handler: ownerMutation(extraction.claimBody, extraction.claimExtraction, { recentAuth: false }) },
   { method: 'POST', pattern: new RegExp(`^/device-extraction/${ID}/heartbeat$`), handler: ownerMutation(extraction.heartbeatBody, extraction.extractionHeartbeat, { recentAuth: false }) },
   { method: 'POST', pattern: new RegExp(`^/device-extraction/${ID}/batch$`), handler: ownerMutation(extraction.batchBody, extraction.submitBatch, { recentAuth: false }) },
