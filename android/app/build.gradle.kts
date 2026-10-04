@@ -54,6 +54,9 @@ android {
         // to or read production. Built like release so the tested code is the shipped code.
         create("staging") {
             initWith(getByName("release"))
+            // Without an upload key, staging is signed with the local debug key so it installs by sideloading; its
+            // fingerprint goes into assetlinks.json for the .staging package (ops/staging.md).
+            signingConfig = upload ?: signingConfigs.getByName("debug")
             applicationIdSuffix = ".staging"
             versionNameSuffix = "-staging"
             matchingFallbacks += "release"

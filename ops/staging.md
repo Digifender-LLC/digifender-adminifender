@@ -28,6 +28,19 @@ curl -s https://adminifender-staging.digifender.com/api/v1/meta   # contract mus
 
 Apply migrations before deploying code that needs them. Staging must never bind production resource IDs.
 
+## Sideloaded staging APK (no Play signing yet)
+
+Until Play App Signing exists, staging builds without `ADMINIFENDER_UPLOAD_*` are signed with the builder's local Android debug key so they install by sideloading. Every machine has its own debug key, so build on one machine and register its fingerprint once:
+
+```sh
+cd android && ./gradlew :app:assembleStaging            # app/build/outputs/apk/staging/app-staging.apk
+keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android | grep SHA256
+python3 ../tools/release_preflight.py apk-origin --sha256 <that fingerprint>       # add to EXPECTED_ORIGINS
+python3 ../tools/release_preflight.py assetlinks --package com.digifender.adminifender.staging --sha256 <that fingerprint>
+```
+
+The asset-links statement is published on `https://digifender.com/.well-known/assetlinks.json` (the `digifender-website` repository). A debug key is only for staging: production uses Play App Signing.
+
 ## Not configured yet
 
 - **Owner enrollment:** create a bootstrap token with `tools/bootstrap-token.mjs` and enroll a staging passkey from the staging app.

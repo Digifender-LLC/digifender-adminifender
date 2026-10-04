@@ -8,6 +8,7 @@ reads keystores, passwords, Worker secrets or Firebase credentials, and it does 
       --version-code 2 --env staging [--model-manifest models/x.json] [--out release-manifest.json]
   python3 tools/release_preflight.py record --manifest release-manifest.json   # after a successful upload
   python3 tools/release_preflight.py assetlinks --package com.digifender.adminifender --sha256 AB:CD:...
+  python3 tools/release_preflight.py apk-origin --sha256 AB:CD:...   # value for EXPECTED_ORIGINS
 """
 
 from __future__ import annotations
@@ -193,6 +194,19 @@ def assetlinks(args: argparse.Namespace) -> int:
     return 0
 
 
+def apk_origin(args: argparse.Namespace) -> int:
+    """The WebAuthn origin Android reports for an APK: android:apk-key-hash:<base64url of the cert SHA-256>."""
+    fingerprint = args.sha256.upper()
+    if not re.fullmatch(r"([0-9A-F]{2}:){31}[0-9A-F]{2}", fingerprint):
+        print("--sha256 must be a colon-separated SHA-256 certificate fingerprint", file=sys.stderr)
+        return 1
+    import base64
+
+    digest = bytes.fromhex(fingerprint.replace(":", ""))
+    print("android:apk-key-hash:" + base64.urlsafe_b64encode(digest).decode().rstrip("="))
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -211,6 +225,9 @@ def main() -> int:
     a.add_argument("--package", action="append", required=True)
     a.add_argument("--sha256", action="append", required=True, help="Play app-signing certificate fingerprint")
     a.set_defaults(func=assetlinks)
+    o = sub.add_parser("apk-origin", help="print the passkey origin for an APK signing certificate")
+    o.add_argument("--sha256", required=True)
+    o.set_defaults(func=apk_origin)
     args = parser.parse_args()
     return args.func(args)
 
