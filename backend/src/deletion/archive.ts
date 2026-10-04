@@ -87,6 +87,8 @@ export async function archiveDeletionStatements(env: Env, plan: DeletionPlan, op
       db.prepare("UPDATE jobs SET state = 'cancelled', error_code = 'deleted' WHERE source_id = ? AND state = 'pending' AND kind <> 'cleanup'").bind(id),
       // Undispatched phone work is withdrawn; a late device result then fails its lease check.
       db.prepare("UPDATE inference_attempts SET state = 'cancelled', error_code = 'deleted', completed_at = ? WHERE source_id = ? AND state IN ('queued', 'leased')").bind(now, id),
+      // Chat answers built from the source lose their stored text; the owner's question stays.
+      db.prepare("UPDATE chat_turns SET answer = NULL, output_json = NULL, invalidated_at = ? WHERE citations_json LIKE ?").bind(now, `%${id}%`),
       db.prepare(
         "INSERT OR IGNORE INTO jobs(id, dedupe_key, kind, source_id, input_revision, state, next_at, input_json, created_at) VALUES (?, ?, 'cleanup', ?, NULL, 'pending', ?, ?, ?)",
       ).bind(crypto.randomUUID(), `cleanup:${id}`, id, now, JSON.stringify({ sourceId: id }), now),
