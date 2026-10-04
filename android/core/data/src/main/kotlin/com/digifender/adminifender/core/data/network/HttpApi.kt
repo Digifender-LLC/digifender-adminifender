@@ -39,7 +39,7 @@ const val MAX_RESPONSE_BYTES = 8L * 1024 * 1024
  * OkHttp adapter for [AdminifenderApi]. Error bodies are reduced to their fixed codes; nothing from a response is
  * logged.
  */
-class HttpApi(private val client: OkHttpClient, private val baseUrl: HttpUrl, private val tokens: AccessTokens) : AdminifenderApi {
+class HttpApi(private val client: OkHttpClient, private val baseUrl: HttpUrl, private val tokens: AccessTokens) : AdminifenderApi, ArchiveApi {
     private val jsonType = "application/json; charset=utf-8".toMediaType()
 
     private fun url(path: String, query: Map<String, String?> = emptyMap()): HttpUrl {
@@ -91,6 +91,33 @@ class HttpApi(private val client: OkHttpClient, private val baseUrl: HttpUrl, pr
     override suspend fun changes(after: Long, limit: Int) = read(url("sync/changes", mapOf("after" to after.toString(), "limit" to limit.toString())), ChangesPageDto.serializer())
 
     override suspend fun bootstrap(cursor: String?, limit: Int) = read(url("sync/bootstrap", mapOf("cursor" to cursor, "limit" to limit.toString())), BootstrapPageDto.serializer())
+
+    override suspend fun source(id: String): ReadResult<SourceDetailDto> {
+        if (!isSourceId(id)) return ReadResult.Unavailable("not_found")
+        return read(url("sources/$id"), SourceDetailDto.serializer())
+    }
+
+    override suspend fun chunks(id: String, cursor: String?, limit: Int): ReadResult<ChunksPageDto> {
+        if (!isSourceId(id)) return ReadResult.Unavailable("not_found")
+        return read(url("sources/$id/chunks", mapOf("cursor" to cursor, "limit" to limit.toString())), ChunksPageDto.serializer())
+    }
+
+    override suspend fun search(request: SearchRequest, cursor: String?, limit: Int): ReadResult<SearchPageDto> = read(
+        url(
+            "search",
+            mapOf(
+                "q" to request.q,
+                "view" to request.view.wire,
+                "sender" to request.sender,
+                "from" to request.fromMs?.let { Instant.ofEpochMilli(it).toString() },
+                "to" to request.toMs?.let { Instant.ofEpochMilli(it).toString() },
+                "mode" to "exact",
+                "limit" to limit.toString(),
+                "cursor" to cursor,
+            ),
+        ),
+        SearchPageDto.serializer(),
+    )
 
     override suspend fun concernAction(concernId: String, idempotencyKey: String, expectedRevision: Int, action: ConcernAction): SendResult {
         val body = actionBody(expectedRevision, action).toString().toRequestBody(jsonType)

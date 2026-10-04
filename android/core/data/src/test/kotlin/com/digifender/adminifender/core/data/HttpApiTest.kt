@@ -1,6 +1,8 @@
 package com.digifender.adminifender.core.data
 
 import com.digifender.adminifender.core.data.network.AccessTokens
+import com.digifender.adminifender.core.data.network.ArchiveView
+import com.digifender.adminifender.core.data.network.SearchRequest
 import com.digifender.adminifender.core.data.network.HttpApi
 import com.digifender.adminifender.core.data.network.ReadResult
 import com.digifender.adminifender.core.model.ConcernAction
@@ -100,5 +102,31 @@ class HttpApiTest {
         server.enqueue(json(401, """{"error":{"code":"unauthenticated","message":"m"}}"""))
         assertEquals(SendResult.SessionExpired, reporting.concernAction(id, "k", 1, ConcernAction.Acknowledge))
         assertEquals(listOf("access-token"), refused)
+    }
+    @Test
+    fun searchSendsOnlyTheFiltersGivenAsQueryParameters() = runTest {
+        server.enqueue(json(200, """{"data":{"results":[{"sourceId":"$id","chunkId":"c","attachmentId":null,"partitionId":1,"subject":"S","snippet":"a [b]","page":null,"startOffset":0,"receivedAt":"2026-09-21T10:00:00.000Z"}],"partitionsRemaining":0,"nextCursor":null,"snapshot":5}}"""))
+        val page = api.search(SearchRequest("water & bill", ArchiveView.QUARANTINE, "a@b.example", 1_790_000_000_000, null), null, 50) as ReadResult.Ok
+        assertEquals(1, page.value.results.size)
+        val target = server.takeRequest().target
+        assertEquals("/api/v1/search?q=water%20%26%20bill&view=quarantine&sender=a%40b.example&from=2026-09-21T14%3A13%3A20Z&mode=exact&limit=50", target)
+    }
+
+    @Test
+    fun readsSourceDetailAndChunkPages() = runTest {
+        server.enqueue(json(200, """{"data":{"source":{"id":"$id","kind":"email","state":"ready","admission":"normal","privacy":"hybrid","revision":2,"receivedAt":"2026-09-21T10:00:00.000Z","subject":"S","from":["a@b.example"],"to":[]},"text":null,"textInChunks":true,"provenance":{"parserVersion":"p"},"attachments":[{"id":"a","name":"n.pdf","declaredType":null,"sizeBytes":5,"sha256":"x","disposition":"attachment","extraction":"stored","extractionDetail":null}]}}"""))
+        server.enqueue(json(200, """{"data":{"chunks":[{"chunkId":"c","attachmentId":null,"ordinal":0,"page":null,"startOffset":0,"text":"hi"}],"nextCursor":"n"}}"""))
+        val detail = (api.source(id) as ReadResult.Ok).value
+        assertTrue(detail.textInChunks)
+        assertEquals("n.pdf", detail.attachments.single().name)
+        assertEquals("n", (api.chunks(id, "cur", 200) as ReadResult.Ok).value.nextCursor)
+        assertEquals("/api/v1/sources/$id", server.takeRequest().target)
+        assertEquals("/api/v1/sources/$id/chunks?cursor=cur&limit=200", server.takeRequest().target)
+    }
+
+    @Test
+    fun aSourceIdThatIsNotAnIdIsNeverPutInAPath() = runTest {
+        assertEquals(ReadResult.Unavailable("not_found"), api.source("../sync/changes"))
+        assertEquals(0, server.requestCount)
     }
 }

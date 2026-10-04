@@ -63,3 +63,18 @@ data class SyncStateEntity(
     val needsBootstrap: Boolean,
     val lastSyncedAt: Long?,
 )
+
+/**
+ * Text and attachment inventory of a source the owner opened, kept for offline reading and cached-only search.
+ * A row is valid only while `sources` holds the same id at the same revision; sync prunes every other row in the
+ * transaction that changed the source, so a deleted or changed source never keeps old text (FR-011, FR-033).
+ */
+@Entity(tableName = "source_texts")
+data class SourceTextEntity(
+    @PrimaryKey val sourceId: String,
+    val revision: Int,
+    val text: String?,
+    val textComplete: Boolean,
+    val attachmentsJson: String,
+    val cachedAt: Long,
+)
