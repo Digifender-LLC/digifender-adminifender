@@ -47,6 +47,9 @@ interface SourceDao {
     @Query("DELETE FROM sources")
     suspend fun clear()
 
+    @Query("SELECT id FROM sources")
+    suspend fun ids(): List<String>
+
     @Query("SELECT * FROM sources WHERE quarantined = :quarantined ORDER BY receivedAt DESC, id LIMIT :limit")
     fun observe(quarantined: Boolean, limit: Int): Flow<List<SourceEntity>>
 
@@ -127,4 +130,35 @@ interface SyncStateDao {
 
     @Upsert
     suspend fun put(row: SyncStateEntity)
+}
+
+@Dao
+interface ChatDao {
+    @Upsert
+    suspend fun putThread(row: ChatThreadEntity)
+
+    @Query("SELECT * FROM chat_threads WHERE scopeKind = :kind AND scopeId IS :id ORDER BY createdAt DESC LIMIT 1")
+    suspend fun latestThread(kind: String, id: String?): ChatThreadEntity?
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertTurn(row: ChatTurnEntity)
+
+    @Upsert
+    suspend fun putTurn(row: ChatTurnEntity)
+
+    @Query("SELECT * FROM chat_turns WHERE turnId = :id")
+    suspend fun turn(id: String): ChatTurnEntity?
+
+    @Query("SELECT * FROM chat_turns WHERE threadId = :threadId ORDER BY createdAt, rowid")
+    fun observeTurns(threadId: String): Flow<List<ChatTurnEntity>>
+
+    @Query("SELECT * FROM chat_turns WHERE state IN ('sending', 'pending', 'running') ORDER BY createdAt")
+    suspend fun unfinished(): List<ChatTurnEntity>
+
+    /** Source IDs are UUIDs, so a quoted match in the JSON array is exact. */
+    @Query("UPDATE chat_turns SET answer = NULL, claimsJson = '[]', gapsJson = '[]', invalidated = 1 WHERE citedSourceIdsJson LIKE '%\"' || :sourceId || '\"%'")
+    suspend fun invalidateCiting(sourceId: String)
+
+    @Query("UPDATE chat_turns SET answer = NULL, claimsJson = '[]', gapsJson = '[]', withheld = 1 WHERE citedSourceIdsJson LIKE '%\"' || :sourceId || '\"%'")
+    suspend fun withholdCiting(sourceId: String)
 }

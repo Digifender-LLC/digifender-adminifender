@@ -169,6 +169,13 @@ Extraction result: `{attachmentId,contentHash,extractorVersion,policyRevision,le
 
 `POST /device-work/claim` accepts supported task kinds/model manifest; returns one bounded job and expiry. `POST /device-work/{id}/heartbeat` renews the current fencing token. `POST /device-work/{id}/result` validates typed output; stale/revoked/deleted results return `409 stale_job` or `410 deleted`. Unavailable devices leave explicit queued work; WorkManager scheduling is not treated as an exact-time service guarantee.
 
+Implementation notes (slice 14g, migration 0011):
+
+- POST `/device-extraction/claim {charging,batteryPercent,thermal}` leases one `deferred` (`device_unavailable` or `resume_requested`) PDF or image, or an `extracting` one whose lease expired. It requires charging, battery >= 30 % and below severe thermal state, and allows one live lease per device. The response carries `contentHash`, `sizeBytes`, `policyRevision`, `generationId` (`att:{id}:device-extract-v1`), `leaseToken`, the checkpoint `nextBatch`/`nextPage`, `maxPages` (100), `ocrAllowed` (false for `no_ai`) and `batchHashes` already stored. The phone downloads through GET `/attachments/{id}/content` and checks size and hash.
+- POST `/device-extraction/{id}/batch {leaseToken,contentHash,policyRevision,generationId,batchOrdinal,pages:[{page,text,method:pdf_text|ocr}],complete,paused?,manifestHash?}` takes at most 10 pages and 128 KiB of text. Chunk IDs are `{attachment}:{generation}:{page}:{part}`, so a replay rewrites the same rows. A repeated ordinal must have the same canonical hash (`batch_conflict` otherwise), and new ordinals must arrive in order. Each response returns `batchHash`. The phone closes with an empty batch whose `manifestHash` is SHA-256 of all acknowledged batch hashes joined by newlines. Completion publishes `active_generation` and `ready`; `paused` publishes the pages so far as `deferred: pages_remaining`. Both are fenced on the lease, policy revision and content hash. OCR pages are refused for `no_ai`, and quarantine or deletion returns `410 deleted`.
+- POST `/device-extraction/{id}/heartbeat`, `/fail {reason: encrypted|unreadable|limit}` and POST `/attachments/{id}/resume-extraction` (the owner's "Resume next pages") complete the protocol. Unpublished generations are not yet garbage-collected.
+- Device inference claims now also return `messages` (exactly what the cloud adapter would send) and `repair`. POST `/device-work/{id}/decline {leaseToken,reason:"input_too_large"}` cancels the attempt with that reason and fails a chat turn with it, instead of the phone truncating input or inventing output.
+
 <a id="triage"></a>
 ## Rules and triage
 

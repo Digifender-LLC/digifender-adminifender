@@ -4,6 +4,9 @@ import com.digifender.adminifender.core.data.network.AccessTokens
 import com.digifender.adminifender.core.data.network.ArchiveView
 import com.digifender.adminifender.core.data.network.SearchRequest
 import com.digifender.adminifender.core.data.network.HttpApi
+import com.digifender.adminifender.core.data.network.TurnStateDto
+import com.digifender.adminifender.core.data.network.ScopeDto
+import com.digifender.adminifender.core.data.network.CallResult
 import com.digifender.adminifender.core.data.network.ReadResult
 import com.digifender.adminifender.core.model.ConcernAction
 import com.digifender.adminifender.core.model.SendResult
@@ -128,5 +131,43 @@ class HttpApiTest {
     fun aSourceIdThatIsNotAnIdIsNeverPutInAPath() = runTest {
         assertEquals(ReadResult.Unavailable("not_found"), api.source("../sync/changes"))
         assertEquals(0, server.requestCount)
+    }
+
+    @Test
+    fun aChatTurnUsesItsTurnIdAsTheIdempotencyKey() = runTest {
+        server.enqueue(json(202, """{"data":{"turnId":"$id","state":"pending"}}"""))
+        server.enqueue(json(409, """{"error":{"code":"idempotency_conflict","message":"m"}}"""))
+        server.enqueue(json(503, """{"error":{"code":"unavailable","message":"m"}}"""))
+        assertEquals(CallResult.Ok(TurnStateDto(id, "pending")), api.postTurn(id, id, "When?"))
+        assertEquals(CallResult.Refused("idempotency_conflict"), api.postTurn(id, id, "When?"))
+        assertEquals(CallResult.NoAnswer, api.postTurn(id, id, "When?"))
+        val request = server.takeRequest()
+        assertEquals("/api/v1/chat/threads/$id/turns", request.target)
+        assertEquals(id, request.headers["idempotency-key"])
+        assertEquals("""{"turnId":"$id","content":"When?"}""", request.body?.utf8())
+    }
+
+    @Test
+    fun createsAScopedThread() = runTest {
+        server.enqueue(json(200, """{"data":{"id":"$id","scope":{"kind":"source","id":"$id"},"createdAt":"2026-10-03T12:00:00.000Z"}}"""))
+        val result = api.createThread("00000000-0000-4000-8000-000000000001", ScopeDto("source", id)) as CallResult.Ok
+        assertEquals("source", result.value.scope.kind)
+        assertEquals("""{"scope":{"kind":"source","id":"$id"}}""", server.takeRequest().body?.utf8())
+    }
+
+    @Test
+    fun claimsWithExplicitNullsAndSubmitsUnderTheLease() = runTest {
+        server.enqueue(json(200, """{"data":{"work":null,"reason":"not_ready"}}"""))
+        server.enqueue(json(200, """{"data":{"attemptId":"$id","state":"succeeded"}}"""))
+        val readiness = com.digifender.adminifender.core.model.Readiness(false, true, 55, com.digifender.adminifender.core.model.Thermal.LIGHT, null, null)
+        assertEquals(CallResult.Ok(com.digifender.adminifender.core.data.device.ClaimDto(null, "not_ready")), api.claim("00000000-0000-4000-8000-000000000001", readiness))
+        assertEquals(
+            """{"foreground":false,"charging":true,"batteryPercent":55,"thermal":"light","modelId":null,"modelManifestHash":null}""",
+            server.takeRequest().body?.utf8(),
+        )
+        api.submit(id, "00000000-0000-4000-8000-000000000002", com.digifender.adminifender.core.data.device.WorkResult("lease", "d", 4, "{}", "h"))
+        val submit = server.takeRequest()
+        assertEquals("/api/v1/device-work/$id/result", submit.target)
+        assertEquals("""{"leaseToken":"lease","inputDigest":"d","policyRevision":4,"outputJson":"{}","modelManifestHash":"h"}""", submit.body?.utf8())
     }
 }

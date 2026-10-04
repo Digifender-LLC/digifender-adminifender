@@ -2,6 +2,7 @@ package com.digifender.adminifender.core.data.local
 
 import android.content.Context
 import com.digifender.adminifender.core.data.repository.ArchiveCache
+import com.digifender.adminifender.core.data.repository.ChatCache
 import com.digifender.adminifender.core.data.repository.CacheSource
 import com.digifender.adminifender.core.data.sync.LocalStore
 import kotlinx.coroutines.Dispatchers
@@ -13,6 +14,7 @@ class LocalCache(context: Context) {
     val store: LocalStore = RoomLocalStore(db)
     val source: CacheSource = RoomCacheSource(db)
     val archive: ArchiveCache = RoomArchiveCache(db)
+    val chat: ChatCache = RoomChatCache(db)
 
     /** Removes every cached projection and queued edit, for sign-out (lld.md#sync). */
     suspend fun clear() = withContext(Dispatchers.IO) { db.clearAllTables() }

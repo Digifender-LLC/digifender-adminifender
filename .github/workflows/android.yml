@@ -37,4 +37,4 @@ jobs:
       - name: Domain and data JVM tests
         run: ./gradlew --no-daemon :core:model:test :core:data:testDebugUnitTest :app:testDebugUnitTest
       - name: Compile, lint and unsigned release build
-        run: ./gradlew --no-daemon :core:data:lintDebug :core:data:assembleDebugAndroidTest :app:assembleDebug :app:lintDebug :app:assembleRelease
+        run: ./gradlew --no-daemon :core:data:lintDebug :core:data:assembleDebugAndroidTest :app:assembleDebug :app:lintDebug :app:assembleRelease :app:assembleStaging

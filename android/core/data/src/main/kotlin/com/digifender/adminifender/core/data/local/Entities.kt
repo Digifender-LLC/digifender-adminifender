@@ -78,3 +78,34 @@ data class SourceTextEntity(
     val attachmentsJson: String,
     val cachedAt: Long,
 )
+
+@Entity(tableName = "chat_threads", indices = [Index("scopeKind", "scopeId")])
+data class ChatThreadEntity(
+    @PrimaryKey val id: String,
+    val scopeKind: String,
+    val scopeId: String?,
+    val createdAt: Long,
+)
+
+/**
+ * A question and its durable answer. [sent] is false until the server confirms it holds the turn; the cited source
+ * IDs let a deletion or quarantine withdraw the cached answer (lld.md#sync).
+ */
+@Entity(tableName = "chat_turns", indices = [Index("threadId", "createdAt")])
+data class ChatTurnEntity(
+    @PrimaryKey val turnId: String,
+    val threadId: String,
+    val content: String,
+    val state: String,
+    val sent: Boolean,
+    val reason: String?,
+    val errorCode: String?,
+    val answer: String?,
+    val claimsJson: String,
+    val gapsJson: String,
+    val citedSourceIdsJson: String,
+    val invalidated: Boolean,
+    val withheld: Boolean,
+    val createdAt: Long,
+    val completedAt: Long?,
+)

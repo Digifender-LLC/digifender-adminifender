@@ -59,10 +59,18 @@ class RoomLocalStore(private val db: AppDatabase) : LocalStore {
         for (change in changes) {
             when (change) {
                 is SyncChange.ConcernChanged -> db.concerns().upsert(listOf(change.concern.toEntity()))
-                is SyncChange.SourceChanged -> db.sources().upsert(listOf(change.source.toEntity()))
+                is SyncChange.SourceChanged -> {
+                    db.sources().upsert(listOf(change.source.toEntity()))
+                    // Quarantined mail is kept out of chat: cached answers citing it are withheld (FR-005).
+                    if (change.source.quarantined) db.chat().withholdCiting(change.source.id)
+                }
                 is SyncChange.Removed -> when (change.entityType) {
                     "concern" -> db.concerns().delete(change.entityId)
-                    "source" -> db.sources().delete(change.entityId)
+                    "source" -> {
+                        db.sources().delete(change.entityId)
+                        // A deletion also withdraws stored answers that cite the source (lld.md#chat).
+                        db.chat().invalidateCiting(change.entityId)
+                    }
                 }
                 is SyncChange.Ignored -> Unit
             }
@@ -77,9 +85,12 @@ class RoomLocalStore(private val db: AppDatabase) : LocalStore {
     }
 
     override suspend fun replaceWithSnapshot(changes: List<SyncChange>, snapshotSeq: Long, nowMs: Long) = db.withTransaction {
+        val before = db.sources().ids().toSet()
         db.concerns().clear()
         db.sources().clear()
         write(changes)
+        // Sources missing from a fresh snapshot are gone; answers citing them are withdrawn like a tombstone.
+        (before - db.sources().ids().toSet()).forEach { db.chat().invalidateCiting(it) }
         db.syncState().put(SyncStateEntity(throughSeq = snapshotSeq, needsBootstrap = false, lastSyncedAt = nowMs))
     }
 

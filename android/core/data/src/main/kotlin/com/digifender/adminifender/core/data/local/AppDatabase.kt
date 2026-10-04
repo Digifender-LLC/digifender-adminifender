@@ -8,13 +8,13 @@ import androidx.room.RoomDatabase
 
 /**
  * The phone's private cache (lld.md#sync). Credential-encrypted app storage, excluded from backup and device
- * transfer by the app manifest. Version 1 is the first schema; version 2 adds `source_texts` for opened sources.
+ * transfer by the app manifest. Version 1 is the first schema; version 2 adds `source_texts` for opened sources; version 3 adds chat threads and turns.
  */
 @Database(
-    entities = [ConcernEntity::class, SourceEntity::class, PendingMutationEntity::class, SyncStateEntity::class, SourceTextEntity::class],
-    version = 2,
+    entities = [ConcernEntity::class, SourceEntity::class, PendingMutationEntity::class, SyncStateEntity::class, SourceTextEntity::class, ChatThreadEntity::class, ChatTurnEntity::class],
+    version = 3,
     exportSchema = true,
-    autoMigrations = [AutoMigration(from = 1, to = 2)],
+    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3)],
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun concerns(): ConcernDao
@@ -26,6 +26,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun syncState(): SyncStateDao
 
     abstract fun sourceTexts(): SourceTextDao
+
+    abstract fun chat(): ChatDao
 
     companion object {
         const val NAME = "adminifender.db"

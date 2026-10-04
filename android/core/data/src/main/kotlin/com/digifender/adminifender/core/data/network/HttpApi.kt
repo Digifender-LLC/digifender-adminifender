@@ -1,12 +1,27 @@
 package com.digifender.adminifender.core.data.network
 
+import com.digifender.adminifender.core.data.device.ClaimDto
+import com.digifender.adminifender.core.data.device.DeviceWorkApi
+import com.digifender.adminifender.core.data.device.SubmitDto
+import com.digifender.adminifender.core.data.device.WorkResult
+import com.digifender.adminifender.core.data.extraction.Batch
+import com.digifender.adminifender.core.data.extraction.BatchAckDto
+import com.digifender.adminifender.core.data.extraction.DownloadResult
+import com.digifender.adminifender.core.data.extraction.ExtractionApi
+import com.digifender.adminifender.core.data.extraction.ExtractionClaimDto
+import com.digifender.adminifender.core.data.extraction.ExtractionWorkDto
+import com.digifender.adminifender.core.data.extraction.PageDto
 import com.digifender.adminifender.core.model.ConcernAction
+import com.digifender.adminifender.core.model.Readiness
 import com.digifender.adminifender.core.model.SendResult
+import java.io.File
 import java.io.IOException
+import java.security.MessageDigest
 import java.time.Instant
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.KSerializer
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -39,7 +54,7 @@ const val MAX_RESPONSE_BYTES = 8L * 1024 * 1024
  * OkHttp adapter for [AdminifenderApi]. Error bodies are reduced to their fixed codes; nothing from a response is
  * logged.
  */
-class HttpApi(private val client: OkHttpClient, private val baseUrl: HttpUrl, private val tokens: AccessTokens) : AdminifenderApi, ArchiveApi {
+class HttpApi(private val client: OkHttpClient, private val baseUrl: HttpUrl, private val tokens: AccessTokens) : AdminifenderApi, ArchiveApi, ChatApi, DeviceWorkApi, ExtractionApi {
     private val jsonType = "application/json; charset=utf-8".toMediaType()
 
     private fun url(path: String, query: Map<String, String?> = emptyMap()): HttpUrl {
@@ -147,7 +162,145 @@ class HttpApi(private val client: OkHttpClient, private val baseUrl: HttpUrl, pr
         }
     }
 
+    /** A JSON mutation whose `data` decodes to [serializer]; 429 and 5xx mean the outcome is unknown. */
+    private suspend fun <T> post(path: String, idempotencyKey: String, body: JsonObject, serializer: KSerializer<T>): CallResult<T> = try {
+        val request = Request.Builder().url(url(path)).header("idempotency-key", idempotencyKey).post(body.toString().toRequestBody(jsonType))
+        val response = execute(request) ?: return CallResult.SessionExpired
+        response.use {
+            val text = it.boundedBody()
+            when {
+                it.isSuccessful -> CallResult.Ok(wireJson.decodeFromJsonElement(serializer, wireJson.parseToJsonElement(text).jsonObject.getValue("data")))
+                it.code == 401 -> CallResult.SessionExpired
+                it.code == 429 || it.code >= 500 -> CallResult.NoAnswer
+                else -> CallResult.Refused(errorCode(text).first)
+            }
+        }
+    } catch (_: IOException) {
+        CallResult.NoAnswer
+    } catch (_: IllegalArgumentException) {
+        CallResult.NoAnswer
+    } catch (_: NoSuchElementException) {
+        CallResult.NoAnswer
+    }
+
+    override suspend fun createThread(idempotencyKey: String, scope: ScopeDto) = post(
+        "chat/threads",
+        idempotencyKey,
+        buildJsonObject { put("scope", buildJsonObject { put("kind", scope.kind); scope.id?.let { put("id", it) } }) },
+        ChatThreadDto.serializer(),
+    )
+
+    override suspend fun postTurn(threadId: String, turnId: String, content: String) =
+        post("chat/threads/$threadId/turns", turnId, buildJsonObject { put("turnId", turnId); put("content", content) }, TurnStateDto.serializer())
+
+    override suspend fun turn(turnId: String) = read(url("chat/turns/$turnId"), TurnDto.serializer())
+
+    override suspend fun cancelTurn(turnId: String, idempotencyKey: String) = post("chat/turns/$turnId/cancel", idempotencyKey, JsonObject(emptyMap()), TurnStateDto.serializer())
+
+    override suspend fun resumeExtraction(attachmentId: String, idempotencyKey: String) = postUnit("attachments/$attachmentId/resume-extraction", idempotencyKey, JsonObject(emptyMap()))
+
+    private suspend fun postUnit(path: String, key: String, body: JsonObject): CallResult<Unit> = when (val r = post(path, key, body, JsonObject.serializer())) {
+        is CallResult.Ok -> CallResult.Ok(Unit)
+        is CallResult.Refused -> r
+        CallResult.NoAnswer -> CallResult.NoAnswer
+        CallResult.SessionExpired -> CallResult.SessionExpired
+    }
+
+    override suspend fun claim(idempotencyKey: String, readiness: Readiness) = post("device-work/claim", idempotencyKey, readinessBody(readiness), ClaimDto.serializer())
+
+    override suspend fun heartbeat(attemptId: String, idempotencyKey: String, leaseToken: String) =
+        postUnit("device-work/$attemptId/heartbeat", idempotencyKey, buildJsonObject { put("leaseToken", leaseToken) })
+
+    override suspend fun submit(attemptId: String, idempotencyKey: String, result: WorkResult) = post(
+        "device-work/$attemptId/result",
+        idempotencyKey,
+        buildJsonObject {
+            put("leaseToken", result.leaseToken)
+            put("inputDigest", result.inputDigest)
+            put("policyRevision", result.policyRevision)
+            put("outputJson", result.outputJson)
+            put("modelManifestHash", result.modelManifestHash)
+        },
+        SubmitDto.serializer(),
+    )
+
+    override suspend fun decline(attemptId: String, idempotencyKey: String, leaseToken: String, reason: String) =
+        postUnit("device-work/$attemptId/decline", idempotencyKey, buildJsonObject { put("leaseToken", leaseToken); put("reason", reason) })
+
+    override suspend fun claimExtraction(idempotencyKey: String, charging: Boolean, batteryPercent: Int, thermal: String) = post(
+        "device-extraction/claim",
+        idempotencyKey,
+        buildJsonObject {
+            put("charging", charging)
+            put("batteryPercent", batteryPercent)
+            put("thermal", thermal)
+        },
+        ExtractionClaimDto.serializer(),
+    )
+
+    override suspend fun sendBatch(work: ExtractionWorkDto, idempotencyKey: String, batch: Batch) = post(
+        "device-extraction/${work.attachmentId}/batch",
+        idempotencyKey,
+        buildJsonObject {
+            put("leaseToken", work.leaseToken)
+            put("contentHash", work.contentHash)
+            put("policyRevision", work.policyRevision)
+            put("generationId", work.generationId)
+            put("batchOrdinal", batch.ordinal)
+            put("pages", JsonArray(batch.pages.map { wireJson.encodeToJsonElement(PageDto.serializer(), it) }))
+            put("complete", batch.complete)
+            if (batch.paused) put("paused", true)
+            batch.manifestHash?.let { put("manifestHash", it) }
+        },
+        BatchAckDto.serializer(),
+    )
+
+    override suspend fun failExtraction(attachmentId: String, idempotencyKey: String, leaseToken: String, reason: String) =
+        postUnit("device-extraction/$attachmentId/fail", idempotencyKey, buildJsonObject { put("leaseToken", leaseToken); put("reason", reason) })
+
+    override suspend fun download(attachmentId: String, target: File, maxBytes: Long, sha256: String): DownloadResult = try {
+        val response = execute(Request.Builder().url(url("attachments/$attachmentId/content")).get()) ?: return DownloadResult.SESSION_EXPIRED
+        response.use {
+            when {
+                it.code == 401 -> DownloadResult.SESSION_EXPIRED
+                it.code == 404 -> DownloadResult.GONE
+                !it.isSuccessful -> DownloadResult.UNAVAILABLE
+                else -> withContext(Dispatchers.IO) {
+                    val digest = MessageDigest.getInstance("SHA-256")
+                    var total = 0L
+                    val buffer = ByteArray(1 shl 16)
+                    it.body.byteStream().use { input ->
+                        target.outputStream().use { out ->
+                            while (true) {
+                                val n = input.read(buffer)
+                                if (n < 0) break
+                                total += n
+                                if (total > maxBytes) return@withContext DownloadResult.TOO_LARGE
+                                digest.update(buffer, 0, n)
+                                out.write(buffer, 0, n)
+                            }
+                        }
+                    }
+                    if (digest.digest().joinToString("") { b -> "%02x".format(b) } == sha256) DownloadResult.OK else DownloadResult.WRONG_HASH
+                }
+            }
+        }
+    } catch (_: IOException) {
+        DownloadResult.UNAVAILABLE
+    }
+
     companion object {
+        /** Readiness with explicit nulls: the server requires every field. */
+        fun readinessBody(r: Readiness): JsonObject = buildJsonObject {
+            put("foreground", r.foreground)
+            put("charging", r.charging)
+            put("batteryPercent", r.batteryPercent)
+            put("thermal", r.thermal.wire)
+            put("modelId", r.modelId?.let(::JsonPrimitive) ?: JsonNull)
+            put("modelManifestHash", r.modelManifestHash?.let(::JsonPrimitive) ?: JsonNull)
+        }
+
+
         private fun iso(ms: Long?) = if (ms == null) JsonNull else JsonPrimitive(Instant.ofEpochMilli(ms).toString())
 
         /** `{expectedRevision, kind, args}` exactly as the backend validates it. */
