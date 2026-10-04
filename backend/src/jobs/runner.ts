@@ -1,3 +1,4 @@
+import { isAssertionFailure } from '../db/assert';
 import type { Env } from '../env';
 
 /** Baseline retry policy (baseline.md defaults): 5 attempts, 30 s doubling, capped at 1 hour; 5-minute lease. */
@@ -51,7 +52,7 @@ export async function claimJob(db: D1Database, jobId: string, now: number): Prom
 }
 
 /** Settles a claim. Dependent statements must include CLAIM_GUARD so a stale claim changes nothing. */
-async function settle(db: D1Database, job: ClaimedJob, result: JobResult, now: number): Promise<boolean> {
+async function settle(db: D1Database, job: ClaimedJob, result: JobResult, now: number): Promise<{ applied: boolean; result: JobResult }> {
   const fence = 'WHERE id = ? AND lease_token = ? AND state = ?';
   let head: D1PreparedStatement;
   let dependents: D1PreparedStatement[] = [];
@@ -64,9 +65,17 @@ async function settle(db: D1Database, job: ClaimedJob, result: JobResult, now: n
     head = db.prepare(`UPDATE jobs SET state = ?, error_code = ?, lease_until = NULL ${fence}`).bind(result.kind === 'retry' ? 'dead' : 'failed', result.errorCode, job.id, job.leaseToken, 'running');
     if (result.kind === 'fail') dependents = result.statements ?? [];
   }
-  const results = await db.batch([head, ...dependents]);
+  let results: D1Result[];
+  try {
+    results = await db.batch([head, ...dependents]);
+  } catch (error) {
+    // A failed batch assertion (for example a concern revision that moved under the job) rolls the batch back;
+    // the job retries against current state.
+    if (result.kind !== 'complete' || !isAssertionFailure(error)) throw error;
+    return settle(db, job, { kind: 'retry', errorCode: 'commit_conflict' }, now);
+  }
   // A zero-row fenced update is not an error in D1; check its effect explicitly.
-  return (results[0]?.meta.changes ?? 0) === 1;
+  return { applied: (results[0]?.meta.changes ?? 0) === 1, result };
 }
 
 export interface RunOutcome {
@@ -89,8 +98,9 @@ export async function runJob(env: Env, handlers: Readonly<Record<string, JobHand
       result = { kind: 'retry', errorCode: 'handler_exception' };
     }
   }
-  const applied = await settle(env.CONTROL_DB, job, result, now);
-  if (!applied) return { jobId, status: 'stale' };
+  const settled = await settle(env.CONTROL_DB, job, result, now);
+  if (!settled.applied) return { jobId, status: 'stale' };
+  result = settled.result;
   if (result.kind === 'complete') return { jobId, status: 'complete' };
   if (result.kind === 'fail') return { jobId, status: 'failed' };
   return { jobId, status: job.attempt < MAX_ATTEMPTS ? 'retry' : 'dead' };

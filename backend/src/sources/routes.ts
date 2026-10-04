@@ -30,7 +30,7 @@ export function rejectUnknownParams(url: URL, allowed: string[]): void {
   }
 }
 
-async function archiveMetadata(env: Env, rows: RegistryRow[]): Promise<Map<string, { subject: string; envelope_json: string }>> {
+export async function archiveMetadata(env: Env, rows: RegistryRow[]): Promise<Map<string, { subject: string; envelope_json: string }>> {
   const byPartition = new Map<string, string[]>();
   for (const row of rows) if (row.binding_name) byPartition.set(row.binding_name, [...(byPartition.get(row.binding_name) ?? []), row.id]);
   const out = new Map<string, { subject: string; envelope_json: string }>();

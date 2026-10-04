@@ -3,6 +3,7 @@ import { scoreSpam } from '../admission/spam';
 import type { Env } from '../env';
 import { deterministicUuid, sha256Hex } from '../ids';
 import { CLAIM_GUARD, type ClaimedJob, type JobResult, guardParams } from '../jobs/runner';
+import { messageIdOf, threadReferences, triageJobStatements } from '../triage/job';
 import { linkFacts } from './links';
 import { type NormalizedEmail, normalizeEmail } from './normalize';
 import { writablePartition } from './partitions';
@@ -65,6 +66,7 @@ export async function parseJob(job: ClaimedJob, env: Env, now: number): Promise<
   const object = await env.ARCHIVE_BUCKET.get(source.staged_key);
   if (!object) return { kind: 'fail', errorCode: 'original_raw_unavailable' };
   const raw = new Uint8Array(await object.arrayBuffer());
+  const mailboxHash = object.customMetadata?.recipientHash ?? null;
   if ((await sha256Hex(raw)) !== source.content_hash) return { kind: 'fail', errorCode: 'staging_hash_mismatch' };
 
   const [guardId, guardToken] = guardParams(job);
@@ -164,6 +166,14 @@ export async function parseJob(job: ClaimedJob, env: Env, now: number): Promise<
       control.prepare(
         "UPDATE source_registry SET ready_seq = (SELECT MAX(seq) FROM changes WHERE entity_type = 'source' AND entity_id = ?) WHERE id = ? AND state = 'ready' AND ready_seq IS NULL",
       ).bind(sourceId, sourceId),
+      // Thread references are recorded for every published source so later replies can group with it.
+      ...(mailboxHash
+        ? [
+            control.prepare(`INSERT OR IGNORE INTO source_threads(source_id, mailbox_hash, message_id, references_json) SELECT ?, ?, ?, ? WHERE ${CLAIM_GUARD}`)
+              .bind(sourceId, mailboxHash, messageIdOf(normalized.envelope.messageId), JSON.stringify(threadReferences(normalized.envelope.inReplyTo, normalized.envelope.references)), guardId, guardToken),
+          ]
+        : []),
+      ...triageJobStatements(control, sourceId, now, CLAIM_GUARD, [guardId, guardToken]),
       ...attachments.map((a) =>
         control.prepare(`INSERT OR IGNORE INTO attachment_processing(attachment_id, source_id, revision, state, policy_revision) SELECT ?, ?, 1, 'stored', 0 WHERE ${CLAIM_GUARD}`)
           .bind(a.id, sourceId, guardId, guardToken),

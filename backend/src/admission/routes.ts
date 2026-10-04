@@ -1,3 +1,4 @@
+import { triageJobStatements } from '../triage/job';
 import { authenticate } from '../auth/sessions';
 import type { Env } from '../env';
 import { HttpError, notFound } from '../http/errors';
@@ -165,6 +166,8 @@ async function setAdmission(env: Env, now: number, id: string, revision: number,
     // Quarantine invalidates undispatched derived work for the source; nothing is deleted.
     statements.push(db.prepare("UPDATE jobs SET state = 'cancelled', error_code = 'quarantined' WHERE source_id = ? AND kind <> 'parse' AND state = 'pending'").bind(id));
   }
+  // Released sources get triage at their new revision; one already grouped is left as it is.
+  if (admission === 'normal') statements.push(...triageJobStatements(db, id, now, 'revision = ?', [revision + 1]));
   const results = await db.batch(statements);
   if (results[0]?.meta.changes !== 1) throw stale(revision + 1);
   const updated = await env.CONTROL_DB.prepare(`SELECT ${REGISTRY_COLUMNS} FROM ${REGISTRY_FROM} WHERE r.id = ?`).bind(id).first<RegistryRow>();
@@ -173,5 +176,5 @@ async function setAdmission(env: Env, now: number, id: string, revision: number,
 
 // POST /sources/{id}/quarantine
 export const quarantineSource = (env: Env, now: number, body: ReturnType<typeof quarantineBody>, id: string) => setAdmission(env, now, id, body.expectedRevision, 'quarantine');
-// POST /sources/{id}/release — release never lowers the privacy floor; downstream jobs arrive with triage/extraction.
+// POST /sources/{id}/release — release never lowers the privacy floor; it enqueues triage at the new revision.
 export const releaseSource = (env: Env, now: number, body: ReturnType<typeof releaseBody>, id: string) => setAdmission(env, now, id, body.expectedRevision, 'normal');

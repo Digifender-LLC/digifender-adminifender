@@ -1,10 +1,12 @@
 import * as admission from '../admission/routes';
 import * as auth from '../auth/routes';
+import * as concerns from '../concerns/routes';
 import { authenticate } from '../auth/sessions';
 import { RELEASE_CONTRACT } from '../contracts';
 import type { Env } from '../env';
 import * as searchRoutes from '../search/routes';
 import * as sources from '../sources/routes';
+import * as rules from '../triage/routes';
 import { fail, ok } from './envelope';
 import { HttpError } from './errors';
 import { withIdempotency } from './idempotency';
@@ -64,6 +66,13 @@ const ROUTES: Route[] = [
   { method: 'GET', pattern: /^\/spam-overrides$/, handler: admission.listSpamOverrides },
   { method: 'POST', pattern: /^\/spam-overrides$/, handler: mutation(admission.spamOverrideBody, admission.createSpamOverride) },
   { method: 'PATCH', pattern: new RegExp(`^/spam-overrides/${ID}$`), handler: mutation(admission.spamOverridePatch, admission.updateSpamOverride) },
+  { method: 'GET', pattern: /^\/rules$/, handler: rules.listRules },
+  { method: 'POST', pattern: /^\/rules$/, handler: mutation(rules.ruleBody, rules.createRule) },
+  { method: 'PATCH', pattern: new RegExp(`^/rules/${ID}$`), handler: mutation(rules.rulePatch, rules.updateRule) },
+  { method: 'GET', pattern: /^\/concerns$/, handler: concerns.listConcerns },
+  { method: 'GET', pattern: new RegExp(`^/concerns/${ID}$`), handler: concerns.getConcern },
+  { method: 'POST', pattern: new RegExp(`^/concerns/${ID}/actions$`), handler: mutation(concerns.actionBody, concerns.concernAction) },
+  { method: 'POST', pattern: new RegExp(`^/concerns/${ID}/undo$`), handler: mutation(concerns.undoBody, concerns.undoConcernEvent) },
 ];
 
 export async function handleFetch(request: Request, env: Env, now = Date.now()): Promise<Response> {

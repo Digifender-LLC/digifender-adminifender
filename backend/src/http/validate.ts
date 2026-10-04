@@ -35,6 +35,18 @@ export const v = {
       return value as T;
     };
   },
+  /** UTC instant in the API's ISO-8601 `Z` form, returned as epoch milliseconds. */
+  instant(): Validator<number> {
+    return (value, path) => {
+      const text = v.string({ max: 40, pattern: /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/ })(value, path);
+      const parsed = Date.parse(text);
+      if (Number.isNaN(parsed)) throw invalid(path, 'format');
+      return parsed;
+    };
+  },
+  nullable<T>(inner: Validator<T>): Validator<T | null> {
+    return (value, path) => (value === null ? null : inner(value, path));
+  },
   /** An opaque JSON object passed to a maintained library (for example a WebAuthn response). Size is bounded by the body limit. */
   record(): Validator<Record<string, unknown>> {
     return (value, path) => {

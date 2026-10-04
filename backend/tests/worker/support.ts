@@ -82,3 +82,11 @@ export async function ingest(raw: string, options: { to?: string; now?: number }
   if (run.status !== 'complete') throw new Error(run.status);
   return outcome.sourceId;
 }
+
+/** Runs every due job of one kind, oldest first, and returns their outcomes. */
+export async function runPending(kind: string, now = T0): Promise<string[]> {
+  const { results } = await env.CONTROL_DB.prepare("SELECT id FROM jobs WHERE kind = ? AND state = 'pending' AND next_at <= ? ORDER BY created_at, id").bind(kind, now).all<{ id: string }>();
+  const statuses: string[] = [];
+  for (const row of results) statuses.push((await runJob(quietEnv(), JOB_HANDLERS, row.id, now)).status);
+  return statuses;
+}
