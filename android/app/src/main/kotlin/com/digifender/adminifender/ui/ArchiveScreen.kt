@@ -40,6 +40,8 @@ import androidx.compose.ui.unit.dp
 import com.digifender.adminifender.R
 import com.digifender.adminifender.ui.theme.Glyphs
 import com.digifender.adminifender.ui.theme.ScreenHeader
+import com.digifender.adminifender.ui.theme.textIconSize
+import androidx.compose.ui.unit.sp
 import com.digifender.adminifender.core.data.network.ArchiveView
 import com.digifender.adminifender.core.data.network.SourceSummary
 import com.digifender.adminifender.core.data.repository.CachedReason
@@ -210,7 +212,7 @@ private fun HitCard(hit: SearchHit, onOpen: (String) -> Unit) {
         hit.snippet?.let { Text(highlighted(it, mark), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         if (hit.inAttachment) {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Glyphs.paperclip, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
+                Icon(Glyphs.paperclip, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(textIconSize(14.sp)))
                 Text(hit.page?.let { stringResource(R.string.hit_in_attachment_page, it) } ?: stringResource(R.string.hit_in_attachment), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }

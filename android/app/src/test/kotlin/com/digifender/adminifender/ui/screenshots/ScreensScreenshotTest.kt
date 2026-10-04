@@ -39,6 +39,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
@@ -67,7 +68,9 @@ class ScreensScreenshotTest {
 
     private fun view(c: Concern) = ConcernView(c, c, 0, emptyList(), emptyList(), false)
 
-    @Test fun attention() = shot("attention") {
+    @Test fun attention() = attentionAt("attention")
+
+    private fun attentionAt(name: String) = shot(name) {
         val items = listOf(
             concern("1", "Harbor Insurance premium", dueAt = now - 2 * day, importance = Importance.URGENT),
             concern("2", "Riverside Water statement", dueAt = now + 4 * day, read = false),
@@ -77,7 +80,20 @@ class ScreensScreenshotTest {
         InboxScreen(InboxUiState(InboxFilter.ACTIVE, items, Freshness(now - 6 * 60_000, false, 0, 0, false)), now, {}, {}, {})
     }
 
-    @Test fun ask() = shot("ask") {
+    /** Large system text (1.5x): titles and pills must wrap, not clip. */
+    @Test fun attentionLargeText() {
+        RuntimeEnvironment.setFontScale(1.5f)
+        attentionAt("attention-large-text")
+    }
+
+    @Test fun askLargeText() {
+        RuntimeEnvironment.setFontScale(1.5f)
+        ask("ask-large-text")
+    }
+
+    @Test fun ask() = ask("ask")
+
+    private fun ask(name: String) = shot(name) {
         val c1 = CitationDto(chunkId = "s1:body-v1:0", sourceId = "s1", start = 0, end = 40, excerpt = "Amount due \$62.15 by October 9.")
         val c2 = CitationDto(chunkId = "s2:body-v1:0", sourceId = "s2", start = 0, end = 30, excerpt = "Amount due by September 9.")
         val turn = ChatTurn(

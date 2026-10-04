@@ -15,8 +15,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
 /** A screen's serif title with an optional quiet status line under it, as on every canvas screen. */
 @Composable
@@ -27,7 +30,7 @@ fun ScreenHeader(title: String, modifier: Modifier = Modifier, icon: ImageVector
             Text(title, style = MaterialTheme.typography.headlineMedium, modifier = Modifier.semantics { heading() })
             if (subtitle != null) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    if (icon != null) Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                    if (icon != null) Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(textIconSize(18.sp)))
                     Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
@@ -35,6 +38,10 @@ fun ScreenHeader(title: String, modifier: Modifier = Modifier, icon: ImageVector
         trailing()
     }
 }
+
+/** An icon size in sp, so inline icons grow with the owner's font scale like the text beside them. */
+@Composable
+fun textIconSize(size: TextUnit): Dp = with(LocalDensity.current) { size.toDp() }
 
 /** Small capitalised section label, e.g. SOURCES. */
 @Composable

@@ -22,6 +22,8 @@ import com.digifender.adminifender.core.model.Status
 import com.digifender.adminifender.ui.theme.Glyphs
 import com.digifender.adminifender.ui.theme.LedgerTones
 import com.digifender.adminifender.ui.theme.Tone
+import com.digifender.adminifender.ui.theme.textIconSize
+import androidx.compose.ui.unit.sp
 
 /** The one state an item's pill shows, most pressing first. */
 sealed interface ItemStatus {
@@ -70,7 +72,7 @@ private fun Pill(tone: Tone, icon: ImageVector, text: String, modifier: Modifier
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // The word carries the meaning; the icon is decoration for sighted readers.
-        Icon(icon, contentDescription = null, tint = tone.content, modifier = Modifier.size(14.dp))
+        Icon(icon, contentDescription = null, tint = tone.content, modifier = Modifier.size(textIconSize(14.sp)))
         Text(text, style = MaterialTheme.typography.labelLarge, color = tone.content)
     }
 }
