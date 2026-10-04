@@ -70,6 +70,13 @@ android {
         buildConfig = true
     }
 
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+            all { it.systemProperty("roborazzi.test.record", "true") }
+        }
+    }
+
     lint {
         warningsAsErrors = true
         abortOnError = true
@@ -101,5 +108,13 @@ dependencies {
     implementation(libs.activity.compose)
     implementation(libs.lifecycle.viewmodel.compose)
     testImplementation(libs.junit)
+    // JVM screenshots of real screens (Robolectric native graphics + Roborazzi); images land in app/build/outputs/roborazzi.
+    testImplementation(libs.serialization.json)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.roborazzi)
+    testImplementation(libs.roborazzi.compose)
+    testImplementation(platform(libs.compose.bom))
+    testImplementation(libs.compose.ui.test.junit4)
+    debugImplementation(libs.compose.ui.test.manifest)
     testImplementation(libs.coroutines.test)
 }

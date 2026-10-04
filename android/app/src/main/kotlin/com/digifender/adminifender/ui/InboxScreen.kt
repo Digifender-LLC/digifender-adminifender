@@ -32,7 +32,10 @@ import com.digifender.adminifender.core.data.repository.InboxFilter
 fun InboxScreen(state: InboxUiState, nowMs: Long, onFilter: (InboxFilter) -> Unit, onRefresh: () -> Unit, onOpen: (String) -> Unit, modifier: Modifier = Modifier, onBriefing: () -> Unit = {}) {
     Column(modifier) {
         ScreenHeader(stringResource(R.string.inbox_title), icon = Glyphs.cloud, subtitle = state.freshness?.let { freshnessText(it, nowMs) }) {
-            TextButton(onClick = onRefresh) { Text(stringResource(R.string.refresh)) }
+            Column(horizontalAlignment = Alignment.End) {
+                TextButton(onClick = onRefresh) { Text(stringResource(R.string.refresh)) }
+                TextButton(onClick = onBriefing) { Text(stringResource(R.string.briefing_open)) }
+            }
         }
     Column(Modifier.padding(horizontal = 20.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -43,7 +46,6 @@ fun InboxScreen(state: InboxUiState, nowMs: Long, onFilter: (InboxFilter) -> Uni
                     if (f.needsOwner > 0) Text(pluralStringResource(R.plurals.needs_owner, f.needsOwner, f.needsOwner), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                 }
             }
-            TextButton(onClick = onBriefing) { Text(stringResource(R.string.briefing_open)) }
         }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             InboxFilter.entries.forEach { f ->

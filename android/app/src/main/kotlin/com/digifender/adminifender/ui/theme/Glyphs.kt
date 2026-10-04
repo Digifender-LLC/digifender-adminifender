@@ -18,7 +18,7 @@ object Glyphs {
     // Status pills (2-unit strokes).
     val alert = stroke("alert", 2f, "M12 4l9 16H3z", "M12 10v4", "M12 17v0.01")
     val clock = stroke("clock", 2f, "M12 3.5a8.5 8.5 0 1 0 0 17a8.5 8.5 0 1 0 0 -17z", "M12 7.5V12l3 2")
-    val hourglass = stroke("hourglass", 2f, "M7 4h10", "M7 20h10", "M8 4c0 5 8 5 8 8s-8 3-8 8")
+    val hourglass = stroke("hourglass", 2f, "M7 4h10", "M7 20h10", "M8 4c0 4.5 8 3.5 8 8s-8 3.5 -8 8", "M16 4c0 4.5 -8 3.5 -8 8s8 3.5 8 8")
     val check = stroke("check", 2f, "M5 12.5l4.5 4.5L19 7.5")
 
     // Navigation and inline icons (1.75-unit strokes).
