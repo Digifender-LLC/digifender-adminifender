@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://adminifender.invalid/schema/v1/chat-answer.schema.json",
+  "title": "Validated grounded chat answer",
+  "description": "lld.md#chat. Shared by local and cloud adapters. Citations are additionally checked against the chunks given to the model; evidence and report claims must cite. Proposals carry no dispatch authority.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["answer", "claims", "gaps", "proposals"],
+  "properties": {
+    "answer": { "type": "string", "minLength": 1, "maxLength": 4000 },
+    "claims": {
+      "type": "array",
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["text", "basis", "citations"],
+        "properties": {
+          "text": { "type": "string", "minLength": 1, "maxLength": 1000 },
+          "basis": {
+            "description": "evidence: stated in a cited excerpt; report: an as-of observation, never present health; inference and hypothesis: the model's reasoning, never established fact.",
+            "enum": ["evidence", "report", "inference", "hypothesis"]
+          },
+          "citations": {
+            "type": "array",
+            "maxItems": 4,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["chunkId", "start", "end"],
+              "properties": {
+                "chunkId": { "$ref": "common.schema.json#/$defs/chunkId" },
+                "start": { "type": "integer", "minimum": 0, "maximum": 6000 },
+                "end": { "type": "integer", "minimum": 0, "maximum": 6000 }
+              }
+            }
+          }
+        },
+        "if": { "properties": { "basis": { "enum": ["evidence", "report"] } } },
+        "then": { "properties": { "citations": { "type": "array", "minItems": 1 } } }
+      }
+    },
+    "gaps": { "type": "array", "maxItems": 5, "items": { "type": "string", "minLength": 1, "maxLength": 300 } },
+    "proposals": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "targetId", "description"],
+        "properties": {
+          "kind": { "$ref": "common.schema.json#/$defs/actionKind" },
+          "targetId": { "type": "string", "minLength": 1, "maxLength": 200 },
+          "description": { "type": "string", "minLength": 1, "maxLength": 500 }
+        }
+      }
+    }
+  }
+}

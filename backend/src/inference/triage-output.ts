@@ -31,13 +31,13 @@ export type Validation = { ok: true; value: TriageOutput } | { ok: false; errors
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?Z$/;
-const CHUNK_ID = /^[A-Za-z0-9:_.-]{1,200}$/;
+export const CHUNK_ID = /^[A-Za-z0-9:_.-]{1,200}$/;
 
-const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
-const isString = (value: unknown, max: number): value is string => typeof value === 'string' && value.length >= 1 && value.length <= max;
-const isInt = (value: unknown, max: number): value is number => typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= max;
+export const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+export const isString = (value: unknown, max: number): value is string => typeof value === 'string' && value.length >= 1 && value.length <= max;
+export const isInt = (value: unknown, max: number): value is number => typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= max;
 
-function onlyKeys(value: Record<string, unknown>, allowed: string[], required: string[], path: string, errors: string[]): void {
+export function onlyKeys(value: Record<string, unknown>, allowed: string[], required: string[], path: string, errors: string[]): void {
   for (const key of Object.keys(value)) if (!allowed.includes(key)) errors.push(`${path}.${key}:unknown_field`);
   for (const key of required) if (!Object.hasOwn(value, key)) errors.push(`${path}.${key}:required`);
 }

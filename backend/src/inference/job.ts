@@ -5,9 +5,9 @@ import { canonicalJson } from '../http/idempotency';
 import { deterministicUuid, sha256Hex } from '../ids';
 import { CLAIM_GUARD, type ClaimedJob, type JobResult, guardParams } from '../jobs/runner';
 import { REGISTRY_COLUMNS, REGISTRY_FROM, type RegistryRow, archiveFor } from '../sources/registry';
-import { type Reservation, releaseStatements, reserve, settleStatements } from './budget';
+import { type Reservation, type UsageKind, releaseStatements, reserve, settleStatements } from './budget';
 import { CLOUD_MAX_CHUNKS, type Message, type TextModel, repairMessages, runCloud, triageMessages, worstCaseInputTokens, CLOUD_OUTPUT_TOKENS } from './cloud';
-import { type Privacy, type Readiness, type Thermal, cloudGate, localReady, route } from './routing';
+import { type Privacy, type Readiness, type TaskKind, type Thermal, cloudGate, localReady, route } from './routing';
 import { type Settings, loadSettings } from './settings';
 import { type TriageOutput, normalizeTriage, parseModelJson, validateTriage } from './triage-output';
 
@@ -93,19 +93,44 @@ export async function resultStatement(
 
 export function queueLocalStatement(
   db: D1Database,
-  fields: { id: string; jobId: string; source: RegistryRow; policyRevision: number; digest: string; reason: string; repair: boolean },
+  fields: {
+    id: string;
+    jobId: string;
+    task?: string;
+    usageKind?: UsageKind;
+    source: { id: string; revision: number } | null;
+    chunkIds?: string[] | null;
+    policyRevision: number;
+    digest: string;
+    reason: string;
+    repair: boolean;
+  },
   now: number,
   guard?: { sql: string; params: unknown[] },
 ): D1PreparedStatement {
   return db
     .prepare(
-      `INSERT INTO inference_attempts(id, job_id, route, model_id, policy_revision, input_digest, state, reservation_json, task, usage_kind, source_id, source_revision, reason, repair, created_at)
-       SELECT ?, ?, 'local', '${LOCAL_MODEL_PENDING}', ?, ?, 'queued', '{}', '${INFER_TASK}', 'automatic', ?, ?, ?, ?, ?${guard ? ` WHERE ${guard.sql}` : ''}`,
+      `INSERT INTO inference_attempts(id, job_id, route, model_id, policy_revision, input_digest, state, reservation_json, task, usage_kind, source_id, source_revision, reason, repair, chunk_ids_json, created_at)
+       SELECT ?, ?, 'local', '${LOCAL_MODEL_PENDING}', ?, ?, 'queued', '{}', ?, ?, ?, ?, ?, ?, ?, ?${guard ? ` WHERE ${guard.sql}` : ''}`,
     )
-    .bind(fields.id, fields.jobId, fields.policyRevision, fields.digest, fields.source.id, fields.source.revision, fields.reason, fields.repair ? 1 : 0, now, ...(guard?.params ?? []));
+    .bind(
+      fields.id,
+      fields.jobId,
+      fields.policyRevision,
+      fields.digest,
+      fields.task ?? INFER_TASK,
+      fields.usageKind ?? 'automatic',
+      fields.source?.id ?? null,
+      fields.source?.revision ?? null,
+      fields.reason,
+      fields.repair ? 1 : 0,
+      fields.chunkIds ? JSON.stringify(fields.chunkIds) : null,
+      now,
+      ...(guard?.params ?? []),
+    );
 }
 
-const RUNNING_GUARD = "EXISTS (SELECT 1 FROM jobs WHERE id = ? AND lease_token = ? AND state = 'running')";
+export const RUNNING_GUARD = "EXISTS (SELECT 1 FROM jobs WHERE id = ? AND lease_token = ? AND state = 'running')";
 
 interface AttemptRow {
   id: string;
@@ -114,13 +139,13 @@ interface AttemptRow {
   reservation_json: string;
 }
 
-/** Fresh readiness of any active device for background work. */
-async function anyDeviceReady(db: D1Database, now: number): Promise<boolean> {
+/** Fresh readiness of any active device for this kind of task. */
+export async function anyDeviceReady(db: D1Database, now: number, task: TaskKind = 'background'): Promise<boolean> {
   const { results } = await db
     .prepare('SELECT r.reported_at, r.foreground, r.charging, r.battery_percent, r.thermal, r.model_id FROM device_readiness r JOIN devices d ON d.id = r.device_id WHERE d.revoked_at IS NULL')
     .all<{ reported_at: number; foreground: number; charging: number; battery_percent: number; thermal: Thermal; model_id: string | null }>();
   return results.some((r) =>
-    localReady({ reportedAt: r.reported_at, foreground: r.foreground === 1, charging: r.charging === 1, batteryPercent: r.battery_percent, thermal: r.thermal, modelId: r.model_id } satisfies Readiness, 'background', now),
+    localReady({ reportedAt: r.reported_at, foreground: r.foreground === 1, charging: r.charging === 1, batteryPercent: r.battery_percent, thermal: r.thermal, modelId: r.model_id } satisfies Readiness, task, now),
   );
 }
 
@@ -190,38 +215,68 @@ function actualNeurons(settings: Settings, usage: { inputTokens: number; outputT
   return Math.ceil((usage.inputTokens * (cloud.neuronsPerMillionInputTokens ?? 0) + usage.outputTokens * (cloud.neuronsPerMillionOutputTokens ?? 0)) / 1_000_000);
 }
 
-async function cloudTriage(
-  job: ClaimedJob,
-  env: Env,
-  now: number,
-  ctx: { source: RegistryRow; settings: Settings; digest: string; subject: string; chunks: BodyChunk[]; queueLocal: (reason: string) => JobResult },
-): Promise<JobResult> {
+export interface CloudTask<T> {
+  task: string;
+  usageKind: UsageKind;
+  digest: string;
+  /** Recorded on the attempt for single-source tasks. */
+  source: { id: string; revision: number } | null;
+  chunkIds: string[] | null;
+  /** Policy guards rechecked in the transaction that records dispatch. */
+  eligible: { sql: string; params: unknown[] }[];
+  messages: Message[];
+  validate: (text: string) => { ok: true; value: T } | { ok: false; errors: string[] };
+  /** Writes that store an accepted output; the last one's effect reports whether the output was kept. */
+  store: (attemptId: string, modelId: string, value: T) => Promise<D1PreparedStatement[]>;
+}
+
+export type CloudOutcome =
+  | { kind: 'succeeded'; attemptId: string; kept: boolean }
+  | { kind: 'invalid'; errors: string[] }
+  | { kind: 'budget_exhausted'; repair: boolean; errors: string[] }
+  | { kind: 'busy' }
+  | { kind: 'uncertain' }
+  | { kind: 'policy_changed' };
+
+/**
+ * Reserve, record dispatch, call the model and validate, with one separately reserved schema repair. Each
+ * attempt's usage is settled in its own batch, so a repair never hides the first request's spend.
+ */
+export async function dispatchCloud<T>(job: ClaimedJob, env: Env, now: number, settings: Settings, t: CloudTask<T>): Promise<CloudOutcome> {
   const db = env.CONTROL_DB;
-  const { source, settings } = ctx;
   const modelId = settings.inference.cloud.modelId!;
   const ai = env.AI as unknown as TextModel;
   const running = { sql: RUNNING_GUARD, params: guardParams(job) };
-  const eligible = sourceStillEligible(source.id, source.revision, source.privacy, settings.revision);
-  const chunkLengths = new Map(ctx.chunks.map((c) => [c.id, c.text.length]));
-  const services = await knownServiceIds(db);
-  const original = triageMessages(ctx.subject, ctx.chunks);
-  let messages: Message[] = original;
+  let messages: Message[] = t.messages;
   let lastErrors: string[] = [];
 
   for (const repair of [false, true]) {
     const attemptId = crypto.randomUUID();
-    const reserved = await reserve(db, settings.inference, 'automatic', { input: worstCaseInputTokens(messages), output: CLOUD_OUTPUT_TOKENS }, now, (reservation) => [
+    const reserved = await reserve(db, settings.inference, t.usageKind, { input: worstCaseInputTokens(messages), output: CLOUD_OUTPUT_TOKENS }, now, (reservation) => [
       assertion(db, running.sql, ...running.params),
       db.prepare(
-        `INSERT INTO inference_attempts(id, job_id, route, model_id, policy_revision, input_digest, state, reservation_json, task, usage_kind, source_id, source_revision, reason, repair, created_at)
-         VALUES (?, ?, 'cloud', ?, ?, ?, 'reserved', ?, '${INFER_TASK}', 'automatic', ?, ?, ?, ?, ?)`,
-      ).bind(attemptId, job.id, modelId, settings.revision, ctx.digest, JSON.stringify(reservation), source.id, source.revision, repair ? 'schema_repair' : 'cloud_allowed', repair ? 1 : 0, now),
+        `INSERT INTO inference_attempts(id, job_id, route, model_id, policy_revision, input_digest, state, reservation_json, task, usage_kind, source_id, source_revision, reason, repair, chunk_ids_json, created_at)
+         VALUES (?, ?, 'cloud', ?, ?, ?, 'reserved', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(
+        attemptId,
+        job.id,
+        modelId,
+        settings.revision,
+        t.digest,
+        JSON.stringify(reservation),
+        t.task,
+        t.usageKind,
+        t.source?.id ?? null,
+        t.source?.revision ?? null,
+        repair ? 'schema_repair' : 'cloud_allowed',
+        repair ? 1 : 0,
+        t.chunkIds ? JSON.stringify(t.chunkIds) : null,
+        now,
+      ),
     ]);
     if (!reserved.ok) {
-      if (reserved.reason === 'cloud_busy') return { kind: 'retry', errorCode: 'cloud_busy' };
-      // Budget gone: the first request waits for a phone; a needed repair becomes a visible failure.
-      if (!repair) return ctx.queueLocal('budget_exhausted');
-      return { kind: 'complete', output: { route: 'cloud', state: 'failed', error: 'invalid_output', repair: 'budget_exhausted', errors: lastErrors } };
+      if (reserved.reason === 'cloud_busy') return { kind: 'busy' };
+      return { kind: 'budget_exhausted', repair, errors: lastErrors };
     }
     const { reservation } = reserved;
 
@@ -229,14 +284,14 @@ async function cloudTriage(
     try {
       await db.batch([
         assertion(db, running.sql, ...running.params),
-        assertion(db, eligible.sql, ...eligible.params),
+        ...t.eligible.map((g) => assertion(db, g.sql, ...g.params)),
         assertion(db, "EXISTS (SELECT 1 FROM inference_attempts WHERE id = ? AND state = 'reserved')", attemptId),
         db.prepare("UPDATE inference_attempts SET state = 'dispatched', dispatched_at = ? WHERE id = ?").bind(now, attemptId),
       ]);
     } catch (error) {
       if (!isAssertionFailure(error)) throw error;
       await releaseAttempt(db, attemptId, reservation, now, 'policy_changed');
-      return { kind: 'complete', output: { skipped: 'policy_changed' } };
+      return { kind: 'policy_changed' };
     }
 
     let reply: Awaited<ReturnType<typeof runCloud>>;
@@ -246,23 +301,21 @@ async function cloudTriage(
       // The provider may have processed and billed the request: keep the exposure and never redispatch.
       const code = error instanceof Error && error.message === 'timeout' ? 'timeout' : 'provider_error';
       await db.prepare("UPDATE inference_attempts SET state = 'uncertain', error_code = ?, completed_at = ? WHERE id = ? AND state = 'dispatched'").bind(code, now, attemptId).run();
-      return { kind: 'fail', errorCode: 'dispatch_uncertain' };
+      return { kind: 'uncertain' };
     }
 
     const neurons = actualNeurons(settings, reply.usage);
     const usage = JSON.stringify({ inputTokens: reply.usage?.inputTokens ?? null, outputTokens: reply.usage?.outputTokens ?? null, neurons: neurons ?? reservation.neurons, measured: neurons !== null });
-    const parsed = parseModelJson(reply.text);
-    const checked = parsed.ok ? validateTriage(normalizeTriage(parsed.value), chunkLengths, services) : parsed;
+    const checked = t.validate(reply.text);
     const settle = [assertion(db, "EXISTS (SELECT 1 FROM inference_attempts WHERE id = ? AND state = 'dispatched')", attemptId), ...settleStatements(db, reservation, neurons)];
     if (checked.ok) {
-      const stored = await resultStatement(db, { id: attemptId, jobId: job.id, route: 'cloud', modelId }, source, settings.revision, checked.value, now);
+      const stored = await t.store(attemptId, modelId, checked.value);
       const results = await db.batch([
         ...settle,
         db.prepare("UPDATE inference_attempts SET state = 'succeeded', usage_json = ?, completed_at = ? WHERE id = ?").bind(usage, now, attemptId),
-        stored,
+        ...stored,
       ]);
-      const kept = (results[results.length - 1]?.meta.changes ?? 0) === 1;
-      return { kind: 'complete', output: { route: 'cloud', state: kept ? 'succeeded' : 'discarded', attemptId } };
+      return { kind: 'succeeded', attemptId, kept: stored.length === 0 || (results[results.length - 1]?.meta.changes ?? 0) >= 1 };
     }
     lastErrors = checked.errors;
     await db.batch([
@@ -270,7 +323,48 @@ async function cloudTriage(
       db.prepare("UPDATE inference_attempts SET state = 'invalid_output', error_code = 'invalid_output', usage_json = ?, completed_at = ? WHERE id = ?").bind(usage, now, attemptId),
     ]);
     // One schema-repair attempt, separately reserved; the rejected text goes back only to the same model.
-    messages = repairMessages(original, reply.text, checked.errors);
+    messages = repairMessages(t.messages, reply.text, checked.errors);
   }
-  return { kind: 'complete', output: { route: 'cloud', state: 'failed', error: 'invalid_output', errors: lastErrors } };
+  return { kind: 'invalid', errors: lastErrors };
+}
+
+async function cloudTriage(
+  job: ClaimedJob,
+  env: Env,
+  now: number,
+  ctx: { source: RegistryRow; settings: Settings; digest: string; subject: string; chunks: BodyChunk[]; queueLocal: (reason: string) => JobResult },
+): Promise<JobResult> {
+  const { source, settings } = ctx;
+  const chunkLengths = new Map(ctx.chunks.map((c) => [c.id, c.text.length]));
+  const services = await knownServiceIds(env.CONTROL_DB);
+  const outcome = await dispatchCloud(job, env, now, settings, {
+    task: INFER_TASK,
+    usageKind: 'automatic',
+    digest: ctx.digest,
+    source: { id: source.id, revision: source.revision },
+    chunkIds: null,
+    eligible: [sourceStillEligible(source.id, source.revision, source.privacy, settings.revision)],
+    messages: triageMessages(ctx.subject, ctx.chunks),
+    validate: (text) => {
+      const parsed = parseModelJson(text);
+      return parsed.ok ? validateTriage(normalizeTriage(parsed.value), chunkLengths, services) : parsed;
+    },
+    store: async (attemptId, modelId, value) => [await resultStatement(env.CONTROL_DB, { id: attemptId, jobId: job.id, route: 'cloud', modelId }, source, settings.revision, value, now)],
+  });
+  switch (outcome.kind) {
+    case 'succeeded':
+      return { kind: 'complete', output: { route: 'cloud', state: outcome.kept ? 'succeeded' : 'discarded', attemptId: outcome.attemptId } };
+    case 'busy':
+      return { kind: 'retry', errorCode: 'cloud_busy' };
+    case 'uncertain':
+      return { kind: 'fail', errorCode: 'dispatch_uncertain' };
+    case 'policy_changed':
+      return { kind: 'complete', output: { skipped: 'policy_changed' } };
+    case 'budget_exhausted':
+      // Budget gone: the first request waits for a phone; a needed repair becomes a visible failure.
+      if (!outcome.repair) return ctx.queueLocal('budget_exhausted');
+      return { kind: 'complete', output: { route: 'cloud', state: 'failed', error: 'invalid_output', repair: 'budget_exhausted', errors: outcome.errors } };
+    case 'invalid':
+      return { kind: 'complete', output: { route: 'cloud', state: 'failed', error: 'invalid_output', errors: outcome.errors } };
+  }
 }

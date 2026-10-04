@@ -12,12 +12,14 @@ import * as sync from '../sync/routes';
 import * as reviews from '../reviews/routes';
 import * as exportsRoutes from '../exports/job';
 import * as rules from '../triage/routes';
+import * as chat from '../chat/routes';
 import * as device from '../inference/device';
 import * as inference from '../inference/routes';
 import * as settings from '../inference/settings';
 import { fail, ok } from './envelope';
 import { HttpError } from './errors';
 import { withIdempotency } from './idempotency';
+import { WithStatus } from './status';
 import { type Validator, readJson } from './validate';
 
 const PREFIX = '/api/v1';
@@ -38,7 +40,10 @@ function mutation<B>(validator: Validator<B>, handler: MutationHandler<B>): Hand
     await authenticate(request, env, now);
     const body = await readJson(request, validator);
     const path = new URL(request.url).pathname;
-    const stored = await withIdempotency(env.CONTROL_DB, request, path, body, now, async () => ({ status: 200, body: { data: await handler(env, now, body, ...params) } }));
+    const stored = await withIdempotency(env.CONTROL_DB, request, path, body, now, async () => {
+      const data = await handler(env, now, body, ...params);
+      return data instanceof WithStatus ? { status: data.status, body: { data: data.data } } : { status: 200, body: { data } };
+    });
     return new StoredResponse(stored.status, stored.body as Record<string, unknown>);
   };
 }
@@ -105,6 +110,11 @@ const ROUTES: Route[] = [
   { method: 'POST', pattern: new RegExp(`^/concerns/${ID}/split$`), handler: mutation(grouping.splitBody, grouping.splitConcern) },
   { method: 'POST', pattern: /^\/concerns\/merge$/, handler: mutation(grouping.mergeBody, grouping.mergeConcerns) },
   { method: 'GET', pattern: /^\/briefings\/current$/, handler: briefings.currentBriefing },
+  { method: 'POST', pattern: /^\/chat\/threads$/, handler: mutation(chat.threadBody, chat.createThread) },
+  { method: 'GET', pattern: new RegExp(`^/chat/threads/${ID}/turns$`), handler: chat.listTurns },
+  { method: 'POST', pattern: new RegExp(`^/chat/threads/${ID}/turns$`), handler: mutation(chat.turnBody, chat.postTurn) },
+  { method: 'GET', pattern: new RegExp(`^/chat/turns/${ID}$`), handler: chat.getTurn },
+  { method: 'POST', pattern: new RegExp(`^/chat/turns/${ID}/cancel$`), handler: mutation(chat.cancelBody, chat.cancelTurn) },
   { method: 'GET', pattern: /^\/settings$/, handler: settings.getSettings },
   { method: 'PATCH', pattern: /^\/settings$/, handler: mutation(settings.settingsPatch, settings.patchSettings) },
   { method: 'GET', pattern: new RegExp(`^/sources/${ID}/inference$`), handler: inference.sourceInference },

