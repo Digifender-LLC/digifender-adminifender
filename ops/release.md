@@ -9,14 +9,14 @@ Builds go only to the Play internal test track for the owner ([TDD private Play 
 3. Copy the **app-signing** certificate SHA-256 from Play Console. The upload certificate alone is not enough. Publish Digital Asset Links on `https://digifender.com/.well-known/assetlinks.json`:
    `python3 tools/release_preflight.py assetlinks --package com.digifender.adminifender --package com.digifender.adminifender.staging --sha256 <app signing> --sha256 <staging signing>`
 4. Add `android:apk-key-hash:<base64url of that certificate's SHA-256>` to the environment's `EXPECTED_ORIGINS`.
-5. Create the Firebase Android app for each environment, then pass its options as `-Padminifender.firebase.*` (see `android/README.md`).
+5. Create the Firebase Android apps for each environment (`com.digifender.adminifender` and `.staging`). Place `android/app/google-services.json` locally; it is never committed (`android/README.md`).
 
 ## Each release
 
 ```sh
 export ADMINIFENDER_UPLOAD_STORE_FILE=... ADMINIFENDER_UPLOAD_STORE_PASSWORD=... ADMINIFENDER_UPLOAD_KEY_ALIAS=... ADMINIFENDER_UPLOAD_KEY_PASSWORD=...
 cd android && ./gradlew :app:bundleRelease -Padminifender.versionCode=<next> -Padminifender.apiBaseUrl=https://<prod host>/ \
-  [-Padminifender.modelManifest=../models/<manifest>.json] [-Padminifender.firebase.appId=... ...]
+  [-Padminifender.modelManifest=../models/<manifest>.json]
 cd .. && python3 tools/release_preflight.py check --aab android/app/build/outputs/bundle/release/app-release.aab \
   --version-code <next> --env <environment> --out release-manifest.json
 ```
