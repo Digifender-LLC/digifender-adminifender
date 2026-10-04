@@ -54,7 +54,7 @@ The asset-links statement is published on `https://digifender.com/.well-known/as
 
 ## Not configured yet
 
-- **Owner enrollment:** create a bootstrap token with `tools/bootstrap-token.mjs` and enroll a staging passkey from the staging app.
+- **Owner enrollment:** the operator runs `node tools/bootstrap-token.mjs`, applies its SQL to the staging `CONTROL_DB` (`npx wrangler d1 execute CONTROL_DB --env staging --remote --file <sql>`) and gives the owner the printed `afb_` code, which works once within 15 minutes. The owner opens `https://adminifender-staging.digifender.com/enroll` in Chrome on the phone, pastes the code, creates the passkey (saved for `digifender.com`) and stores the recovery secret offline. The staging app's **Sign in with passkey** then uses that passkey.
 - **Digital Asset Links (production package):** `https://digifender.com/.well-known/assetlinks.json` lists only the staging package so far ([digifender-website#3](https://github.com/Digifender-LLC/digifender-website/pull/3), live since 2026-10-04). `com.digifender.adminifender` gets its own statement once Play App Signing exists.
 - **Push:** no `FCM_SERVICE_ACCOUNT` secret and no staging Firebase project, so delivery reports `push_unavailable`.
 - **P2 reports:** `REPORTS_ENABLED` is not set, so all P2 routes answer `feature_disabled`. Enabling it on staging needs a `REPORT_KEY_WRAP` secret and a registered alias with a key, as part of the P2 acceptance run.

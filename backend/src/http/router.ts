@@ -23,6 +23,7 @@ import * as settings from '../inference/settings';
 import * as notifications from '../notifications/routes';
 import * as health from '../diagnostics/health';
 import * as diagnostics from '../diagnostics/export';
+import { enrollmentAsset } from './enroll';
 import { fail, ok } from './envelope';
 import { HttpError } from './errors';
 import { withIdempotency } from './idempotency';
@@ -166,6 +167,8 @@ const ROUTES: Route[] = [
 export async function handleFetch(request: Request, env: Env, now = Date.now()): Promise<Response> {
   const requestId = crypto.randomUUID();
   const { pathname } = new URL(request.url);
+  const page = enrollmentAsset(request);
+  if (page) return page;
   if (!pathname.startsWith(`${PREFIX}/`)) return fail(404, 'not_found', 'Not found.', requestId);
   const path = pathname.slice(PREFIX.length);
 
