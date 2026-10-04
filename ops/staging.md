@@ -48,7 +48,7 @@ The asset-links statement is published on `https://digifender.com/.well-known/as
 ## Not configured yet
 
 - **Owner enrollment:** create a bootstrap token with `tools/bootstrap-token.mjs` and enroll a staging passkey from the staging app.
-- **Digital Asset Links:** the statement for `com.digifender.adminifender.staging` and the owner's debug key is in review as [digifender-website#3](https://github.com/Digifender-LLC/digifender-website/pull/3). Android passkey sign-in fails until that PR merges and `https://digifender.com/.well-known/assetlinks.json` serves it. The production package gets its own statement once Play App Signing exists.
+- **Digital Asset Links (production package):** `https://digifender.com/.well-known/assetlinks.json` lists only the staging package so far ([digifender-website#3](https://github.com/Digifender-LLC/digifender-website/pull/3), live since 2026-10-04). `com.digifender.adminifender` gets its own statement once Play App Signing exists.
 - **Push:** no `FCM_SERVICE_ACCOUNT` secret and no staging Firebase project, so delivery reports `push_unavailable`.
 - **P2 reports:** `REPORTS_ENABLED` is not set, so all P2 routes answer `feature_disabled`. Enabling it on staging needs a `REPORT_KEY_WRAP` secret and a registered alias with a key, as part of the P2 acceptance run.
 - **Email:** no staging email route or address, so capture is untested live. Synthetic mail needs a dedicated staging address, never the production route.
