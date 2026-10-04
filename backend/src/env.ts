@@ -25,6 +25,13 @@ export interface Env {
   /** Worker secret (>= 32 chars) that encrypts stored push tokens. */
   PUSH_TOKEN_KEY: string;
   /**
+   * P2 signed reports are off unless this is exactly "true" (lld.md#reports). Each producer still needs its own
+   * acceptance gate before a deployment turns it on.
+   */
+  REPORTS_ENABLED?: string;
+  /** Worker secret (>= 32 chars) that encrypts report HMAC keys at rest; required when reports are enabled. */
+  REPORT_KEY_WRAP?: string;
+  /**
    * Optional Worker secret: the Firebase service-account JSON for FCM sends. Backend-only; never logged,
    * returned or given to a model. Absent locally, so delivery reports `push_unavailable`.
    */

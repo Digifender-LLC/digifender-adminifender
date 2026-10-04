@@ -15,6 +15,7 @@ import * as rules from '../triage/routes';
 import * as chat from '../chat/routes';
 import * as device from '../inference/device';
 import * as extraction from '../extraction/device';
+import * as reports from '../reports/routes';
 import * as inference from '../inference/routes';
 import * as settings from '../inference/settings';
 import * as notifications from '../notifications/routes';
@@ -134,6 +135,12 @@ const ROUTES: Route[] = [
   { method: 'POST', pattern: /^\/device-work\/claim$/, handler: ownerMutation(device.readinessBody, device.claimWork, { recentAuth: false }) },
   { method: 'POST', pattern: new RegExp(`^/device-work/${ID}/heartbeat$`), handler: ownerMutation(device.heartbeatBody, device.heartbeat, { recentAuth: false }) },
   { method: 'POST', pattern: new RegExp(`^/device-work/${ID}/result$`), handler: ownerMutation(device.resultBody, device.submitResult, { recentAuth: false }) },
+  { method: 'GET', pattern: /^\/services$/, handler: reports.listServices },
+  { method: 'POST', pattern: /^\/services$/, handler: mutation(reports.serviceBody, reports.createService) },
+  { method: 'PATCH', pattern: new RegExp(`^/services/${ID}$`), handler: mutation(reports.servicePatch, reports.updateService) },
+  { method: 'POST', pattern: new RegExp(`^/services/${ID}/report-keys$`), handler: reports.createReportKey },
+  { method: 'POST', pattern: new RegExp(`^/report-keys/${ID}/revoke$`), handler: ownerMutation(reports.revokeBody, reports.revokeReportKey, { recentAuth: true }) },
+  { method: 'GET', pattern: /^\/operations\/overview$/, handler: reports.operationsOverview },
   { method: 'POST', pattern: /^\/device-extraction\/claim$/, handler: ownerMutation(extraction.claimBody, extraction.claimExtraction, { recentAuth: false }) },
   { method: 'POST', pattern: new RegExp(`^/device-extraction/${ID}/heartbeat$`), handler: ownerMutation(extraction.heartbeatBody, extraction.extractionHeartbeat, { recentAuth: false }) },
   { method: 'POST', pattern: new RegExp(`^/device-extraction/${ID}/batch$`), handler: ownerMutation(extraction.batchBody, extraction.submitBatch, { recentAuth: false }) },
@@ -161,6 +168,7 @@ export async function handleFetch(request: Request, env: Env, now = Date.now()):
           headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' },
         });
       }
+      if (result instanceof WithStatus) return ok(result.data, requestId, result.status);
       return ok(result, requestId);
     }
     return fail(404, 'not_found', 'Not found.', requestId);

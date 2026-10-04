@@ -20,6 +20,7 @@ export const MAX_PAGES_PER_BATCH = 10;
 export const MAX_BATCH_TEXT_BYTES = 128 * 1024;
 export const MAX_PAGES_PER_JOB = 100;
 const MIN_BATTERY = 30;
+const NO_OCR = ['no_ai', 'restricted_metadata'];
 
 export const deviceGenerationFor = (attachmentId: string) => `att:${attachmentId}:${DEVICE_EXTRACTOR_VERSION}`;
 /** Deterministic chunk identity: a repeated batch rewrites the same rows instead of adding new ones. */
@@ -129,8 +130,8 @@ export async function claimExtraction(env: Env, now: number, body: ReturnType<ty
         nextBatch: lease!.next_batch,
         nextPage: lease!.next_page,
         maxPages: MAX_PAGES_PER_JOB,
-        // no_ai forbids OCR; deterministic PDF text stays allowed (lld.md#text-extraction-and-ocr).
-        ocrAllowed: candidate.privacy !== 'no_ai',
+        // no_ai and restricted report mail forbid OCR; deterministic PDF text stays allowed (lld.md#text-extraction-and-ocr).
+        ocrAllowed: !NO_OCR.includes(candidate.privacy),
         // A resumed job needs the earlier batches' hashes for the closing manifest.
         batchHashes: stored.results.map((r) => r.batch_hash),
       },
@@ -219,7 +220,7 @@ export async function submitBatch(env: Env, now: number, body: ReturnType<typeof
   if (body.policyRevision !== lease.policy_revision || processing.policy_revision !== lease.policy_revision) throw new HttpError(409, 'policy_changed', 'Privacy settings changed. Claim the attachment again.');
   const source = await eligibleSource(env, processing.source_id);
   if (!source) throw new HttpError(410, 'deleted', 'The email is no longer available.');
-  if (source.privacy === 'no_ai' && body.pages.some((p) => p.method === 'ocr')) throw new HttpError(422, 'policy_blocked', 'OCR is not allowed for this email.');
+  if (NO_OCR.includes(source.privacy) && body.pages.some((p) => p.method === 'ocr')) throw new HttpError(422, 'policy_blocked', 'OCR is not allowed for this email.');
 
   const bytes = body.pages.reduce((sum, p) => sum + new TextEncoder().encode(p.text).byteLength, 0);
   if (bytes > MAX_BATCH_TEXT_BYTES) throw new HttpError(413, 'batch_too_large', 'A batch carries at most 128 KiB of text.');
