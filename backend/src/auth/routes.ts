@@ -188,6 +188,35 @@ export async function passkeyOptions(request: Request, env: Env, now: number) {
   return { challengeId, options };
 }
 
+/** The origin the client reported, only when it has the shape of a public web or Android app origin. */
+function reportedOrigin(assertion: Record<string, unknown>): string | null {
+  try {
+    const response = assertion.response as { clientDataJSON?: unknown } | undefined;
+    if (typeof response?.clientDataJSON !== 'string') return null;
+    const json = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(response.clientDataJSON.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0))));
+    const origin = (json as { origin?: unknown }).origin;
+    return typeof origin === 'string' && /^(https:\/\/[a-z0-9.-]+(:\d+)?|http:\/\/localhost(:\d+)?|android:apk-key-hash:[A-Za-z0-9_-]{43})$/.test(origin) ? origin : null;
+  } catch {
+    return null;
+  }
+}
+
+function failureReason(error: unknown, assertion: Record<string, unknown>, origins: string[]): string {
+  const origin = reportedOrigin(assertion);
+  if (origin !== null && !origins.includes(origin)) return 'unexpected_origin';
+  const message = error instanceof Error ? error.message : '';
+  if (/challenge/i.test(message)) return 'challenge_mismatch';
+  if (/RP ID/i.test(message)) return 'rp_id_mismatch';
+  if (/user verif/i.test(message)) return 'user_not_verified';
+  if (/signature|unverified/i.test(message)) return 'bad_signature';
+  return 'invalid_response';
+}
+
+/** Content-free diagnostics: a reason class and the public origin (web origin or APK signing-key hash) only. */
+function logVerifyFailure(reason: string, assertion: Record<string, unknown>) {
+  console.warn(JSON.stringify({ event: 'passkey_verify_failed', reason, origin: reportedOrigin(assertion) }));
+}
+
 // POST /auth/passkey/verify
 export async function passkeyVerify(request: Request, env: Env, now: number) {
   const body = await readJson(
@@ -199,7 +228,10 @@ export async function passkeyVerify(request: Request, env: Env, now: number) {
   const passkey = await env.CONTROL_DB.prepare('SELECT id, public_key, sign_count, transports_json FROM passkeys WHERE id = ? AND revoked_at IS NULL')
     .bind(credentialId)
     .first<{ id: string; public_key: ArrayBuffer; sign_count: number; transports_json: string }>();
-  if (!passkey) throw unauthenticated();
+  if (!passkey) {
+    logVerifyFailure('unknown_credential', body.assertion);
+    throw unauthenticated();
+  }
   const rp = relyingParty(env);
   let newCounter: number;
   try {
@@ -213,7 +245,8 @@ export async function passkeyVerify(request: Request, env: Env, now: number) {
     });
     if (!result.verified) throw new Error('unverified');
     newCounter = result.authenticationInfo.newCounter;
-  } catch {
+  } catch (error) {
+    logVerifyFailure(failureReason(error, body.assertion, rp.origins), body.assertion);
     throw unauthenticated();
   }
 
