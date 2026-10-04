@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Adminifender</string>
+    <string name="scaffold_title">Adminifender</string>
+    <string name="scaffold_body">The app shell is in place. Sign-in, the inbox and sync arrive in the next slices.</string>
+</resources>
