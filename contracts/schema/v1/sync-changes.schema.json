@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://adminifender.invalid/schema/v1/sync-changes.schema.json",
+  "title": "GET /sync/changes data (lld.md#sync)",
+  "description": "One ordered page of complete projections and tombstones. Concern and source projections are the shapes the phone stores in Room.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["changes", "throughSeq", "hasMore"],
+  "properties": {
+    "changes": { "type": "array", "items": { "$ref": "#/$defs/change" } },
+    "throughSeq": { "type": "integer", "minimum": 0 },
+    "hasMore": { "type": "boolean" }
+  },
+  "$defs": {
+    "nullableTimestamp": { "anyOf": [{ "$ref": "common.schema.json#/$defs/timestamp" }, { "type": "null" }] },
+    "nullableText": { "type": ["string", "null"] },
+    "change": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["seq", "entityType", "entityId", "revision", "deleted", "projection"],
+      "properties": {
+        "seq": { "type": "integer", "minimum": 1 },
+        "entityType": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "entityId": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "revision": { "type": "integer", "minimum": 0 },
+        "deleted": { "type": "boolean" },
+        "projection": { "type": ["object", "null"] }
+      },
+      "allOf": [
+        { "if": { "properties": { "deleted": { "const": true } } }, "then": { "properties": { "projection": { "type": "null" } } } },
+        {
+          "if": { "properties": { "deleted": { "const": false }, "entityType": { "const": "concern" } } },
+          "then": { "properties": { "projection": { "$ref": "#/$defs/concern" } } }
+        },
+        {
+          "if": { "properties": { "deleted": { "const": false }, "entityType": { "const": "source" } } },
+          "then": { "properties": { "projection": { "$ref": "#/$defs/source" } } }
+        }
+      ]
+    },
+    "concern": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "revision", "title", "status", "importance", "criticalBasis", "serviceId", "readAt", "acknowledgedAt", "resolvedAt", "snoozeUntil", "waiting", "due", "sourceIds", "updatedAt"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/uuid" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "title": { "type": "string", "maxLength": 200 },
+        "status": { "enum": ["open", "waiting", "snoozed", "resolved"] },
+        "importance": { "enum": ["routine", "important", "urgent", "critical"] },
+        "criticalBasis": { "$ref": "#/$defs/nullableText" },
+        "serviceId": { "$ref": "#/$defs/nullableText" },
+        "readAt": { "$ref": "#/$defs/nullableTimestamp" },
+        "acknowledgedAt": { "$ref": "#/$defs/nullableTimestamp" },
+        "resolvedAt": { "$ref": "#/$defs/nullableTimestamp" },
+        "snoozeUntil": { "$ref": "#/$defs/nullableTimestamp" },
+        "waiting": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["note", "awaitedParty", "followUpAt"],
+              "properties": { "note": { "$ref": "#/$defs/nullableText" }, "awaitedParty": { "$ref": "#/$defs/nullableText" }, "followUpAt": { "$ref": "#/$defs/nullableTimestamp" } }
+            },
+            { "type": "null" }
+          ]
+        },
+        "due": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["at", "zone", "sourceText", "revision"],
+              "properties": {
+                "at": { "$ref": "#/$defs/nullableTimestamp" },
+                "zone": { "$ref": "#/$defs/nullableText" },
+                "sourceText": { "$ref": "#/$defs/nullableText" },
+                "revision": { "type": "integer", "minimum": 0 }
+              }
+            },
+            { "type": "null" }
+          ]
+        },
+        "sourceIds": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/uuid" } },
+        "updatedAt": { "$ref": "common.schema.json#/$defs/timestamp" }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "state", "admission", "privacy", "revision", "receivedAt", "subject", "from", "to"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/uuid" },
+        "kind": { "const": "email" },
+        "state": { "enum": ["staged", "pending_index", "ready", "parse_failed", "deleting", "deleted"] },
+        "admission": { "enum": ["normal", "quarantine"] },
+        "privacy": { "enum": ["hybrid", "local_only", "no_ai", "restricted_metadata"] },
+        "revision": { "type": "integer", "minimum": 1 },
+        "receivedAt": { "$ref": "common.schema.json#/$defs/timestamp" },
+        "subject": { "$ref": "#/$defs/nullableText" },
+        "from": { "type": "array", "items": { "type": "string" } },
+        "to": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}

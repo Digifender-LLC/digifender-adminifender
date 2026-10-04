@@ -1,0 +1,30 @@
+{
+  "changes": [
+    {
+      "seq": 1,
+      "entityType": "concern",
+      "entityId": "0b4e6f8a-2c3d-4e5f-8a9b-1c2d3e4f5a6b",
+      "revision": 1,
+      "deleted": false,
+      "projection": {
+        "id": "0b4e6f8a-2c3d-4e5f-8a9b-1c2d3e4f5a6b",
+        "revision": 1,
+        "title": "Invoice",
+        "status": "archived",
+        "importance": "routine",
+        "criticalBasis": null,
+        "serviceId": null,
+        "readAt": null,
+        "acknowledgedAt": null,
+        "resolvedAt": null,
+        "snoozeUntil": null,
+        "waiting": null,
+        "due": null,
+        "sourceIds": [],
+        "updatedAt": "2026-10-03T12:00:00.000Z"
+      }
+    }
+  ],
+  "throughSeq": 1,
+  "hasMore": false
+}
