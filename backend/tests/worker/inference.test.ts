@@ -237,6 +237,17 @@ describe('budgets', () => {
     expect(paid).toMatchObject({ limit: { neurons: 90_909 }, settled: { neurons: 7 } });
   });
 
+  it('charges everything to the paid ceiling when account headroom is not attested', async () => {
+    const shared = { ...CLOUD, cloud: { ...CLOUD.cloud, account: 'unattested' as const, paidMonthlyCeilingUsd: 1, usdPerThousandNeurons: 0.011 } };
+    await setInference(shared);
+    const a = await triaged('A');
+    await runPending('infer', T0, { AI: fakeAi([valid(a)]).ai });
+    expect(await status(a)).toMatchObject({ state: 'succeeded' });
+    const all = await periods();
+    expect(all.some((p) => p.id.endsWith(':included'))).toBe(false);
+    expect(all.find((p) => p.id.endsWith(':paid'))).toMatchObject({ limit: { neurons: 90_909 }, settled: { neurons: 7 } });
+  });
+
   it('lets only one of two concurrent reservations through', async () => {
     const settings = { ...CLOUD, limits: { automaticPerDay: 1, interactivePerMonth: 1000 } };
     const job = crypto.randomUUID();

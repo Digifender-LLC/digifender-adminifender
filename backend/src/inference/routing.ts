@@ -33,13 +33,15 @@ export function localReady(report: Readiness | null, task: TaskKind, now: number
 export type CloudGate = { ok: true } | { ok: false; reason: 'cloud_unavailable' | 'model_rate_unknown' | 'account_headroom_unknown' };
 
 /**
- * Static preconditions for cloud dispatch (lld.md#inference): a bound model, its current rate, and an account
- * whose other writers are known. Unknown headroom denies cloud under the default zero-paid setting.
+ * Static preconditions for cloud dispatch (lld.md#inference): a bound model, its current rate, and either an account
+ * whose other writers are known or an explicit paid ceiling (tdd.md#cost-model). With unknown headroom the shared
+ * included allocation is not counted on, so every reservation is charged to the paid ceiling instead.
  */
 export function cloudGate(cloud: CloudSettings, bound: boolean): CloudGate {
   if (!bound) return { ok: false, reason: 'cloud_unavailable' };
   if (!cloud.modelId || cloud.neuronsPerMillionInputTokens === null || cloud.neuronsPerMillionOutputTokens === null) return { ok: false, reason: 'model_rate_unknown' };
-  if (cloud.account === 'unattested') return { ok: false, reason: 'account_headroom_unknown' };
+  const paidCeiling = cloud.paidMonthlyCeilingUsd > 0 && cloud.usdPerThousandNeurons !== null;
+  if (cloud.account === 'unattested' && !paidCeiling) return { ok: false, reason: 'account_headroom_unknown' };
   return { ok: true };
 }
 
