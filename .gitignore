@@ -32,4 +32,4 @@ __pycache__/
 *.litertlm
 *.gguf
 *.tflite
-exports/
+/exports/
