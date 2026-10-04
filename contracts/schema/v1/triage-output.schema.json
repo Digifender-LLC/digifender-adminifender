@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://adminifender.invalid/schema/v1/triage-output.schema.json",
+  "title": "Validated triage output",
+  "description": "lld.md#triage. Shared by local and cloud adapters. Offsets are additionally checked against the cited chunk by the domain service.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["summary", "category", "importance", "uncertainty", "deadline", "serviceIds", "evidence", "suggestedActions"],
+  "properties": {
+    "summary": { "type": "string", "minLength": 1, "maxLength": 2000 },
+    "category": { "enum": ["operations", "billing", "security", "personal", "support", "other"] },
+    "importance": {
+      "description": "Models may not assert critical; a textual critical suggestion is translated to urgent before validation.",
+      "enum": ["routine", "important", "urgent"]
+    },
+    "uncertainty": { "type": "array", "maxItems": 10, "items": { "type": "string", "minLength": 1, "maxLength": 300 } },
+    "deadline": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["text", "ambiguous"],
+          "properties": {
+            "text": { "type": "string", "minLength": 1, "maxLength": 300 },
+            "instant": { "$ref": "common.schema.json#/$defs/timestamp" },
+            "zone": { "type": "string", "minLength": 1, "maxLength": 64 },
+            "ambiguous": { "type": "boolean" }
+          }
+        }
+      ]
+    },
+    "serviceIds": { "type": "array", "maxItems": 20, "uniqueItems": true, "items": { "$ref": "common.schema.json#/$defs/uuid" } },
+    "evidence": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["chunkId", "start", "end"],
+        "properties": {
+          "chunkId": { "$ref": "common.schema.json#/$defs/chunkId" },
+          "start": { "type": "integer", "minimum": 0, "maximum": 6000 },
+          "end": { "type": "integer", "minimum": 0, "maximum": 6000 }
+        }
+      }
+    },
+    "suggestedActions": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "targetId", "description"],
+        "properties": {
+          "kind": { "$ref": "common.schema.json#/$defs/actionKind" },
+          "targetId": { "type": "string", "minLength": 1, "maxLength": 200 },
+          "description": { "type": "string", "minLength": 1, "maxLength": 500 }
+        }
+      }
+    }
+  }
+}

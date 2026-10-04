@@ -1,0 +1,41 @@
+// Local development and test configuration only.
+// compatibility_date is the newest date the pinned test runtime (vitest-pool-workers 0.22.0) supports.
+// IDs below are local Miniflare identifiers, not provisioned Cloudflare resources.
+// Staging and production environments are added with reviewed resource IDs during
+// provisioning (docs/specifications/tdd.md#environments-and-preflight); do not deploy this file as-is.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "adminifender-local",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-22",
+  "workers_dev": false,
+  "triggers": { "crons": ["* * * * *"] },
+  "d1_databases": [
+    {
+      "binding": "CONTROL_DB",
+      "database_name": "adminifender-control-local",
+      "database_id": "local-control",
+      "migrations_dir": "migrations/control"
+    },
+    {
+      "binding": "ARCHIVE_0001",
+      "database_name": "adminifender-archive-0001-local",
+      "database_id": "local-archive-0001",
+      "migrations_dir": "migrations/archive"
+    }
+  ],
+  "r2_buckets": [
+    { "binding": "ARCHIVE_BUCKET", "bucket_name": "adminifender-archive-local" }
+  ],
+  "queues": {
+    "producers": [{ "binding": "WORK_QUEUE", "queue": "adminifender-work-local" }],
+    "consumers": [
+      {
+        "queue": "adminifender-work-local",
+        "max_batch_size": 10,
+        "max_retries": 5,
+        "dead_letter_queue": "adminifender-dead-local"
+      }
+    ]
+  }
+}

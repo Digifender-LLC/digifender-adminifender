@@ -1,0 +1,7 @@
+-- Archive partition schema v1. Source: docs/specifications/lld.md#storage (schema contract).
+-- The LLD's PRAGMA foreign_keys=ON line is omitted: D1 enforces foreign keys by default (asserted in tests/worker/migrations.test.ts).
+CREATE TABLE sources(id TEXT PRIMARY KEY, kind TEXT NOT NULL, received_at INTEGER NOT NULL, subject TEXT NOT NULL, envelope_json TEXT NOT NULL, headers_json TEXT NOT NULL, normalized_text TEXT, text_object_key TEXT, text_hash TEXT NOT NULL, provenance_json TEXT NOT NULL, parser_version TEXT NOT NULL, CHECK(normalized_text IS NOT NULL OR text_object_key IS NOT NULL));
+CREATE TABLE attachments(id TEXT PRIMARY KEY, source_id TEXT NOT NULL REFERENCES sources(id), name TEXT NOT NULL, declared_type TEXT, detected_type TEXT, size_bytes INTEGER NOT NULL, sha256 TEXT NOT NULL, object_key TEXT NOT NULL, disposition TEXT NOT NULL, UNIQUE(source_id,id));
+CREATE TABLE chunks(id TEXT PRIMARY KEY, source_id TEXT NOT NULL REFERENCES sources(id), attachment_id TEXT REFERENCES attachments(id), generation_id TEXT NOT NULL, ordinal INTEGER NOT NULL, page INTEGER, start_offset INTEGER, text TEXT NOT NULL, text_hash TEXT NOT NULL, method TEXT NOT NULL, UNIQUE(source_id,attachment_id,generation_id,ordinal));
+CREATE VIRTUAL TABLE source_fts USING fts5(source_id UNINDEXED, chunk_id UNINDEXED, generation_id UNINDEXED, subject, body, filename, tokenize='unicode61');
+CREATE TABLE archive_receipts(source_id TEXT PRIMARY KEY, staging_hash TEXT NOT NULL, manifest_hash TEXT NOT NULL, committed_at INTEGER NOT NULL);

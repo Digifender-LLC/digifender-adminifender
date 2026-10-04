@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://adminifender.invalid/schema/v1/queue-envelope.schema.json",
+  "title": "Work queue message",
+  "description": "lld.md#jobs: {version:1,jobId}. Bodies, content and secrets never ride the queue; D1 is the job authority.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "jobId"],
+  "properties": {
+    "version": { "const": 1 },
+    "jobId": { "$ref": "common.schema.json#/$defs/uuid" }
+  }
+}
