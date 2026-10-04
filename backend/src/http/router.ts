@@ -17,6 +17,8 @@ import * as device from '../inference/device';
 import * as inference from '../inference/routes';
 import * as settings from '../inference/settings';
 import * as notifications from '../notifications/routes';
+import * as health from '../diagnostics/health';
+import * as diagnostics from '../diagnostics/export';
 import { fail, ok } from './envelope';
 import { HttpError } from './errors';
 import { withIdempotency } from './idempotency';
@@ -70,6 +72,8 @@ class StoredResponse {
 
 const ROUTES: Route[] = [
   { method: 'GET', pattern: /^\/meta$/, handler: async () => ({ contract: RELEASE_CONTRACT }) },
+  // Public liveness: no private state, counts or timestamps.
+  { method: 'GET', pattern: /^\/health$/, handler: async () => ({ status: 'live', contract: RELEASE_CONTRACT }) },
   { method: 'POST', pattern: /^\/auth\/bootstrap\/options$/, handler: auth.bootstrapOptions },
   { method: 'POST', pattern: /^\/auth\/bootstrap\/verify$/, handler: auth.bootstrapVerify },
   { method: 'POST', pattern: /^\/auth\/passkey\/options$/, handler: auth.passkeyOptions },
@@ -81,6 +85,8 @@ const ROUTES: Route[] = [
   { method: 'GET', pattern: /^\/devices$/, handler: auth.listDevices },
   { method: 'POST', pattern: new RegExp(`^/devices/${ID}/push$`), handler: ownerMutation(notifications.pushBody, notifications.registerPush, { recentAuth: false }) },
   { method: 'GET', pattern: /^\/notifications$/, handler: notifications.listNotifications },
+  { method: 'GET', pattern: /^\/health\/private$/, handler: health.getPrivateHealth },
+  { method: 'GET', pattern: /^\/diagnostics$/, handler: diagnostics.getDiagnostics },
   { method: 'GET', pattern: /^\/sources$/, handler: sources.listSources },
   { method: 'GET', pattern: new RegExp(`^/sources/${ID}$`), handler: sources.getSource },
   { method: 'GET', pattern: new RegExp(`^/sources/${ID}/chunks$`), handler: sources.getChunks },

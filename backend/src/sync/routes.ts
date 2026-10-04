@@ -8,6 +8,11 @@ import { pageSize, rejectUnknownParams } from '../sources/routes';
 /** Bootstrap snapshots live for 24 hours (lld.md#sync). */
 export const SNAPSHOT_TTL_MS = 24 * 60 * 60 * 1000;
 
+/** Last time this device finished reading the change feed (FR-032 sync health); not a meaningful review. */
+async function recordCaughtUp(db: D1Database, deviceId: string, now: number): Promise<void> {
+  await db.prepare('UPDATE devices SET last_sync_at = MAX(COALESCE(last_sync_at, 0), ?) WHERE id = ?').bind(now, deviceId).run();
+}
+
 interface ChangeRow {
   seq: number;
   entity_type: string;
@@ -21,7 +26,7 @@ const BOOTSTRAP_DIGEST = 'sync-bootstrap';
 
 // GET /sync/bootstrap — full current projections as of one change sequence, paged under that fixed sequence.
 export async function bootstrap(request: Request, env: Env, now: number) {
-  await authenticate(request, env, now);
+  const auth = await authenticate(request, env, now);
   const url = new URL(request.url);
   rejectUnknownParams(url, ['limit', 'cursor']);
   const limit = pageSize(url);
@@ -50,6 +55,7 @@ export async function bootstrap(request: Request, env: Env, now: number) {
   const page = results.slice(0, limit);
   const last = page[page.length - 1];
   const nextCursor = results.length > limit && last ? await sealCursor(env.CURSOR_SECRET, BOOTSTRAP_DIGEST, { ...position, after: last.seq }, now) : null;
+  if (nextCursor === null) await recordCaughtUp(db, auth.deviceId, now);
   return {
     snapshotSeq: position.snapshot,
     entities: page.map((row) => ({ entityType: row.entity_type, entityId: row.entity_id, revision: row.revision, projection: JSON.parse(row.projection_json) as unknown })),
@@ -59,7 +65,7 @@ export async function bootstrap(request: Request, env: Env, now: number) {
 
 // GET /sync/changes?after= — ordered complete projections and tombstones; the client advances only after a whole page commits.
 export async function changes(request: Request, env: Env, now: number) {
-  await authenticate(request, env, now);
+  const auth = await authenticate(request, env, now);
   const url = new URL(request.url);
   rejectUnknownParams(url, ['after', 'limit']);
   const after = v.integer({ min: 0, max: Number.MAX_SAFE_INTEGER })(Number(url.searchParams.get('after') ?? 'NaN'), '$.after');
@@ -72,6 +78,7 @@ export async function changes(request: Request, env: Env, now: number) {
     .bind(after, limit + 1)
     .all<ChangeRow>();
   const page = results.slice(0, limit);
+  if (results.length <= limit) await recordCaughtUp(db, auth.deviceId, now);
   return {
     changes: page.map((row) => ({
       seq: row.seq,

@@ -7,6 +7,7 @@ import { wakeSnoozed } from './concerns/lifecycle';
 import { expireExports } from './exports/job';
 import { releaseExpiredReservations } from './inference/budget';
 import { scheduleInactivity } from './notifications/events';
+import { SCHEDULED_PASS, observe } from './diagnostics/health';
 import { reconcile } from './jobs/reconcile';
 import { pruneChanges } from './sync/retention';
 import { runJob } from './jobs/runner';
@@ -49,5 +50,7 @@ export default {
     await expireExports(env, now);
     await releaseExpiredReservations(env.CONTROL_DB, now);
     await scheduleInactivity(env.CONTROL_DB, now);
+    // Recorded only when every step above finished, so health shows a missed or failing pass as stale.
+    await observe(env.CONTROL_DB, SCHEDULED_PASS, now);
   },
 } satisfies ExportedHandler<Env, unknown>;

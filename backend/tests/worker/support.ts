@@ -90,3 +90,19 @@ export async function runPending(kind: string, now = T0, extra: Partial<Env> = {
   for (const row of results) statuses.push((await runJob({ ...quietEnv(), ...extra }, JOB_HANDLERS, row.id, now)).status);
   return statuses;
 }
+
+/** Access tokens for a session as the test clock moves on, refreshing once the current one may have expired. */
+export function sessionClock(owner: { token: string; refreshToken: string }, start = T0): (now: number) => Promise<string> {
+  let token = owner.token;
+  let refresh = owner.refreshToken;
+  let issued = start;
+  return async (now) => {
+    if (now - issued < 5 * 60_000) return token;
+    const refreshed = await api('POST', '/auth/refresh', { auth: `Refresh ${refresh}`, now });
+    if (refreshed.status !== 200) throw new Error(`refresh failed ${refreshed.status}`);
+    token = refreshed.body.data.accessToken;
+    refresh = refreshed.body.data.refreshToken;
+    issued = now;
+    return token;
+  };
+}

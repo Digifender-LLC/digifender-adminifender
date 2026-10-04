@@ -461,6 +461,13 @@ GET `/health/private` returns last email receipt, oldest staged/parse/triage/ext
 
 Application warnings: nonquarantine staged/parse backlog >15 minutes; cloud triage >15 minutes when eligible; local-only/extraction jobs waiting device show deferred, alert owner only after 24 hours; outbox >5 minutes; no Cron observation >5 minutes; partition7GiB warning. These are attention targets, not automatic permissions to repeat external work. The phone shows whether notifications cannot currently be delivered and preserves visible inbox data.
 
+Implementation notes (slice 13, migration 0010):
+
+- GET `/health/private` reports scheduler, capture, parsing, triage, extraction, inference, sync, notifications, outbox, storage and overall backlog as separate components, each with a status of `ok`, `warning`, `stale`, `unavailable` or `unobserved`, plus a `warnings` list of `{component, code}`. Never-observed values are null with `unobserved`; readiness older than the routing window is `stale`.
+- The scheduled handler records `scheduled_pass` in `observations` only after every step succeeds, so a failing or missing pass shows as stale after 5 minutes. A device's `last_sync_at` is set when a bootstrap or change-feed read reaches the end; it is not a meaningful review.
+- Partition size comes from D1 result metadata (`size_after`) with a 10 GiB headroom figure and a warning at 7 GiB. Cloud allowance freshness stays `unobserved` until provider headroom is read back.
+- GET `/diagnostics` exports release contract, applied control migrations, settings and policy revisions, model and app versions, job counts by kind and state, the 20 most recent failed or dead job IDs with fixed codes, 24-hour timing summaries (count, median, maximum) for inference and chat, and uncertain attempt, operation and notification IDs. Public GET `/health` returns only liveness and the release contract.
+
 <a id="settings"></a>
 ## Settings and policy schema
 
