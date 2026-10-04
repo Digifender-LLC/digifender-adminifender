@@ -5,6 +5,7 @@ import { JOB_HANDLERS } from './jobs/handlers';
 import { parseQueueEnvelope } from './jobs/queue-envelope';
 import { wakeSnoozed } from './concerns/lifecycle';
 import { reconcile } from './jobs/reconcile';
+import { pruneChanges } from './sync/retention';
 import { runJob } from './jobs/runner';
 
 export default {
@@ -41,5 +42,6 @@ export default {
     const now = Date.now();
     await reconcile(env, now);
     await wakeSnoozed(env.CONTROL_DB, now);
+    await pruneChanges(env.CONTROL_DB, now);
   },
 } satisfies ExportedHandler<Env, unknown>;

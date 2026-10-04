@@ -53,6 +53,9 @@ CREATE TABLE spam_overrides(id TEXT PRIMARY KEY, revision INTEGER NOT NULL, kind
 CREATE TABLE triage_results(id TEXT PRIMARY KEY, source_id TEXT NOT NULL REFERENCES source_registry(id), source_revision INTEGER NOT NULL, policy_revision INTEGER NOT NULL, provenance_json TEXT NOT NULL, result_json TEXT NOT NULL, created_at INTEGER NOT NULL);
 CREATE TABLE changes(seq INTEGER PRIMARY KEY AUTOINCREMENT, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, revision INTEGER NOT NULL, deleted INTEGER NOT NULL, projection_json TEXT NOT NULL, created_at INTEGER NOT NULL);
 CREATE INDEX changes_age ON changes(created_at);
+CREATE INDEX changes_entity ON changes(entity_type,entity_id,seq);
+CREATE TABLE sync_snapshots(id TEXT PRIMARY KEY, seq INTEGER NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL);
+CREATE TABLE change_floor(id TEXT PRIMARY KEY CHECK(id='floor'), seq INTEGER NOT NULL);
 CREATE TABLE mutations(key TEXT PRIMARY KEY, request_hash TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN ('pending','complete')), result_json TEXT, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL);
 CREATE TABLE jobs(id TEXT PRIMARY KEY, dedupe_key TEXT NOT NULL UNIQUE, kind TEXT NOT NULL, source_id TEXT, input_revision INTEGER, state TEXT NOT NULL CHECK(state IN ('pending','leased','running','complete','failed','dead','cancelled','uncertain')), attempt INTEGER NOT NULL DEFAULT 0, lease_token TEXT, lease_until INTEGER, next_at INTEGER NOT NULL, input_json TEXT NOT NULL, output_json TEXT, error_code TEXT, created_at INTEGER NOT NULL);
 CREATE INDEX jobs_due ON jobs(state,next_at);

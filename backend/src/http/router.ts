@@ -8,6 +8,7 @@ import { RELEASE_CONTRACT } from '../contracts';
 import type { Env } from '../env';
 import * as searchRoutes from '../search/routes';
 import * as sources from '../sources/routes';
+import * as sync from '../sync/routes';
 import * as rules from '../triage/routes';
 import { fail, ok } from './envelope';
 import { HttpError } from './errors';
@@ -68,6 +69,8 @@ const ROUTES: Route[] = [
   { method: 'GET', pattern: /^\/spam-overrides$/, handler: admission.listSpamOverrides },
   { method: 'POST', pattern: /^\/spam-overrides$/, handler: mutation(admission.spamOverrideBody, admission.createSpamOverride) },
   { method: 'PATCH', pattern: new RegExp(`^/spam-overrides/${ID}$`), handler: mutation(admission.spamOverridePatch, admission.updateSpamOverride) },
+  { method: 'GET', pattern: /^\/sync\/bootstrap$/, handler: sync.bootstrap },
+  { method: 'GET', pattern: /^\/sync\/changes$/, handler: sync.changes },
   { method: 'GET', pattern: /^\/rules$/, handler: rules.listRules },
   { method: 'POST', pattern: /^\/rules$/, handler: mutation(rules.ruleBody, rules.createRule) },
   { method: 'PATCH', pattern: new RegExp(`^/rules/${ID}$`), handler: mutation(rules.rulePatch, rules.updateRule) },
