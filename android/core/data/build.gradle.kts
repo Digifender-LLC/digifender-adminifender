@@ -43,6 +43,7 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.coroutines.core)
     implementation(libs.credentials)
+    implementation(libs.work.runtime)
     // Passkeys on devices whose platform provider is Google Play services.
     runtimeOnly(libs.credentials.play.services)
     testImplementation(libs.junit)
