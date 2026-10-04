@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.HorizontalDivider
@@ -106,8 +107,8 @@ fun ArchiveScreen(
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     DateRange.entries.forEach { r -> FilterChip(selected = fields.range == r, onClick = { onRange(r) }, label = { Text(rangeText(r)) }) }
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(onClick = onSubmit) { Text(stringResource(R.string.search_button)) }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Button(onClick = onSubmit) { Text(stringResource(R.string.search_button)) }
                     if (state.search != null) TextButton(onClick = onClear) { Text(stringResource(R.string.search_clear)) }
                 }
             }
@@ -207,7 +208,7 @@ private fun HitCard(hit: SearchHit, onOpen: (String) -> Unit) {
     ListRow({ onOpen(hit.sourceId) }) {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(hit.subject?.ifBlank { null } ?: stringResource(R.string.no_subject), style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-            Text(dateTime(hit.receivedAtMs), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(shortDate(hit.receivedAtMs), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         hit.snippet?.let { Text(highlighted(it, mark), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         if (hit.inAttachment) {

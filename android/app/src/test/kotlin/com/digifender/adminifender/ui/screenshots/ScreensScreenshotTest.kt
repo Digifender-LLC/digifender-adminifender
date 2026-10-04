@@ -14,6 +14,8 @@ import com.digifender.adminifender.core.data.network.ArchiveView
 import com.digifender.adminifender.core.data.network.CitationDto
 import com.digifender.adminifender.core.data.network.ClaimDto
 import com.digifender.adminifender.core.data.network.ReviewDto
+import com.digifender.adminifender.core.data.network.SourceSummary
+import com.digifender.adminifender.core.data.repository.SearchHit
 import com.digifender.adminifender.core.data.repository.ChatScope
 import com.digifender.adminifender.core.data.repository.ChatTurn
 import com.digifender.adminifender.core.data.repository.ConcernView
@@ -25,13 +27,19 @@ import com.digifender.adminifender.core.model.Due
 import com.digifender.adminifender.core.model.Importance
 import com.digifender.adminifender.core.model.Status
 import com.digifender.adminifender.core.model.Waiting
+import com.digifender.adminifender.ui.ArchiveScreen
+import com.digifender.adminifender.ui.ArchiveUiState
 import com.digifender.adminifender.ui.ChatScreen
+import com.digifender.adminifender.ui.Coverage
+import com.digifender.adminifender.ui.DateRange
 import com.digifender.adminifender.ui.ChatUiState
 import com.digifender.adminifender.ui.InboxScreen
 import com.digifender.adminifender.ui.InboxUiState
 import com.digifender.adminifender.ui.ReviewNote
 import com.digifender.adminifender.ui.ReviewPanel
 import com.digifender.adminifender.ui.ReviewUiState
+import com.digifender.adminifender.ui.SearchFields
+import com.digifender.adminifender.ui.SearchUiState
 import com.digifender.adminifender.ui.theme.AdminifenderTheme
 import com.github.takahirom.roborazzi.captureRoboImage
 import kotlinx.serialization.json.Json
@@ -121,4 +129,34 @@ class ScreensScreenshotTest {
     @Test fun confirm() = shot("confirm") { Box(Modifier.padding(16.dp)) { ReviewPanel(ReviewUiState.Ready(review), {}, {}, {}) } }
 
     @Test fun uncertain() = shot("uncertain") { Box(Modifier.padding(16.dp)) { ReviewPanel(ReviewUiState.Ready(review, note = ReviewNote.UNKNOWN), {}, {}, {}) } }
+
+    private fun archive(name: String, state: ArchiveUiState, fields: SearchFields = SearchFields("", "", DateRange.ANY)) = shot(name) {
+        ArchiveScreen(state, fields, {}, {}, {}, {}, {}, {}, {}, {}, {})
+    }
+
+    private fun source(id: String, from: String, subject: String, ageDays: Long, state: String = "ready", privacy: String = "hybrid") =
+        SourceSummary(id, 1, state, false, privacy, now - ageDays * day, subject, listOf(from))
+
+    @Test fun archiveList() = archive(
+        "archive",
+        ArchiveUiState(ArchiveView.ARCHIVE, listOf(
+            source("a", "billing@harbor-insurance.example", "Your October premium notice", 0),
+            source("b", "statements@riverside-water.example", "October statement is ready", 1),
+            source("c", "support@lakeview-storage.example", "Deposit refund request received", 3, privacy = "local_only"),
+            source("d", "renewals@registrar.example", "Domain renewal reminder", 6, state = "pending_index"),
+        ), total = 128, search = null),
+    )
+
+    @Test fun archiveSearch() = archive(
+        "archive-search",
+        ArchiveUiState(ArchiveView.ARCHIVE, null, 0, SearchUiState(
+            running = false,
+            hits = listOf(
+                SearchHit("b", "October statement is ready", "Amount due [\$62.15] by October 9.", now - day, false, null),
+                SearchHit("e", "September statement", "Amount due [\$58.40] by September 9.", now - 31 * day, true, 2),
+            ),
+            coverage = Coverage.Partial(2), invalid = null, nextCursor = "n", moreFailed = false,
+        )),
+        SearchFields("62.15", "", DateRange.YEAR),
+    )
 }
