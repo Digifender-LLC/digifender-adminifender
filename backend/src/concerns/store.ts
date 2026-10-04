@@ -1,5 +1,6 @@
 import { assertion } from '../db/assert';
 import { notFound } from '../http/errors';
+import { concernEventStatements } from '../notifications/events';
 import { CONCERN_COLUMNS, type ConcernRow, concernView, snapshot } from './model';
 
 export interface Guard {
@@ -24,8 +25,8 @@ export async function concernSourceIds(db: D1Database, id: string): Promise<stri
 }
 
 /**
- * One concern revision as batch statements: precondition assertion, row write, event, full change projection and,
- * for meaningful review edits, the review timestamp (lld.md#concerns). `before` null creates the concern.
+ * One concern revision as batch statements: precondition assertion, row write, event, full change projection,
+ * for meaningful review edits the review timestamp (lld.md#concerns), and any notification it implies. `before` null creates the concern.
  * `after.revision` must be `before.revision + 1` (or 1 when creating).
  */
 export function writeConcern(
@@ -90,6 +91,7 @@ export function writeConcern(
   );
   statements.push(changeStatement(db, after, input.sourceIds, now, landed, landedParams));
   if (input.meaningful) statements.push(meaningfulReview(db, now, landed, landedParams));
+  statements.push(...concernEventStatements(db, before, after, now, landed, landedParams));
   return statements;
 }
 

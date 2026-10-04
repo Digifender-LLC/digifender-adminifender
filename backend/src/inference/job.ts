@@ -8,7 +8,7 @@ import { REGISTRY_COLUMNS, REGISTRY_FROM, type RegistryRow, archiveFor } from '.
 import { type Reservation, type UsageKind, releaseStatements, reserve, settleStatements } from './budget';
 import { CLOUD_MAX_CHUNKS, type Message, type TextModel, repairMessages, runCloud, triageMessages, worstCaseInputTokens, CLOUD_OUTPUT_TOKENS } from './cloud';
 import { type Privacy, type Readiness, type TaskKind, type Thermal, cloudGate, localReady, route } from './routing';
-import { type Settings, loadSettings } from './settings';
+import { POLICY_REVISION_SQL, type Settings, loadSettings } from './settings';
 import { type TriageOutput, normalizeTriage, parseModelJson, validateTriage } from './triage-output';
 
 export const INFER_TASK = 'triage';
@@ -62,7 +62,7 @@ export async function knownServiceIds(db: D1Database): Promise<Set<string>> {
 export function sourceStillEligible(sourceId: string, revision: number, privacy: string, policyRevision: number): { sql: string; params: unknown[] } {
   return {
     sql: `EXISTS (SELECT 1 FROM source_registry WHERE id = ? AND revision = ? AND state = 'ready' AND admission = 'normal' AND privacy = ?)
-      AND COALESCE((SELECT revision FROM settings WHERE id = 'owner'), 0) = ?`,
+      AND ${POLICY_REVISION_SQL} = ?`,
     params: [sourceId, revision, privacy, policyRevision],
   };
 }
@@ -191,7 +191,7 @@ export async function inferJob(job: ClaimedJob, env: Env, now: number): Promise<
   const queueLocal = (reason: string, repair = false): JobResult => ({
     kind: 'complete',
     output: { route: 'local', reason },
-    statements: [queueLocalStatement(db, { id: crypto.randomUUID(), jobId: job.id, source, policyRevision: settings.revision, digest, reason, repair }, now, { sql: CLAIM_GUARD, params: guardParams(job) })],
+    statements: [queueLocalStatement(db, { id: crypto.randomUUID(), jobId: job.id, source, policyRevision: settings.policyRevision, digest, reason, repair }, now, { sql: CLAIM_GUARD, params: guardParams(job) })],
   });
   if (decision.route !== 'cloud') return queueLocal(decision.reason);
   return cloudTriage(job, env, now, { source, settings, digest, subject: loaded.subject, chunks: loaded.chunks, queueLocal });
@@ -261,7 +261,7 @@ export async function dispatchCloud<T>(job: ClaimedJob, env: Env, now: number, s
         attemptId,
         job.id,
         modelId,
-        settings.revision,
+        settings.policyRevision,
         t.digest,
         JSON.stringify(reservation),
         t.task,
@@ -343,13 +343,13 @@ async function cloudTriage(
     digest: ctx.digest,
     source: { id: source.id, revision: source.revision },
     chunkIds: null,
-    eligible: [sourceStillEligible(source.id, source.revision, source.privacy, settings.revision)],
+    eligible: [sourceStillEligible(source.id, source.revision, source.privacy, settings.policyRevision)],
     messages: triageMessages(ctx.subject, ctx.chunks),
     validate: (text) => {
       const parsed = parseModelJson(text);
       return parsed.ok ? validateTriage(normalizeTriage(parsed.value), chunkLengths, services) : parsed;
     },
-    store: async (attemptId, modelId, value) => [await resultStatement(env.CONTROL_DB, { id: attemptId, jobId: job.id, route: 'cloud', modelId }, source, settings.revision, value, now)],
+    store: async (attemptId, modelId, value) => [await resultStatement(env.CONTROL_DB, { id: attemptId, jobId: job.id, route: 'cloud', modelId }, source, settings.policyRevision, value, now)],
   });
   switch (outcome.kind) {
     case 'succeeded':

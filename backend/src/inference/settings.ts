@@ -2,6 +2,7 @@ import { authenticate } from '../auth/sessions';
 import type { Env } from '../env';
 import { HttpError } from '../http/errors';
 import { type Validator, v } from '../http/validate';
+import { type NotificationSettings, DEFAULT_NOTIFICATIONS, notificationsShape } from '../notifications/settings';
 
 /** Baseline cloud throttle (baseline.md): the owner may lower these, never raise them. */
 export const MAX_AUTOMATIC_PER_DAY = 100;
@@ -34,9 +35,19 @@ export interface InferenceSettings {
 }
 
 export interface Settings {
+  /** Revision of the whole settings object; PATCH compares `expectedRevision` with it. */
   revision: number;
+  /**
+   * Inference policy revision: raised only when the inference section changes, so a notification or other
+   * unrelated edit does not reject phone results computed under the same inference policy.
+   */
+  policyRevision: number;
   inference: InferenceSettings;
+  notifications: NotificationSettings;
 }
+
+/** SQL expression for the current inference policy revision, for batch guards. */
+export const POLICY_REVISION_SQL = "COALESCE((SELECT COALESCE(json_extract(values_json, '$.policyRevision'), revision) FROM settings WHERE id = 'owner'), 0)";
 
 export const DEFAULT_INFERENCE: InferenceSettings = {
   mode: 'auto',
@@ -73,12 +84,17 @@ const inferenceShape: Validator<InferenceSettings> = v.object({
 /** Current owner settings; revision 0 means defaults that were never saved. */
 export async function loadSettings(db: D1Database): Promise<Settings> {
   const row = await db.prepare("SELECT revision, values_json FROM settings WHERE id = 'owner'").first<{ revision: number; values_json: string }>();
-  if (!row) return { revision: 0, inference: DEFAULT_INFERENCE };
-  const values = JSON.parse(row.values_json) as { inference?: InferenceSettings };
-  return { revision: row.revision, inference: values.inference ?? DEFAULT_INFERENCE };
+  if (!row) return { revision: 0, policyRevision: 0, inference: DEFAULT_INFERENCE, notifications: DEFAULT_NOTIFICATIONS };
+  const values = JSON.parse(row.values_json) as { policyRevision?: number; inference?: InferenceSettings; notifications?: NotificationSettings };
+  return {
+    revision: row.revision,
+    policyRevision: values.policyRevision ?? row.revision,
+    inference: values.inference ?? DEFAULT_INFERENCE,
+    notifications: values.notifications ?? DEFAULT_NOTIFICATIONS,
+  };
 }
 
-const view = (settings: Settings) => ({ revision: settings.revision, inference: settings.inference });
+const view = (settings: Settings) => ({ revision: settings.revision, policyRevision: settings.policyRevision, inference: settings.inference, notifications: settings.notifications });
 
 // GET /settings
 export async function getSettings(request: Request, env: Env, now: number) {
@@ -86,18 +102,25 @@ export async function getSettings(request: Request, env: Env, now: number) {
   return view(await loadSettings(env.CONTROL_DB));
 }
 
-export const settingsPatch = v.object({ expectedRevision: v.integer({ min: 0, max: Number.MAX_SAFE_INTEGER }), inference: v.optional(inferenceShape) });
+export const settingsPatch = v.object({
+  expectedRevision: v.integer({ min: 0, max: Number.MAX_SAFE_INTEGER }),
+  inference: v.optional(inferenceShape),
+  notifications: v.optional(notificationsShape),
+});
 
 /**
- * PATCH /settings — one revisioned object (lld.md#settings). A changed inference section raises the policy
- * revision, so device results computed under the old policy are rejected.
+ * PATCH /settings — one revisioned object (lld.md#settings). A changed inference section raises the inference
+ * policy revision, so device results computed under the old policy are rejected; other sections do not.
  */
 export async function patchSettings(env: Env, now: number, body: ReturnType<typeof settingsPatch>) {
   const db = env.CONTROL_DB;
   const current = await loadSettings(db);
   if (current.revision !== body.expectedRevision) throw new HttpError(409, 'stale_revision', 'Settings changed. Reload and try again.', { currentRevision: current.revision });
-  const next: Settings = { revision: current.revision + 1, inference: body.inference ?? current.inference };
-  const values = JSON.stringify({ inference: next.inference });
+  const inference = body.inference ?? current.inference;
+  const revision = current.revision + 1;
+  const inferenceChanged = JSON.stringify(inference) !== JSON.stringify(current.inference);
+  const next: Settings = { revision, policyRevision: inferenceChanged ? revision : current.policyRevision, inference, notifications: body.notifications ?? current.notifications };
+  const values = JSON.stringify({ policyRevision: next.policyRevision, inference: next.inference, notifications: next.notifications });
   const result =
     current.revision === 0
       ? await db.prepare("INSERT INTO settings(id, revision, values_json, updated_at) SELECT 'owner', 1, ?, ? WHERE NOT EXISTS (SELECT 1 FROM settings WHERE id = 'owner')").bind(values, now).run()

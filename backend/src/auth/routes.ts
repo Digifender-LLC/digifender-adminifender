@@ -348,13 +348,15 @@ export async function logout(request: Request, env: Env, now: number) {
 // GET /devices
 export async function listDevices(request: Request, env: Env, now: number) {
   const auth = await authenticate(request, env, now);
-  const { results } = await env.CONTROL_DB.prepare('SELECT id, name, revision, last_seen, revoked_at, fcm_token_cipher IS NOT NULL AS has_push FROM devices ORDER BY id').all<{
+  const { results } = await env.CONTROL_DB.prepare('SELECT id, name, revision, last_seen, revoked_at, fcm_token_cipher IS NOT NULL AS has_push, push_permission, push_invalid_at FROM devices ORDER BY id').all<{
     id: string;
     name: string;
     revision: number;
     last_seen: number | null;
     revoked_at: number | null;
     has_push: number;
+    push_permission: string | null;
+    push_invalid_at: number | null;
   }>();
   return {
     devices: results.map((d) => ({
@@ -364,6 +366,8 @@ export async function listDevices(request: Request, env: Env, now: number) {
       lastSeen: d.last_seen === null ? null : new Date(d.last_seen).toISOString(),
       revoked: d.revoked_at !== null,
       pushRegistered: d.has_push === 1,
+      // Whether this device can currently receive notifications, shown so the phone can say why not.
+      push: d.has_push !== 1 ? 'unregistered' : d.push_invalid_at !== null ? 'invalid' : (d.push_permission ?? 'unregistered'),
       current: d.id === auth.deviceId,
     })),
   };
