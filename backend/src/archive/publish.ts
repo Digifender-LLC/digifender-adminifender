@@ -3,6 +3,7 @@ import { scoreSpam } from '../admission/spam';
 import type { Env } from '../env';
 import { deterministicUuid, sha256Hex } from '../ids';
 import { CLAIM_GUARD, type ClaimedJob, type JobResult, guardParams } from '../jobs/runner';
+import { extractionJobStatements } from '../extraction/job';
 import { messageIdOf, threadReferences, triageJobStatements } from '../triage/job';
 import { linkFacts } from './links';
 import { type NormalizedEmail, normalizeEmail } from './normalize';
@@ -178,6 +179,7 @@ export async function parseJob(job: ClaimedJob, env: Env, now: number): Promise<
         control.prepare(`INSERT OR IGNORE INTO attachment_processing(attachment_id, source_id, revision, state, policy_revision) SELECT ?, ?, 1, 'stored', 0 WHERE ${CLAIM_GUARD}`)
           .bind(a.id, sourceId, guardId, guardToken),
       ),
+      ...extractionJobStatements(control, sourceId, now, CLAIM_GUARD, [guardId, guardToken]),
     ],
   };
 }

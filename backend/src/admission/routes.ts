@@ -1,3 +1,4 @@
+import { extractionJobStatements } from '../extraction/job';
 import { triageJobStatements } from '../triage/job';
 import { authenticate } from '../auth/sessions';
 import type { Env } from '../env';
@@ -165,9 +166,16 @@ async function setAdmission(env: Env, now: number, id: string, revision: number,
   if (admission === 'quarantine') {
     // Quarantine invalidates undispatched derived work for the source; nothing is deleted.
     statements.push(db.prepare("UPDATE jobs SET state = 'cancelled', error_code = 'quarantined' WHERE source_id = ? AND kind <> 'parse' AND state = 'pending'").bind(id));
+    // Their attachments return to stored so release can queue them again under a new key.
+    statements.push(
+      db.prepare("UPDATE attachment_processing SET state = 'stored', job_id = NULL, revision = revision + 1 WHERE source_id = ? AND state IN ('queued', 'extracting') AND job_id IN (SELECT id FROM jobs WHERE state = 'cancelled')").bind(id),
+    );
   }
-  // Released sources get triage at their new revision; one already grouped is left as it is.
-  if (admission === 'normal') statements.push(...triageJobStatements(db, id, now, 'revision = ?', [revision + 1]));
+  // Released sources get triage and extraction at their new revision; finished work is left as it is.
+  if (admission === 'normal') {
+    statements.push(...triageJobStatements(db, id, now, 'revision = ?', [revision + 1]));
+    statements.push(...extractionJobStatements(db, id, now, 'r.revision = ?', [revision + 1]));
+  }
   const results = await db.batch(statements);
   if (results[0]?.meta.changes !== 1) throw stale(revision + 1);
   const updated = await env.CONTROL_DB.prepare(`SELECT ${REGISTRY_COLUMNS} FROM ${REGISTRY_FROM} WHERE r.id = ?`).bind(id).first<RegistryRow>();

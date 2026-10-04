@@ -53,8 +53,8 @@ describe('source reads', () => {
     const detail = await api('GET', `/sources/${id}`, { token });
     expect(detail.body.data.text).toBe('Report attached. Chart:\n\n[usage chart]');
     expect(detail.body.data.attachments.map((a: { name: string; extraction: string }) => [a.name, a.extraction])).toEqual([
-      ['chart.png', 'stored'],
-      ['report.pdf', 'stored'],
+      ['chart.png', 'queued'],
+      ['report.pdf', 'queued'],
     ]);
     expect(detail.body.data.provenance.admission.detector).toBe('spam-rules-v1');
 

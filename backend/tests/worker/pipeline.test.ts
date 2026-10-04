@@ -58,7 +58,7 @@ describe('parse job and archive publication', () => {
       const digest = await crypto.subtle.digest('SHA-256', await object!.arrayBuffer());
       expect([...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('')).toBe(file.sha256);
     }
-    const processing = await env.CONTROL_DB.prepare("SELECT COUNT(*) AS n FROM attachment_processing WHERE source_id = ? AND state = 'stored'").bind(sourceId).first<{ n: number }>();
+    const processing = await env.CONTROL_DB.prepare("SELECT COUNT(*) AS n FROM attachment_processing WHERE source_id = ? AND state = 'queued' AND job_id IS NOT NULL").bind(sourceId).first<{ n: number }>();
     expect(processing?.n).toBe(2);
 
     const hit = await env.ARCHIVE_0001.prepare("SELECT source_id FROM source_fts WHERE source_fts MATCH '\"report\" AND \"pdf\"'").first<{ source_id: string }>();

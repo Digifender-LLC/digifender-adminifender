@@ -6,6 +6,7 @@ import { openCursor, sealCursor } from '../http/cursor';
 import { HttpError } from '../http/errors';
 import { v } from '../http/validate';
 import { instant, pageSize, rejectUnknownParams } from '../sources/routes';
+import { BODY_GENERATION } from '../archive/publish';
 import { ftsQuery } from './query';
 
 /** At most four partitions are visited per page; the rest continue through the cursor (lld.md#search). */
@@ -22,6 +23,8 @@ interface SearchCursor {
 interface Hit {
   source_id: string;
   chunk_id: string;
+  generation_id: string;
+  attachment_id: string | null;
   snippet: string;
   rank: number;
   received_at: number;
@@ -69,7 +72,7 @@ export async function search(request: Request, env: Env, now: number) {
     if (sender) (where.push("EXISTS (SELECT 1 FROM json_each(s.envelope_json, '$.from') WHERE lower(value) = ?)"), params.push(sender));
     const { results: hits } = await db
       .prepare(
-        `SELECT f.source_id, f.chunk_id, snippet(source_fts, 4, '[', ']', '…', 16) AS snippet, f.rank AS rank, s.received_at, s.subject, c.page, c.start_offset
+        `SELECT f.source_id, f.chunk_id, f.generation_id, c.attachment_id, snippet(source_fts, 4, '[', ']', '…', 16) AS snippet, f.rank AS rank, s.received_at, s.subject, c.page, c.start_offset
          FROM source_fts f JOIN sources s ON s.id = f.source_id LEFT JOIN chunks c ON c.id = f.chunk_id
          WHERE ${where.join(' AND ')} ORDER BY f.rank, s.received_at DESC, f.source_id, f.chunk_id LIMIT ? OFFSET ?`,
       )
@@ -87,11 +90,23 @@ export async function search(request: Request, env: Env, now: number) {
         .all<{ id: string }>();
       for (const row of rows) allowed.add(row.id);
     }
+    // Attachment text is visible only through its published generation (lld.md#text-extraction-and-ocr).
+    const attachmentIds = [...new Set(hits.flatMap((h) => (h.attachment_id ? [h.attachment_id] : [])))];
+    const published = new Set<string>();
+    if (attachmentIds.length > 0) {
+      const { results: rows } = await env.CONTROL_DB.prepare(
+        `SELECT attachment_id, active_generation FROM attachment_processing WHERE attachment_id IN (${attachmentIds.map(() => '?').join(',')}) AND active_generation IS NOT NULL`,
+      )
+        .bind(...attachmentIds)
+        .all<{ attachment_id: string; active_generation: string }>();
+      for (const row of rows) published.add(`${row.attachment_id}\n${row.active_generation}`);
+    }
+    const visible = (hit: Hit) => allowed.has(hit.source_id) && (hit.attachment_id === null ? hit.generation_id === BODY_GENERATION : published.has(`${hit.attachment_id}\n${hit.generation_id}`));
     let consumed = 0;
     for (const hit of hits) {
       if (results.length >= limit) break;
       consumed += 1;
-      if (allowed.has(hit.source_id)) results.push({ ...hit, partitionId });
+      if (visible(hit)) results.push({ ...hit, partitionId });
     }
     cursor = { ...cursor, offset: cursor.offset + consumed };
     if (hits.length < BATCH && consumed === hits.length) {
@@ -105,6 +120,7 @@ export async function search(request: Request, env: Env, now: number) {
     results: results.map((r) => ({
       sourceId: r.source_id,
       chunkId: r.chunk_id,
+      attachmentId: r.attachment_id,
       partitionId: r.partitionId,
       subject: r.subject,
       snippet: r.snippet,
