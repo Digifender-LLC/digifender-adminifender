@@ -39,6 +39,8 @@ export function writeConcern(
     now: number;
     meaningful: boolean;
     eventDetail?: Record<string, unknown>;
+    /** Evidence links moved away from this concern by a merge or split. */
+    removedSourceIds?: readonly string[];
     guard?: Guard;
   },
 ): D1PreparedStatement[] {
@@ -65,6 +67,12 @@ export function writeConcern(
   const landedParams = [after.id, after.revision, ...guard.params];
   for (const sourceId of input.sourceIds) {
     statements.push(db.prepare(`INSERT OR IGNORE INTO concern_sources(concern_id, source_id) SELECT ?, ? WHERE ${landed}`).bind(after.id, sourceId, ...landedParams));
+  }
+  const removed = input.removedSourceIds ?? [];
+  if (removed.length > 0) {
+    statements.push(
+      db.prepare(`DELETE FROM concern_sources WHERE concern_id = ? AND source_id IN (${removed.map(() => '?').join(',')}) AND ${landed}`).bind(after.id, ...removed, ...landedParams),
+    );
   }
   statements.push(
     db.prepare(`INSERT INTO concern_events(id, concern_id, from_revision, to_revision, kind, before_json, after_json, created_at) SELECT ?, ?, ?, ?, ?, ?, ?, ? WHERE ${landed}`)

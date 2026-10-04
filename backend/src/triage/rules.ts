@@ -1,3 +1,4 @@
+import { normalizeBlockValue } from '../admission/blocking';
 import { HttpError } from '../http/errors';
 
 /** Closed predicate AST (lld.md#triage). No regex or user code. */
@@ -48,8 +49,13 @@ export function parsePredicate(value: unknown, path = '$.predicate'): Predicate 
       if (!['pass', 'fail', 'unknown'].includes(arg)) throw invalid(`${at}.${key}`, 'unknown_value');
       return { authentication_result: arg as 'pass' | 'fail' | 'unknown' };
     }
-    const normalized = key === 'sender_equals' || key === 'domain_equals' ? arg.trim().toLowerCase() : arg;
-    return { [key]: normalized } as Predicate;
+    // Same convention as block rules (lld.md#ingestion): exact local part, normalized IDNA domain.
+    if (key === 'sender_equals' || key === 'domain_equals') {
+      const normalized = normalizeBlockValue(key === 'sender_equals' ? 'address' : 'domain', arg.trim());
+      if (!normalized) throw invalid(`${at}.${key}`, 'format');
+      return { [key]: normalized } as Predicate;
+    }
+    return { [key]: arg } as Predicate;
   };
   return walk(value, path, 1);
 }
@@ -71,7 +77,7 @@ export function parseEffects(value: unknown, path = '$.effects'): Effect[] {
 }
 
 export interface RuleFacts {
-  /** Lowercase single From address, or null when missing/malformed. */
+  /** Single From address (exact local part, normalized domain), or null when missing/malformed. */
   sender: string | null;
   subject: string;
   body: string;

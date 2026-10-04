@@ -24,10 +24,12 @@ const reason = (fn: () => unknown) => {
 };
 
 describe('rule predicates', () => {
-  it('accepts the closed AST and normalizes addresses and domains', () => {
+  it('accepts the closed AST, keeping the local part exact and normalizing domains', () => {
     expect(parsePredicate({ all: [{ sender_equals: ' Alerts@Billing.Example ' }, { subject_contains: 'Invoice' }] })).toEqual({
-      all: [{ sender_equals: 'alerts@billing.example' }, { subject_contains: 'Invoice' }],
+      all: [{ sender_equals: 'Alerts@billing.example' }, { subject_contains: 'Invoice' }],
     });
+    expect(reason(() => parsePredicate({ sender_equals: 'not an address' }))).toBe('format');
+    expect(reason(() => parsePredicate({ domain_equals: '*.example' }))).toBe('format');
   });
 
   it('rejects unknown operators, regex-like values in unknown keys, depth and size overruns', () => {

@@ -1,5 +1,7 @@
 import * as admission from '../admission/routes';
 import * as auth from '../auth/routes';
+import * as briefings from '../briefings/routes';
+import * as grouping from '../concerns/grouping';
 import * as concerns from '../concerns/routes';
 import { authenticate } from '../auth/sessions';
 import { RELEASE_CONTRACT } from '../contracts';
@@ -73,6 +75,11 @@ const ROUTES: Route[] = [
   { method: 'GET', pattern: new RegExp(`^/concerns/${ID}$`), handler: concerns.getConcern },
   { method: 'POST', pattern: new RegExp(`^/concerns/${ID}/actions$`), handler: mutation(concerns.actionBody, concerns.concernAction) },
   { method: 'POST', pattern: new RegExp(`^/concerns/${ID}/undo$`), handler: mutation(concerns.undoBody, concerns.undoConcernEvent) },
+  { method: 'POST', pattern: new RegExp(`^/concerns/${ID}/corrections$`), handler: mutation(grouping.correctionBody, grouping.correctConcern) },
+  { method: 'POST', pattern: new RegExp(`^/concerns/${ID}/split$`), handler: mutation(grouping.splitBody, grouping.splitConcern) },
+  { method: 'POST', pattern: /^\/concerns\/merge$/, handler: mutation(grouping.mergeBody, grouping.mergeConcerns) },
+  { method: 'GET', pattern: /^\/briefings\/current$/, handler: briefings.currentBriefing },
+  { method: 'POST', pattern: new RegExp(`^/briefings/${ID}/review$`), handler: mutation(briefings.reviewBody, briefings.reviewBriefing) },
 ];
 
 export async function handleFetch(request: Request, env: Env, now = Date.now()): Promise<Response> {
