@@ -50,6 +50,8 @@ Paste the output as the repository secret `ADMINIFENDER_STAGING_DEBUG_KEYSTORE` 
 
 **Registered:** the owner's debug key (SHA-256 `FA:8D:6B:9C:…:3E:09:BB`) is in staging `EXPECTED_ORIGINS` as `android:apk-key-hash:-o1rnKJPY5wdBS3AUHeGPt1biuSl6EAiKbs2AnQ-Cbs`. A staging APK built on that machine, or by CI with the secret below (added 2026-10-04), can sign in with a passkey.
 
+**Passkey origin on the S24+ (2026-10-04):** after asset-links verification, the phone's passkey provider reported the origin `https://digifender.com` for the staging app's sign-in, not `android:apk-key-hash:…`, so staging rejected it (`passkey_verify_failed` with `unexpected_origin` in the Worker logs). With the owner's approval, staging `EXPECTED_ORIGINS` also accepts `https://digifender.com`. Any page served from digifender.com could then complete a staging passkey sign-in. Production needs its own decision in the release preflight.
+
 The asset-links statement is published on `https://digifender.com/.well-known/assetlinks.json` (the `digifender-website` repository). A debug key is only for staging: production uses Play App Signing.
 
 ## Not configured yet
