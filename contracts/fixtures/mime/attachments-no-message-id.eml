@@ -1,0 +1,28 @@
+From: Ops <ops@example.com>
+To: inbox@adminifender.example
+Subject: Report attached
+Content-Type: multipart/mixed; boundary="m1"
+
+--m1
+Content-Type: multipart/related; boundary="r1"
+
+--r1
+Content-Type: text/html; charset=utf-8
+
+<p>Report attached. Chart:</p><img src="cid:chart1" alt="usage chart">
+--r1
+Content-Type: image/png
+Content-ID: <chart1>
+Content-Disposition: inline; filename="chart.png"
+Content-Transfer-Encoding: base64
+
+iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAA=
+--r1--
+
+--m1
+Content-Type: application/pdf; name="report.pdf"
+Content-Disposition: attachment; filename="report.pdf"
+Content-Transfer-Encoding: base64
+
+JVBERi0xLjQKJSBzeW50aGV0aWMgdGVzdCBieXRlcwo=
+--m1--

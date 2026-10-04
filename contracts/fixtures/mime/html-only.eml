@@ -1,0 +1,12 @@
+From: Alerts <alerts@monitor.example>
+To: inbox@adminifender.example
+Subject: Disk usage warning
+Content-Type: text/html; charset=utf-8
+
+<html><head><style>p{color:red}</style><script>alert('x')</script></head>
+<body><h1>Disk usage</h1><p>Volume <b>data-01</b> is at 91%.</p>
+<ul><li>Host: db-1</li><li>Threshold: 90%</li></ul>
+<table><tr><th>Mount</th><th>Used</th></tr><tr><td>/var</td><td>91%</td></tr></table>
+<p>See <a href="https://monitor.example/d/1">the dashboard</a> or <a href="javascript:steal()">this</a>.</p>
+<img src="https://tracker.example/p.gif" alt="">
+</body></html>

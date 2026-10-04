@@ -1,0 +1,18 @@
+{
+  "attachments": [
+    {
+      "name": "chart.png",
+      "declaredType": "image/png",
+      "disposition": "inline",
+      "sizeBytes": 29,
+      "sha256": "71fde3856a298a052c6edb5155638d8422114e55bf0e28374d90dea8be99ef6c"
+    },
+    {
+      "name": "report.pdf",
+      "declaredType": "application/pdf",
+      "disposition": "attachment",
+      "sizeBytes": 32,
+      "sha256": "a84a3613182822e426a492e61f925d750ce0632b9087474ad08c1dfaf1b2118d"
+    }
+  ]
+}

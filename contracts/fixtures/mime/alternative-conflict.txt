@@ -1,0 +1,4 @@
+Plain says the refund was approved.
+
+[HTML alternative]
+HTML says the refund was denied.

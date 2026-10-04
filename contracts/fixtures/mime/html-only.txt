@@ -1,0 +1,11 @@
+Disk usage
+
+Volume data-01 is at 91%.
+
+- Host: db-1
+- Threshold: 90%
+
+Mount | Used
+/var | 91%
+
+See the dashboard (https://monitor.example/d/1) or this.

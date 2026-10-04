@@ -11,7 +11,7 @@ export default defineConfig(async () => {
           plugins: [
             cloudflareTest({
               wrangler: { configPath: './wrangler.jsonc' },
-              miniflare: { bindings: { CONTROL_MIGRATIONS: controlMigrations, ARCHIVE_MIGRATIONS: archiveMigrations } },
+              miniflare: { bindings: { CONTROL_MIGRATIONS: controlMigrations, ARCHIVE_MIGRATIONS: archiveMigrations, CURSOR_SECRET: 'test-only-cursor-secret-0123456789abcdef', LEDGER_SIGNING_KEY: 'test-only-ledger-key-0123456789abcdef' } },
             }),
           ],
           test: { name: 'worker', include: ['tests/worker/**/*.test.ts'], setupFiles: ['tests/worker/apply-migrations.ts'] },

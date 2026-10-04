@@ -1,0 +1,15 @@
+From: Support <support@vendor.example>
+To: inbox@adminifender.example
+Subject: Ticket update
+Content-Type: multipart/alternative; boundary="b1"
+
+--b1
+Content-Type: text/plain; charset=utf-8
+
+Your ticket was updated.
+
+--b1
+Content-Type: text/html; charset=utf-8
+
+<p>Your ticket was updated.</p><p>Action required: approve the refund by Friday.</p>
+--b1--

@@ -24,5 +24,10 @@
     "esbuild@0.28.1": true,
     "workerd@1.20260815.1": true,
     "workerd@1.20261001.1": true
+  },
+  "dependencies": {
+    "@simplewebauthn/server": "14.0.3",
+    "parse5": "8.0.1",
+    "postal-mime": "4.0.4"
   }
 }
