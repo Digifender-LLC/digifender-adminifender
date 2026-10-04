@@ -156,14 +156,34 @@ describe('cloud dispatch', () => {
     expect((await status(id)).result.importance).toBe('urgent');
   });
 
+  it('turns quoted evidence into offsets, and rejects a quote that is not in the chunk', async () => {
+    await setInference(CLOUD);
+    const quoted = await triaged('Quoted');
+    const first = fakeAi([valid(quoted, { evidence: [{ chunkId: `${quoted}:body-v1:0`, quote: 'Invoice 4471 for synthetic hosting' }] })]);
+    await runPending('infer', T0, { AI: first.ai });
+    expect(first.calls[0]!.input.messages[0]!.content).toContain('"evidence": [{"chunkId": string, "quote": string}]');
+    expect(await status(quoted)).toMatchObject({ state: 'succeeded', result: { evidence: [{ chunkId: `${quoted}:body-v1:0`, start: 0, end: 34 }] } });
+
+    const invented = await triaged('Invented', T0 + 1);
+    const second = fakeAi([
+      valid(invented, { evidence: [{ chunkId: `${invented}:body-v1:0`, quote: 'payment overdue since March' }] }),
+      valid(invented, { evidence: [{ chunkId: `${invented}:body-v1:0`, quote: 'due on   OCTOBER 13' }] }),
+    ]);
+    await runPending('infer', T0 + 1, { AI: second.ai });
+    expect(second.calls[1]!.input.messages.at(-1)!.content).toContain('$.evidence[0].quote:not_in_chunk');
+    const view = await status(invented);
+    expect(view).toMatchObject({ state: 'succeeded' });
+    expect(BODY.slice(view.result.evidence[0].start, view.result.evidence[0].end)).toBe('due on October 13');
+  });
+
   it('makes one separately reserved repair attempt, then fails visibly', async () => {
     await setInference(CLOUD);
     const repaired = await triaged('Repaired');
     const first = fakeAi([valid(repaired, { evidence: [{ chunkId: `${repaired}:body-v1:0`, start: 0, end: 5000 }] }), valid(repaired)]);
     await runPending('infer', T0, { AI: first.ai });
     expect(first.calls[1]!.input.messages.at(-1)!.content).toContain('$.evidence[0]:outside_chunk');
-    // The repair turn names the only citable chunk and its length.
-    expect(first.calls[1]!.input.messages.at(-1)!.content).toContain(`Cite only these chunk ids, each with 0 <= start < end <= its length: ${repaired}:body-v1:0 (length ${BODY.length})`);
+    // The repair turn names the only citable chunk.
+    expect(first.calls[1]!.input.messages.at(-1)!.content).toContain(`Cite only these chunk ids, each with a quote copied word for word from that chunk's text: ${repaired}:body-v1:0.`);
     expect((await status(repaired)).attempts.map((a: { state: string; repair: boolean }) => [a.state, a.repair])).toEqual([
       ['invalid_output', false],
       ['succeeded', true],

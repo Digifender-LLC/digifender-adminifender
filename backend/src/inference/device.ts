@@ -10,6 +10,7 @@ import { INFER_TASK, MAX_DEVICE_CHUNKS, inputDigest, knownServiceIds, loadBodyCh
 import { THERMAL_STATES, type Readiness, localReady } from './routing';
 import { type Message, triageMessages } from './cloud';
 import { loadSettings } from './settings';
+import { resolveTriageQuotes } from './quotes';
 import { normalizeTriage, parseModelJson, validateTriage } from './triage-output';
 
 /** Device leases are replay-safe: an expired lease is reclaimed with a new token and a late result is refused. */
@@ -88,7 +89,8 @@ const triageTask: DeviceTask = {
     const loaded = source ? await loadBodyChunks(env, source, MAX_DEVICE_CHUNKS) : null;
     if (!source || !loaded) throw leaseLost();
     const parsed = parseModelJson(outputJson);
-    const checked = parsed.ok ? validateTriage(normalizeTriage(parsed.value), new Map(loaded.chunks.map((c) => [c.id, c.text.length])), await knownServiceIds(db)) : parsed;
+    const quoted = parsed.ok ? resolveTriageQuotes(normalizeTriage(parsed.value), new Map(loaded.chunks.map((c) => [c.id, c.text]))) : null;
+    const checked = !parsed.ok ? parsed : quoted!.errors.length > 0 ? { ok: false as const, errors: quoted!.errors } : validateTriage(quoted!.value, new Map(loaded.chunks.map((c) => [c.id, c.text.length])), await knownServiceIds(db));
     if (!checked.ok) return checked;
     return { ok: true, store: [await resultStatement(db, { id: row.id, jobId: row.job_id, route: 'local', modelId: row.model_id }, { id: source.id, revision: row.source_revision!, privacy: source.privacy }, policyRevision, checked.value, now)] };
   },

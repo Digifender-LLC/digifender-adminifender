@@ -9,6 +9,7 @@ import { type Reservation, type UsageKind, releaseStatements, reserve, settleSta
 import { CLOUD_MAX_CHUNKS, type Message, type TextModel, repairMessages, runCloud, triageMessages, worstCaseInputTokens, CLOUD_OUTPUT_TOKENS } from './cloud';
 import { type Privacy, type Readiness, type TaskKind, type Thermal, cloudGate, localReady, route } from './routing';
 import { POLICY_REVISION_SQL, type Settings, loadSettings } from './settings';
+import { resolveTriageQuotes } from './quotes';
 import { type TriageOutput, normalizeTriage, parseModelJson, validateTriage } from './triage-output';
 
 export const INFER_TASK = 'triage';
@@ -338,6 +339,7 @@ async function cloudTriage(
 ): Promise<JobResult> {
   const { source, settings } = ctx;
   const chunkLengths = new Map(ctx.chunks.map((c) => [c.id, c.text.length]));
+  const chunkTexts = new Map(ctx.chunks.map((c) => [c.id, c.text]));
   const services = await knownServiceIds(env.CONTROL_DB);
   const outcome = await dispatchCloud(job, env, now, settings, {
     task: INFER_TASK,
@@ -350,7 +352,9 @@ async function cloudTriage(
     citable: ctx.chunks.map((c) => ({ id: c.id, length: c.text.length })),
     validate: (text) => {
       const parsed = parseModelJson(text);
-      return parsed.ok ? validateTriage(normalizeTriage(parsed.value), chunkLengths, services) : parsed;
+      if (!parsed.ok) return parsed;
+      const quoted = resolveTriageQuotes(normalizeTriage(parsed.value), chunkTexts);
+      return quoted.errors.length > 0 ? { ok: false as const, errors: quoted.errors } : validateTriage(quoted.value, chunkLengths, services);
     },
     store: async (attemptId, modelId, value) => [await resultStatement(env.CONTROL_DB, { id: attemptId, jobId: job.id, route: 'cloud', modelId }, source, settings.policyRevision, value, now)],
   });
