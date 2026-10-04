@@ -10,6 +10,7 @@ import * as searchRoutes from '../search/routes';
 import * as sources from '../sources/routes';
 import * as sync from '../sync/routes';
 import * as reviews from '../reviews/routes';
+import * as exportsRoutes from '../exports/job';
 import * as rules from '../triage/routes';
 import { fail, ok } from './envelope';
 import { HttpError } from './errors';
@@ -82,6 +83,9 @@ const ROUTES: Route[] = [
   { method: 'GET', pattern: /^\/spam-overrides$/, handler: admission.listSpamOverrides },
   { method: 'POST', pattern: /^\/spam-overrides$/, handler: mutation(admission.spamOverrideBody, admission.createSpamOverride) },
   { method: 'PATCH', pattern: new RegExp(`^/spam-overrides/${ID}$`), handler: mutation(admission.spamOverridePatch, admission.updateSpamOverride) },
+  { method: 'POST', pattern: /^\/exports$/, handler: mutation(exportsRoutes.exportBody, exportsRoutes.createExport) },
+  { method: 'GET', pattern: new RegExp(`^/exports/${ID}$`), handler: exportsRoutes.getExport },
+  { method: 'GET', pattern: new RegExp(`^/exports/${ID}/content$`), handler: exportsRoutes.getExportContent },
   { method: 'POST', pattern: /^\/reviews$/, handler: ownerMutation(reviews.reviewBody, reviews.createReview, { recentAuth: false }) },
   { method: 'POST', pattern: new RegExp(`^/reviews/${ID}/confirm$`), handler: ownerMutation(reviews.confirmBody, reviews.confirmReview, { recentAuth: true }) },
   { method: 'GET', pattern: new RegExp(`^/operations/${ID}$`), handler: reviews.getOperation },
