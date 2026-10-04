@@ -1,5 +1,6 @@
 package com.digifender.adminifender.core.data
 
+import com.digifender.adminifender.core.data.network.AccessTokens
 import com.digifender.adminifender.core.data.network.HttpApi
 import com.digifender.adminifender.core.data.network.ReadResult
 import com.digifender.adminifender.core.model.ConcernAction
@@ -81,5 +82,23 @@ class HttpApiTest {
         assertEquals(ReadResult.SessionExpired, signedOut.changes(0, 10))
         assertEquals(SendResult.SessionExpired, signedOut.concernAction(id, "k", 1, ConcernAction.Acknowledge))
         assertTrue(server.requestCount == 0)
+    }
+
+    @Test
+    fun aRefusedTokenIsReportedToTheSessionLayer() = runTest {
+        val refused = mutableListOf<String>()
+        val tokens = object : AccessTokens {
+            override suspend fun current() = "access-token"
+            override suspend fun rejected(token: String) {
+                refused += token
+            }
+        }
+        val reporting = HttpApi(OkHttpClient(), server.url("/"), tokens)
+        server.enqueue(json(200, """{"data":{"changes":[],"throughSeq":1,"hasMore":false},"requestId":"r"}"""))
+        reporting.changes(1, 10)
+        assertEquals(emptyList<String>(), refused)
+        server.enqueue(json(401, """{"error":{"code":"unauthenticated","message":"m"}}"""))
+        assertEquals(SendResult.SessionExpired, reporting.concernAction(id, "k", 1, ConcernAction.Acknowledge))
+        assertEquals(listOf("access-token"), refused)
     }
 }
