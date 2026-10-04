@@ -221,6 +221,6 @@ async function cloudChat(
       if (!outcome.repair) return ctx.queueLocal('budget_exhausted');
       return { kind: 'complete', output: { route: 'cloud', state: 'failed' }, statements: [turn('failed', 'invalid_output')] };
     case 'invalid':
-      return { kind: 'complete', output: { route: 'cloud', state: 'failed', errors: outcome.errors }, statements: [turn('failed', 'invalid_output')] };
+      return { kind: 'complete', output: { route: 'cloud', state: 'failed', errors: outcome.errors, firstErrors: outcome.firstErrors }, statements: [turn('failed', 'invalid_output')] };
   }
 }

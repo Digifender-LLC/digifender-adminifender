@@ -235,7 +235,7 @@ export interface CloudTask<T> {
 
 export type CloudOutcome =
   | { kind: 'succeeded'; attemptId: string; kept: boolean }
-  | { kind: 'invalid'; errors: string[] }
+  | { kind: 'invalid'; errors: string[]; firstErrors: string[] }
   | { kind: 'budget_exhausted'; repair: boolean; errors: string[] }
   | { kind: 'busy' }
   | { kind: 'uncertain' }
@@ -252,6 +252,7 @@ export async function dispatchCloud<T>(job: ClaimedJob, env: Env, now: number, s
   const running = { sql: RUNNING_GUARD, params: guardParams(job) };
   let messages: Message[] = t.messages;
   let lastErrors: string[] = [];
+  let firstErrors: string[] = [];
 
   for (const repair of [false, true]) {
     const attemptId = crypto.randomUUID();
@@ -321,6 +322,7 @@ export async function dispatchCloud<T>(job: ClaimedJob, env: Env, now: number, s
       return { kind: 'succeeded', attemptId, kept: stored.length === 0 || (results[results.length - 1]?.meta.changes ?? 0) >= 1 };
     }
     lastErrors = checked.errors;
+    if (!repair) firstErrors = checked.errors;
     await db.batch([
       ...settle,
       db.prepare("UPDATE inference_attempts SET state = 'invalid_output', error_code = 'invalid_output', usage_json = ?, completed_at = ? WHERE id = ?").bind(usage, now, attemptId),
@@ -328,7 +330,7 @@ export async function dispatchCloud<T>(job: ClaimedJob, env: Env, now: number, s
     // One schema-repair attempt, separately reserved; the rejected text goes back only to the same model.
     messages = repairMessages(t.messages, reply.text, checked.errors, t.citable);
   }
-  return { kind: 'invalid', errors: lastErrors };
+  return { kind: 'invalid', errors: lastErrors, firstErrors };
 }
 
 async function cloudTriage(
@@ -372,6 +374,6 @@ async function cloudTriage(
       if (!outcome.repair) return ctx.queueLocal('budget_exhausted');
       return { kind: 'complete', output: { route: 'cloud', state: 'failed', error: 'invalid_output', repair: 'budget_exhausted', errors: outcome.errors } };
     case 'invalid':
-      return { kind: 'complete', output: { route: 'cloud', state: 'failed', error: 'invalid_output', errors: outcome.errors } };
+      return { kind: 'complete', output: { route: 'cloud', state: 'failed', error: 'invalid_output', errors: outcome.errors, firstErrors: outcome.firstErrors } };
   }
 }
