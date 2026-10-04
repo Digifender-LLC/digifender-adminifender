@@ -46,13 +46,12 @@ describe('push token storage', () => {
 describe('FCM adapter', () => {
   const message = { eventId: 'e1', kind: 'critical' as const, destinationId: 'c1', critical: true, ttlSeconds: 3600 };
 
-  it('sends identity and generic text only', () => {
+  it('sends a data-only message with identity fields only', () => {
     expect(fcmMessage('tok', message)).toEqual({
       message: {
         token: 'tok',
         data: { eventId: 'e1', kind: 'critical', destinationId: 'c1' },
-        notification: { title: 'Adminifender', body: 'Adminifender has an item to review' },
-        android: { priority: 'high', ttl: '3600s', collapse_key: 'e1', notification: { tag: 'e1' } },
+        android: { priority: 'high', ttl: '3600s', collapse_key: 'e1' },
       },
     });
   });

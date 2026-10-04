@@ -95,4 +95,17 @@
     <string name="sign_out_cached">Cached mail and settings will be removed from this phone.</string>
     <string name="sign_out_confirm">Sign out</string>
     <string name="cancel">Cancel</string>
+
+    <string name="push_generic">Adminifender has an item to review</string>
+    <string name="channel_critical">Critical items</string>
+    <string name="channel_critical_body">Items your own rules mark as critical. These can arrive during quiet hours.</string>
+    <string name="channel_reminders">Review reminders</string>
+    <string name="channel_reminders_body">Due dates and reminders to review waiting items.</string>
+    <string name="channel_processing">Processing</string>
+    <string name="channel_processing_body">Progress of work running on this phone.</string>
+    <string name="settings_notifications">Notifications</string>
+    <string name="notifications_on">Notifications are allowed on this phone.</string>
+    <string name="notifications_off">Notifications are off. Critical items and reminders will only show in the inbox.</string>
+    <string name="notifications_allow">Allow notifications</string>
+    <string name="notifications_unconfigured">Push is not set up in this build, so items only show in the inbox.</string>
 </resources>

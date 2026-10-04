@@ -1,10 +1,6 @@
 import type { Env } from '../env';
 import { fcmSender } from './fcm';
 
-/** Generic display text; never a subject, body, support statement or action parameter (FR-031). */
-export const PUSH_TITLE = 'Adminifender';
-export const PUSH_TEXT = 'Adminifender has an item to review';
-
 export type EventKind = 'critical' | 'due' | 'inactivity';
 
 /** The whole push payload: opaque identity only. The app fetches current state when it opens. */

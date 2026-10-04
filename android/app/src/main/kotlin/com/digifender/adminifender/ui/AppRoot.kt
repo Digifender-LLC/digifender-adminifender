@@ -22,6 +22,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -30,32 +31,36 @@ import com.digifender.adminifender.AppContainer
 import com.digifender.adminifender.R
 import com.digifender.adminifender.core.data.platform.CredentialManagerPasskeys
 import com.digifender.adminifender.core.data.session.SessionState
+import com.digifender.adminifender.push.BRIEFING_DESTINATION
+import com.digifender.adminifender.push.PushRegistrationWorker
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 
 private const val CLOCK_TICK_MS = 30_000L
 
 private enum class Tab { INBOX, SETTINGS }
 
 @Composable
-fun AppRoot(container: AppContainer, activity: Activity) {
+fun AppRoot(container: AppContainer, activity: Activity, destination: MutableStateFlow<String?>) {
     val sessionModel = viewModel { SessionViewModel(container.session, container::startSync, container::signOut) }
     val session by sessionModel.state.collectAsStateWithLifecycle()
     when (session.session) {
         SessionState.Unknown -> Unit
         SessionState.SignedOut -> SignInScreen(session) { sessionModel.signIn(CredentialManagerPasskeys(activity)) }
         // Cached data stays readable while the server wants a fresh sign-in (FR-002).
-        SessionState.SignInRequired, is SessionState.SignedIn -> SignedIn(container, needsSignIn = session.session == SessionState.SignInRequired, busy = session.busy) {
+        SessionState.SignInRequired, is SessionState.SignedIn -> SignedIn(container, destination, needsSignIn = session.session == SessionState.SignInRequired, busy = session.busy) {
             sessionModel.signIn(CredentialManagerPasskeys(activity))
         }
     }
 }
 
 @Composable
-private fun SignedIn(container: AppContainer, needsSignIn: Boolean, busy: Boolean, onSignIn: () -> Unit) {
+private fun SignedIn(container: AppContainer, destination: MutableStateFlow<String?>, needsSignIn: Boolean, busy: Boolean, onSignIn: () -> Unit) {
     // Same instance as in AppRoot: one SessionViewModel per activity.
     val sessionModel = viewModel { SessionViewModel(container.session, container::startSync, container::signOut) }
     val inboxModel = viewModel { InboxViewModel(container.concerns) }
     val inbox by inboxModel.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
     var tab by rememberSaveable { mutableStateOf(Tab.INBOX) }
     var openId by rememberSaveable { mutableStateOf<String?>(null) }
     var now by remember { mutableLongStateOf(container.clock()) }
@@ -66,6 +71,14 @@ private fun SignedIn(container: AppContainer, needsSignIn: Boolean, busy: Boolea
         }
     }
     BackHandler(enabled = openId != null) { openId = null }
+    // A notification tap names a concern; the detail screen reads it from the cache like any other open.
+    val target by destination.collectAsStateWithLifecycle()
+    LaunchedEffect(target) {
+        val t = target ?: return@LaunchedEffect
+        tab = Tab.INBOX
+        openId = if (t == BRIEFING_DESTINATION) null else t
+        destination.value = null
+    }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -111,7 +124,7 @@ private fun SignedIn(container: AppContainer, needsSignIn: Boolean, busy: Boolea
                     ConcernScreen(concern, now, concernModel::act, concernModel::reapply, concernModel::discard)
                 }
                 tab == Tab.INBOX -> InboxScreen(inbox, now, inboxModel::select, inboxModel::refresh, { openId = it })
-                else -> SettingsScreen(inbox.freshness, now, inboxModel::refresh, sessionModel::signOut)
+                else -> SettingsScreen(inbox.freshness, now, inboxModel::refresh, sessionModel::signOut, onNotificationsChanged = { PushRegistrationWorker.enqueue(context) })
             }
         }
     }

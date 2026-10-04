@@ -6,6 +6,8 @@ import com.digifender.adminifender.core.data.local.LocalCache
 import com.digifender.adminifender.core.data.network.HttpApi
 import com.digifender.adminifender.core.data.platform.KeystoreTokenVault
 import com.digifender.adminifender.core.data.platform.WorkSyncScheduler
+import com.digifender.adminifender.core.data.push.HttpPushApi
+import com.digifender.adminifender.push.PushRegistrationWorker
 import com.digifender.adminifender.core.data.repository.ConcernRepository
 import com.digifender.adminifender.core.data.session.HttpAuthApi
 import com.digifender.adminifender.core.data.session.SessionManager
@@ -26,16 +28,19 @@ class AppContainer(context: Context) {
     val scheduler = WorkSyncScheduler(app)
     val syncEngine = SyncEngine(HttpApi(http, baseUrl, session), cache.store, clock)
     val concerns = ConcernRepository(cache.source, cache.store, scheduler, clock)
+    val push = HttpPushApi(http, baseUrl, session)
 
     /** Starts background sync for a signed-in owner. */
     fun startSync() {
         scheduler.schedulePeriodic()
         scheduler.requestNow()
+        PushRegistrationWorker.enqueue(app)
     }
 
     /** Sign-out cancels sync work and clears private cached state (lld.md#sync). Queued edits are discarded with it. */
     suspend fun signOut() {
         scheduler.cancelAll()
+        PushRegistrationWorker.cancel(app)
         session.signOut()
         cache.clear()
     }
