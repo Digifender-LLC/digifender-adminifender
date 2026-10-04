@@ -225,6 +225,8 @@ export interface CloudTask<T> {
   /** Policy guards rechecked in the transaction that records dispatch. */
   eligible: { sql: string; params: unknown[] }[];
   messages: Message[];
+  /** Chunk IDs the reply may cite, with their text lengths, for the schema-repair hint. */
+  citable: { id: string; length: number }[];
   validate: (text: string) => { ok: true; value: T } | { ok: false; errors: string[] };
   /** Writes that store an accepted output; the last one's effect reports whether the output was kept. */
   store: (attemptId: string, modelId: string, value: T) => Promise<D1PreparedStatement[]>;
@@ -323,7 +325,7 @@ export async function dispatchCloud<T>(job: ClaimedJob, env: Env, now: number, s
       db.prepare("UPDATE inference_attempts SET state = 'invalid_output', error_code = 'invalid_output', usage_json = ?, completed_at = ? WHERE id = ?").bind(usage, now, attemptId),
     ]);
     // One schema-repair attempt, separately reserved; the rejected text goes back only to the same model.
-    messages = repairMessages(t.messages, reply.text, checked.errors);
+    messages = repairMessages(t.messages, reply.text, checked.errors, t.citable);
   }
   return { kind: 'invalid', errors: lastErrors };
 }
@@ -345,6 +347,7 @@ async function cloudTriage(
     chunkIds: null,
     eligible: [sourceStillEligible(source.id, source.revision, source.privacy, settings.policyRevision)],
     messages: triageMessages(ctx.subject, ctx.chunks),
+    citable: ctx.chunks.map((c) => ({ id: c.id, length: c.text.length })),
     validate: (text) => {
       const parsed = parseModelJson(text);
       return parsed.ok ? validateTriage(normalizeTriage(parsed.value), chunkLengths, services) : parsed;

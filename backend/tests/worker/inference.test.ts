@@ -137,7 +137,7 @@ describe('cloud dispatch', () => {
     expect(calls).toHaveLength(1);
     expect(calls[0]!.model).toBe('@cf/test/synthetic-model');
     expect(calls[0]!.input.max_tokens).toBe(1000);
-    expect(calls[0]!.input.messages[1]!.content).toContain(`<chunk id="${id}:body-v1:0">`);
+    expect(calls[0]!.input.messages[1]!.content).toContain(`<chunk id="${id}:body-v1:0" length="${BODY.length}">`);
 
     const view = await status(id);
     expect(view).toMatchObject({ state: 'succeeded', result: { category: 'billing', importance: 'important' }, provenance: { route: 'cloud', modelId: '@cf/test/synthetic-model' } });
@@ -162,6 +162,8 @@ describe('cloud dispatch', () => {
     const first = fakeAi([valid(repaired, { evidence: [{ chunkId: `${repaired}:body-v1:0`, start: 0, end: 5000 }] }), valid(repaired)]);
     await runPending('infer', T0, { AI: first.ai });
     expect(first.calls[1]!.input.messages.at(-1)!.content).toContain('$.evidence[0]:outside_chunk');
+    // The repair turn names the only citable chunk and its length.
+    expect(first.calls[1]!.input.messages.at(-1)!.content).toContain(`Cite only these chunk ids, each with 0 <= start < end <= its length: ${repaired}:body-v1:0 (length ${BODY.length})`);
     expect((await status(repaired)).attempts.map((a: { state: string; repair: boolean }) => [a.state, a.repair])).toEqual([
       ['invalid_output', false],
       ['succeeded', true],
