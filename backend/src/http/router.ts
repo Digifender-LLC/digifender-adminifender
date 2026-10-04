@@ -12,6 +12,9 @@ import * as sync from '../sync/routes';
 import * as reviews from '../reviews/routes';
 import * as exportsRoutes from '../exports/job';
 import * as rules from '../triage/routes';
+import * as device from '../inference/device';
+import * as inference from '../inference/routes';
+import * as settings from '../inference/settings';
 import { fail, ok } from './envelope';
 import { HttpError } from './errors';
 import { withIdempotency } from './idempotency';
@@ -102,6 +105,15 @@ const ROUTES: Route[] = [
   { method: 'POST', pattern: new RegExp(`^/concerns/${ID}/split$`), handler: mutation(grouping.splitBody, grouping.splitConcern) },
   { method: 'POST', pattern: /^\/concerns\/merge$/, handler: mutation(grouping.mergeBody, grouping.mergeConcerns) },
   { method: 'GET', pattern: /^\/briefings\/current$/, handler: briefings.currentBriefing },
+  { method: 'GET', pattern: /^\/settings$/, handler: settings.getSettings },
+  { method: 'PATCH', pattern: /^\/settings$/, handler: mutation(settings.settingsPatch, settings.patchSettings) },
+  { method: 'GET', pattern: new RegExp(`^/sources/${ID}/inference$`), handler: inference.sourceInference },
+  { method: 'GET', pattern: /^\/inference\/budget$/, handler: inference.inferenceBudget },
+  { method: 'POST', pattern: new RegExp(`^/inference/attempts/${ID}/reconcile$`), handler: mutation(inference.reconcileBody, inference.reconcileAttempt) },
+  { method: 'POST', pattern: /^\/device-work\/readiness$/, handler: ownerMutation(device.readinessBody, device.reportReadiness, { recentAuth: false }) },
+  { method: 'POST', pattern: /^\/device-work\/claim$/, handler: ownerMutation(device.readinessBody, device.claimWork, { recentAuth: false }) },
+  { method: 'POST', pattern: new RegExp(`^/device-work/${ID}/heartbeat$`), handler: ownerMutation(device.heartbeatBody, device.heartbeat, { recentAuth: false }) },
+  { method: 'POST', pattern: new RegExp(`^/device-work/${ID}/result$`), handler: ownerMutation(device.resultBody, device.submitResult, { recentAuth: false }) },
   { method: 'POST', pattern: new RegExp(`^/briefings/${ID}/review$`), handler: mutation(briefings.reviewBody, briefings.reviewBriefing) },
 ];
 

@@ -4,6 +4,7 @@ import { concernSourceIds, writeConcern } from '../concerns/store';
 import type { Env } from '../env';
 import { canonicalJson } from '../http/idempotency';
 import { deterministicUuid, sha256Hex } from '../ids';
+import { inferJobStatements } from '../inference/job';
 import { CLAIM_GUARD, type ClaimedJob, type JobResult, guardParams } from '../jobs/runner';
 import { REGISTRY_COLUMNS, REGISTRY_FROM, type RegistryRow, archiveFor } from '../sources/registry';
 import { type Rule, type RuleDecision, decide, parseEffects, parsePredicate } from './rules';
@@ -189,6 +190,8 @@ export async function triageJob(job: ClaimedJob, env: Env, now: number): Promise
           now,
           ...guardParams(job),
         ),
+      // Model triage follows deterministic triage; routing decides whether it may run and where.
+      ...inferJobStatements(db, source.id, now, guard),
     ],
   };
 }

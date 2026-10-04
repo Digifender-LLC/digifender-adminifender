@@ -85,6 +85,8 @@ export async function archiveDeletionStatements(env: Env, plan: DeletionPlan, op
       db.prepare("INSERT INTO changes(entity_type, entity_id, revision, deleted, projection_json, created_at) SELECT 'source', id, revision, 1, '{}', ? FROM source_registry WHERE id = ?").bind(now, id),
       db.prepare("INSERT INTO deletion_ledger(id, source_id, deleted_at, state, targets_json) VALUES (?, ?, ?, 'pending', ?)").bind(crypto.randomUUID(), id, now, JSON.stringify({ operationId })),
       db.prepare("UPDATE jobs SET state = 'cancelled', error_code = 'deleted' WHERE source_id = ? AND state = 'pending' AND kind <> 'cleanup'").bind(id),
+      // Undispatched phone work is withdrawn; a late device result then fails its lease check.
+      db.prepare("UPDATE inference_attempts SET state = 'cancelled', error_code = 'deleted', completed_at = ? WHERE source_id = ? AND state IN ('queued', 'leased')").bind(now, id),
       db.prepare(
         "INSERT OR IGNORE INTO jobs(id, dedupe_key, kind, source_id, input_revision, state, next_at, input_json, created_at) VALUES (?, ?, 'cleanup', ?, NULL, 'pending', ?, ?, ?)",
       ).bind(crypto.randomUUID(), `cleanup:${id}`, id, now, JSON.stringify({ sourceId: id }), now),

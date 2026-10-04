@@ -15,6 +15,11 @@ export interface Env {
   CURSOR_SECRET: string;
   /** Worker secret (>= 32 chars) that signs the deletion ledger head. */
   LEDGER_SIGNING_KEY: string;
+  /**
+   * Optional Workers AI binding. Absent locally and until a reviewed environment binds it; routing then treats
+   * cloud as unavailable and queues work for the phone.
+   */
+  AI?: Ai;
 }
 
 export interface QueueEnvelope {

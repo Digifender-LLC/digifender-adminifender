@@ -83,10 +83,10 @@ export async function ingest(raw: string, options: { to?: string; now?: number }
   return outcome.sourceId;
 }
 
-/** Runs every due job of one kind, oldest first, and returns their outcomes. */
-export async function runPending(kind: string, now = T0): Promise<string[]> {
+/** Runs every due job of one kind, oldest first, and returns their outcomes. `extra` adds bindings such as a fake AI. */
+export async function runPending(kind: string, now = T0, extra: Partial<Env> = {}): Promise<string[]> {
   const { results } = await env.CONTROL_DB.prepare("SELECT id FROM jobs WHERE kind = ? AND state = 'pending' AND next_at <= ? ORDER BY created_at, id").bind(kind, now).all<{ id: string }>();
   const statuses: string[] = [];
-  for (const row of results) statuses.push((await runJob(quietEnv(), JOB_HANDLERS, row.id, now)).status);
+  for (const row of results) statuses.push((await runJob({ ...quietEnv(), ...extra }, JOB_HANDLERS, row.id, now)).status);
   return statuses;
 }

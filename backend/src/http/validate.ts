@@ -23,6 +23,12 @@ export const v = {
       return value;
     };
   },
+  number(options: { min: number; max: number }): Validator<number> {
+    return (value, path) => {
+      if (typeof value !== 'number' || !Number.isFinite(value) || value < options.min || value > options.max) throw invalid(path, 'expected_number');
+      return value;
+    };
+  },
   boolean(): Validator<boolean> {
     return (value, path) => {
       if (typeof value !== 'boolean') throw invalid(path, 'expected_boolean');
