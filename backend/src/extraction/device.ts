@@ -73,7 +73,9 @@ export async function claimExtraction(env: Env, now: number, body: ReturnType<ty
   const settings = await loadSettings(db);
   const candidates = await db.prepare(`SELECT j.* FROM device_extraction_jobs j JOIN source_registry r ON r.id = j.source_id
     WHERE (j.state = 'queued' OR (j.state = 'leased' AND j.lease_until < ?)) AND r.state = 'ready' AND r.admission = 'normal'
-    AND r.privacy != 'restricted_metadata' AND r.privacy_floor != 'restricted_metadata' ORDER BY j.created_at, j.id LIMIT 10`).bind(now).all<ExtractionJob>();
+    AND r.privacy != 'restricted_metadata' AND r.privacy_floor != 'restricted_metadata'
+    AND ((j.kind = 'pdf' AND ? = 1) OR (? = 1 AND ? = 1 AND r.privacy != 'no_ai' AND r.privacy_floor != 'no_ai'))
+    ORDER BY j.created_at, j.id LIMIT 10`).bind(now, body.pdfText ? 1 : 0, body.latinOcr ? 1 : 0, settings.inference.mode !== 'no_ai' ? 1 : 0).all<ExtractionJob>();
   for (const candidate of candidates.results) {
     const source = await db.prepare(`SELECT ${REGISTRY_COLUMNS} FROM ${REGISTRY_FROM} WHERE r.id = ?`).bind(candidate.source_id).first<RegistryRow>();
     if (!source) continue;

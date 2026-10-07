@@ -1,6 +1,7 @@
 package com.digifender.adminifender.ui
 
 import com.digifender.adminifender.core.data.network.*
+import com.digifender.adminifender.core.data.repository.MemoryTransferJournal
 import com.digifender.adminifender.core.data.repository.ReviewRepository
 import com.digifender.adminifender.core.data.repository.deletionDigest
 import com.digifender.adminifender.core.data.session.PasskeyAuthenticator
@@ -83,6 +84,21 @@ class DeletionViewModelTest {
         assertEquals(1, prompts)
         assertEquals(1, api.confirms)
         assertEquals(DeletionPhase.SUCCEEDED, model.state.value.phase)
+    }
+
+    @Test
+    fun syncedDeletionDuringPasskeyPromptScrubsPreviewAndCannotStartConfirmation() = runTest {
+        val journal = MemoryTransferJournal()
+        val repo = ReviewRepository(api, { now }, { _, _ -> }, journal = journal)
+        val auth = CompletableDeferred<RecentAuthOutcome>()
+        val model = DeletionViewModel(listOf(UI_SOURCE), repo) { auth.await() }
+        model.confirm(passkeys)
+        journal.invalidateSources(listOf(UI_SOURCE))
+        assertNull(model.state.value.review)
+        assertEquals(DeletionPhase.NEEDS_REVIEW, model.state.value.phase)
+        auth.complete(RecentAuthOutcome.Confirmed(now))
+        assertEquals(0, api.confirms)
+        assertNull(model.state.value.review)
     }
 
     @Test

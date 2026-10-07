@@ -16,6 +16,7 @@ import com.digifender.adminifender.core.data.network.transferFailure
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
+import java.io.OutputStream
 import java.security.MessageDigest
 import java.time.Instant
 import java.util.UUID
@@ -99,6 +100,24 @@ class ExportRepository(private val api: ExportApi, private val bytes: ArchiveByt
         downloads.removeExport(id)
         TransferResult.Ok(Unit)
     } catch (_: IOException) { TransferResult.Unavailable("local_cleanup_pending") }
+
+    /** Reauthorize and verify before copying, then check for deletion/expiry again before reporting success. */
+    fun copyFence(): Long = downloads.fence
+
+    suspend fun saveCopy(id: String, output: OutputStream, expectedFence: Long = copyFence()): TransferResult<Unit> {
+        val fence = expectedFence
+        val current = when (val result = refresh(id)) {
+            is TransferResult.Ok -> result.value
+            else -> return transferFailure(result)
+        }
+        if (!downloadable(current)) return TransferResult.Rejected(if (expired(current)) "expired" else current.state)
+        val copied = downloads.copyExport(id, output, fence) { ExportVerifier.verify(it, current) }
+        if (copied !is TransferResult.Ok) return transferFailure(copied)
+        return when (val latest = refresh(id)) {
+            is TransferResult.Ok -> if (downloadable(latest.value) && latest.value.snapshotSeq == current.snapshotSeq && downloads.fence == fence) TransferResult.Ok(Unit) else TransferResult.Rejected("download_invalidated")
+            else -> transferFailure(latest)
+        }
+    }
 
     private fun expired(export: ArchiveExport) = Instant.parse(export.expiresAt).toEpochMilli() <= clock()
     private fun downloadable(export: ArchiveExport) = export.state == "ready" && !expired(export)

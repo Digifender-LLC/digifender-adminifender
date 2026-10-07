@@ -42,8 +42,14 @@ class SessionViewModel(private val session: SessionManager, private val onSigned
 
     init {
         viewModelScope.launch {
-            if (cleanupPending()) signOut()
-            else if (session.restore() is SessionState.SignedIn) onSignedIn()
+            try {
+                if (cleanupPending()) signOut()
+                else if (session.restore() is SessionState.SignedIn) onSignedIn()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                message.value = SignInMessage.UNAVAILABLE
+            }
         }
     }
 
@@ -52,14 +58,33 @@ class SessionViewModel(private val session: SessionManager, private val onSigned
         busy.value = true
         message.value = null
         viewModelScope.launch {
-            message.value = when (session.signIn(passkeys)) {
-                is SignInOutcome.SignedIn -> null.also { onSignedIn() }
-                SignInOutcome.Cancelled -> SignInMessage.CANCELLED
-                SignInOutcome.NoPasskey -> SignInMessage.NO_PASSKEY
-                is SignInOutcome.Rejected -> SignInMessage.REFUSED
-                is SignInOutcome.Unavailable -> SignInMessage.UNAVAILABLE
-            }
-            busy.value = false
+            try {
+                // Dismissing a cleanup error cannot reopen private stores over retained previous-session data.
+                if (cleanupPending()) {
+                    try { signOutAll() } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        signOutFailed.value = true
+                        return@launch
+                    }
+                    if (cleanupPending()) {
+                        signOutFailed.value = true
+                        return@launch
+                    }
+                }
+                signOutFailed.value = false
+                message.value = when (session.signIn(passkeys)) {
+                    is SignInOutcome.SignedIn -> null.also { onSignedIn() }
+                    SignInOutcome.Cancelled -> SignInMessage.CANCELLED
+                    SignInOutcome.NoPasskey -> SignInMessage.NO_PASSKEY
+                    is SignInOutcome.Rejected -> SignInMessage.REFUSED
+                    is SignInOutcome.Unavailable -> SignInMessage.UNAVAILABLE
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                message.value = SignInMessage.UNAVAILABLE
+            } finally { busy.value = false }
         }
     }
 

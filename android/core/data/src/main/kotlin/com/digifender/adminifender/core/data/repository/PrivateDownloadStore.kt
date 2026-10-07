@@ -63,7 +63,19 @@ class PrivateDownloadStore(private val root: File, private val maxAttachmentCach
             temporary = File(dir, "${UUID.randomUUID()}.part")
         }
         try {
-            val result = temporary.outputStream().use { fetch(it) }
+            val result = temporary.outputStream().use { stream ->
+                val fenced = object : OutputStream() {
+                    override fun write(value: Int) = write(byteArrayOf(value.toByte()), 0, 1)
+                    override fun write(buffer: ByteArray, offset: Int, length: Int) {
+                        synchronized(lock) {
+                            if (closed || generation != start) throw IOException("download_invalidated")
+                            if (directory.startsWith("attachments/")) reserveAttachmentBytes(length.toLong())
+                            stream.write(buffer, offset, length)
+                        }
+                    }
+                }
+                fetch(fenced)
+            }
             ensureActive()
             if (result !is TransferResult.Ok) return@withContext transferFailure(result)
             if (result.value != temporary.length() || !verify(temporary)) return@withContext TransferResult.Rejected("integrity_mismatch")
@@ -121,6 +133,52 @@ class PrivateDownloadStore(private val root: File, private val maxAttachmentCach
         synchronized(lock) { !closed && File(root, "exports/$id").isFile }
     }
 
+    /** Copy only to a caller-owned, explicitly chosen destination. No path or URI is exposed by this store. */
+    suspend fun copyExport(id: String, output: OutputStream, expectedFence: Long, verify: (File) -> Boolean): TransferResult<Long> = withContext(Dispatchers.IO) {
+        if (!isSourceId(id)) return@withContext TransferResult.Rejected("invalid_request")
+        try {
+            val file = synchronized(lock) {
+                if (closed || generation != expectedFence) return@withContext TransferResult.Rejected("download_invalidated")
+                File(root, "exports/$id").takeIf { it.isFile } ?: return@withContext TransferResult.Rejected("not_downloaded")
+            }
+            if (!verify(file)) return@withContext TransferResult.Rejected("integrity_mismatch")
+            val input = synchronized(lock) {
+                if (closed || generation != expectedFence) return@withContext TransferResult.Rejected("download_invalidated")
+                file.inputStream()
+            }
+            var total = 0L
+            input.use {
+                val buffer = ByteArray(32 * 1024)
+                while (true) {
+                    ensureActive()
+                    synchronized(lock) { if (closed || generation != expectedFence) return@withContext TransferResult.Rejected("download_invalidated") }
+                    val count = it.read(buffer)
+                    if (count < 0) break
+                    output.write(buffer, 0, count)
+                    total += count
+                    synchronized(lock) { if (closed || generation != expectedFence) return@withContext TransferResult.Rejected("download_invalidated") }
+                }
+            }
+            output.flush()
+            synchronized(lock) {
+                if (closed || generation != expectedFence) TransferResult.Rejected("download_invalidated") else TransferResult.Ok(total)
+            }
+        } catch (_: IOException) { TransferResult.Unavailable("copy_failed") }
+    }
+
+    /** Include in-flight partials in the byte budget; simultaneous downloads cannot bypass the cache cap. */
+    private fun reserveAttachmentBytes(incomingBytes: Long) {
+        val files = File(root, "attachments").walkTopDown().filter { it.isFile }.toList()
+        var total = files.sumOf { it.length() }
+        for (file in files.filter { !it.name.endsWith(".part") }.sortedWith(compareBy<File> { it.lastModified() }.thenBy { it.path })) {
+            if (total + incomingBytes <= maxAttachmentCacheBytes) return
+            val bytes = file.length()
+            removeTree(file)
+            total -= bytes
+        }
+        if (total + incomingBytes > maxAttachmentCacheBytes) throw IOException("private_cache_full")
+    }
+
     private fun evictAttachments(incomingBytes: Long, target: File) {
         val files = File(root, "attachments").walkTopDown().filter { it.isFile && !it.name.endsWith(".part") && it != target }.sortedWith(compareBy<File> { it.lastModified() }.thenBy { it.path }).toList()
         var total = files.sumOf { it.length() }
@@ -134,7 +192,9 @@ class PrivateDownloadStore(private val root: File, private val maxAttachmentCach
     }
 
     private fun removeTree(file: File) {
-        if (file.exists() && (!deleteTree(file) || file.exists())) throw IOException("private_cache_cleanup_failed")
+        try {
+            if (file.exists() && (!deleteTree(file) || file.exists())) throw IOException("private_cache_cleanup_failed")
+        } finally { changed() }
     }
 
     /** Call before cancelling work/signing out, and before replacing a synced snapshot. */

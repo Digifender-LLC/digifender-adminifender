@@ -43,6 +43,7 @@ class ReviewRepository(
     private val journal: TransferJournal = MemoryTransferJournal(),
 ) {
     private val mutex = Mutex()
+    val invalidatedSources = journal.invalidatedSources
 
     suspend fun prepare(sourceIds: List<String>): TransferResult<PreparedDeletion> = mutex.withLock {
         if (sourceIds.size !in 1..50 || sourceIds.any { !isSourceId(it) } || sourceIds.distinct().size != sourceIds.size) return@withLock TransferResult.Rejected("invalid_request")

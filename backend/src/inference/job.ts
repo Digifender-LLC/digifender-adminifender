@@ -91,6 +91,27 @@ export async function resultStatement(
     );
 }
 
+/**
+ * Durable projection is queued in the same transaction as the validated result. Keep the result insert last:
+ * cloud and device acceptance inspect its row count to report discarded output honestly.
+ * The singular helper remains temporarily compatible with older device callers during integration.
+ */
+export async function resultStatements(...args: Parameters<typeof resultStatement>): Promise<D1PreparedStatement[]> {
+  const [db, attempt, source, policyRevision, , now] = args;
+  const resultId = await deterministicUuid(`inference:${attempt.jobId}`);
+  const jobId = await deterministicUuid(`apply-model-triage:${resultId}`);
+  const eligible = sourceStillEligible(source.id, source.revision, source.privacy, policyRevision);
+  return [
+    db.prepare(`INSERT OR IGNORE INTO jobs(id, dedupe_key, kind, source_id, input_revision, state, next_at, input_json, created_at)
+      SELECT ?, ?, 'apply_model_triage', ?, ?, 'pending', ?, ?, ? WHERE ${eligible.sql}`)
+      .bind(jobId, `apply-model-triage:${resultId}`, source.id, source.revision, now, JSON.stringify({ resultId }), now, ...eligible.params),
+    db.prepare(`INSERT OR IGNORE INTO outbox(id, dedupe_key, kind, reference_id, state, next_at)
+      SELECT ?, ?, 'job', ?, 'pending', ? WHERE EXISTS (SELECT 1 FROM jobs WHERE id = ?)`)
+      .bind(crypto.randomUUID(), `job:${jobId}`, jobId, now, jobId),
+    await resultStatement(...args),
+  ];
+}
+
 export function queueLocalStatement(
   db: D1Database,
   fields: {
@@ -352,7 +373,7 @@ async function cloudTriage(
       const parsed = parseModelJson(text);
       return parsed.ok ? validateTriage(normalizeTriage(parsed.value), chunkLengths, services) : parsed;
     },
-    store: async (attemptId, modelId, value) => [await resultStatement(env.CONTROL_DB, { id: attemptId, jobId: job.id, route: 'cloud', modelId }, source, settings.policyRevision, value, now)],
+    store: async (attemptId, modelId, value) => resultStatements(env.CONTROL_DB, { id: attemptId, jobId: job.id, route: 'cloud', modelId }, source, settings.policyRevision, value, now),
   });
   switch (outcome.kind) {
     case 'succeeded':

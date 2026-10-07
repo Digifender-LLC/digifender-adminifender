@@ -42,6 +42,7 @@ fun SettingsScreen(
     onNotificationsChanged: () -> Unit,
     onExports: () -> Unit,
     onPendingEdits: () -> Unit,
+    onHealth: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var confirming by rememberSaveable { mutableStateOf(false) }
@@ -87,6 +88,7 @@ fun SettingsScreen(
         OutlinedButton(onClick = onSyncNow) { Text(stringResource(R.string.settings_sync_now)) }
         OutlinedButton(onClick = onPendingEdits) { Text(stringResource(R.string.pending_edits_title)) }
         OutlinedButton(onClick = onExports) { Text(stringResource(R.string.settings_exports)) }
+        OutlinedButton(onClick = onHealth) { Text(stringResource(R.string.health_title)) }
         Text(stringResource(R.string.device_processing_title), style = MaterialTheme.typography.titleMedium)
         Text(stringResource(R.string.device_processing_unconfigured))
         Text(stringResource(R.string.settings_sign_out_body), style = MaterialTheme.typography.bodyMedium)

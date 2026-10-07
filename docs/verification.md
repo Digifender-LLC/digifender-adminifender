@@ -16,6 +16,20 @@ In `backend/`, pinned Node 22.22.0 `npm ci --offline` and `WRANGLER_SEND_METRICS
 
 Android integration adds JVM regressions for stale-session responses, a sign-out barrier around suspended cache commits, pending edits without deleted titles and saved navigation IDs. Room instrumentation adds populated v2→v3 migration, stale-page/rebootstrap suppression, conflict retention and deletion-after-sync cases. These Room/Keystore/device tests have compiled but have not yet executed at this checkpoint; emulator results must be recorded separately.
 
+The subsequent backend-only merge `b66e756` (model-triage through `a751874`, extraction filtering `4a804b3`) passed the same pinned-Node `npm run check`: 354 tests in 28 files, typecheck and dry-run bundle. Log: `/workspace/verification-evidence/backend-next-wave.log`. Android sources remained identical to the first checkpoint for the bounded emulator attempt.
+
+## Health/export/auth checkpoint, 2026-10-07
+
+Commit `32a4181` passed the full command below using JDK 21.0.12 and SDK 37: 268 JVM tests (model 12, data 203, app 53), zero failures/errors/skips, both Android lint tasks, debug app, unsigned release and instrumentation APK compilation. Build duration was 4m57s (221 tasks). Log: `/workspace/verification-evidence/android-next-wave-final.log`; lint reports: `android/app/build/reports/lint-results-debug.html` and `android/core/data/build/reports/lint-results-debug.html`.
+
+```sh
+./gradlew --no-daemon --max-workers=2 :core:model:test :core:data:testDebugUnitTest :app:testDebugUnitTest :core:data:lintDebug :core:data:assembleDebugAndroidTest :app:assembleDebug :app:lintDebug :app:assembleRelease
+```
+
+This checkpoint adds health/diagnostics (21 synthetic tests), explicit guarded Save ZIP, deletion-preview invalidation, download-membership observation, sign-out storage/concurrency failures and startup worker authorization fencing. The earlier eight lint findings were fixed; synchronous cleanup-marker writes still inspect the commit result. Release tools again passed all 18 synthetic tests. The backend remains the 354-test verified continuation above.
+
+The bounded local API 31 software emulator reached ADB/zygote but did not finish boot within 300 seconds, so instrumentation and screenshot inspection did not run. The first hosted draft-PR run also exposed the old quantity-label lint failures and insufficient emulator disk space; later hosted runs must be observed separately. No live email, FCM, passkey, Play, model or physical-device result follows from this checkpoint. A discovered HTTP body-dispatch/cancellation fix, durable refresh marker, environment isolation, UI instrumentation and encrypted backup foundation are subsequent work.
+
 ## Add the gates with implementation
 
 | Layer | Tool and gate | Evidence boundary |

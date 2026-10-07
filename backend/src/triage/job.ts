@@ -164,7 +164,7 @@ export async function triageJob(job: ClaimedJob, env: Env, now: number): Promise
     sourceIds = [source.id];
   }
 
-  const result = { status: 'awaiting_inference', concernId: after.id, rules: decision };
+  const result = { status: 'awaiting_inference', concernId: after.id, concernRevision: after.revision, rules: decision };
   return {
     kind: 'complete',
     output: { concernId: after.id, event: kind },

@@ -25,6 +25,7 @@ class DownloadPruningStore(private val delegate: LocalStore, private val downloa
 
     override suspend fun replaceWithSnapshot(changes: List<SyncChange>, snapshotSeq: Long, nowMs: Long) {
         downloads.clear()
+        journal?.retainSources(changes.filterIsInstance<SyncChange.SourceChanged>().map { it.source.id }.toSet())
         delegate.replaceWithSnapshot(changes, snapshotSeq, nowMs)
     }
 }

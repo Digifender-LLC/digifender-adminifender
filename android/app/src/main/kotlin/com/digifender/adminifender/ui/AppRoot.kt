@@ -2,6 +2,8 @@ package com.digifender.adminifender.ui
 
 import android.app.Activity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -39,6 +41,7 @@ import com.digifender.adminifender.R
 import com.digifender.adminifender.core.data.platform.CredentialManagerPasskeys
 import com.digifender.adminifender.core.data.session.SessionState
 import com.digifender.adminifender.core.data.chat.ChatScope
+import com.digifender.adminifender.core.data.repository.ExportSaveOutcome
 import com.digifender.adminifender.push.BRIEFING_DESTINATION
 import com.digifender.adminifender.push.PushRegistrationWorker
 import kotlinx.coroutines.delay
@@ -59,6 +62,7 @@ internal sealed interface Route {
     data class ChatRoute(override val id: String, val kind: String) : Route
     data object ExportsRoute : Route { override val id = "" }
     data object PendingEditsRoute : Route { override val id = "" }
+    data object HealthRoute : Route { override val id = "" }
 }
 
 internal fun encode(stack: List<Route>) = stack.takeLast(20).joinToString("|") {
@@ -69,6 +73,7 @@ internal fun encode(stack: List<Route>) = stack.takeLast(20).joinToString("|") {
         is Route.ChatRoute -> "h:${it.kind}:${it.id}"
         Route.ExportsRoute -> "e:"
         Route.PendingEditsRoute -> "p:"
+        Route.HealthRoute -> "v:"
     }
 }
 
@@ -78,6 +83,7 @@ internal fun decode(text: String): List<Route> = text.split("|").takeLast(20).ma
     when {
         value == "e:" -> Route.ExportsRoute
         value == "p:" -> Route.PendingEditsRoute
+        value == "v:" -> Route.HealthRoute
         fields.size == 3 && fields[0] == "h" && fields[1] in setOf("source", "concern") && ROUTE_ID.matches(fields[2]) -> Route.ChatRoute(fields[2], fields[1])
         fields.size != 2 || !ROUTE_ID.matches(fields[1]) -> null
         fields[0] == "c" -> Route.ConcernRoute(fields[1])
@@ -92,6 +98,35 @@ fun AppRoot(container: AppContainer, activity: Activity, destination: MutableSta
     val sessionModel = viewModel { SessionViewModel(container.session, container::startSync, container::signOut, container::cleanupPending) }
     val session by sessionModel.state.collectAsStateWithLifecycle()
     val signingOut by container.signingOut.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
+    // Deliberately ephemeral: recreation forgets the selection and cleans a late new document, never
+    // resuming a private copy from saved activity state. The callback stays registered across sign-out.
+    var pendingExport by remember { mutableStateOf<Pair<ExportCopySelection, ExportViewModel>?>(null) }
+    var partialCopyRetained by remember { mutableStateOf(false) }
+    val saveExport = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        val selected = pendingExport
+        pendingExport = null
+        val current = selected?.second?.state?.value
+        val valid = selected?.first?.matches(current?.export?.id, container.privateSessionEpoch(),
+            container.session.state.value is SessionState.SignedIn && !container.signingOut.value && !container.cleanupPending(),
+            current?.busy ?: true) == true
+        if (valid && selected != null) {
+            selected.second.saveCopy { id ->
+                if (selected.first.matches(id, container.privateSessionEpoch(),
+                        container.session.state.value is SessionState.SignedIn && !container.signingOut.value && !container.cleanupPending(), false)) {
+                    container.exportDocuments.write(selected.first.exportId, uri)
+                } else container.exportDocuments.discardCreated(uri)
+            }
+        } else scope.launch {
+            val discarded = container.exportDocuments.discardCreated(uri)
+            partialCopyRetained = discarded is ExportSaveOutcome.Failed && !discarded.partialRemoved
+        }
+    }
+    if (partialCopyRetained) {
+        AlertDialog(onDismissRequest = { partialCopyRetained = false },
+            text = { Text(stringResource(R.string.export_save_failed_partial)) },
+            confirmButton = { TextButton(onClick = { partialCopyRetained = false }) { Text(stringResource(R.string.cancel)) } })
+    }
     if (session.signOutFailed) {
         AlertDialog(onDismissRequest = sessionModel::dismissSignOutError,
             title = { Text(stringResource(R.string.sign_out_failed_title)) },
@@ -104,7 +139,7 @@ fun AppRoot(container: AppContainer, activity: Activity, destination: MutableSta
         return
     }
     when (session.session) {
-        SessionState.Unknown -> Unit
+        SessionState.Unknown -> if (session.message != null) SignInScreen(session) { sessionModel.signIn(CredentialManagerPasskeys(activity)) }
         SessionState.SignedOut -> SignInScreen(session) { sessionModel.signIn(CredentialManagerPasskeys(activity)) }
         // Cached data stays readable while the server wants a fresh sign-in (FR-002).
         SessionState.SignInRequired, is SessionState.SignedIn -> {
@@ -114,7 +149,15 @@ fun AppRoot(container: AppContainer, activity: Activity, destination: MutableSta
             DisposableEffect(owner) { onDispose { owner.viewModelStore.clear() } }
             CompositionLocalProvider(LocalViewModelStoreOwner provides owner) {
                 SignedIn(container, activity, destination, needsSignIn = session.session == SessionState.SignInRequired,
-                    busy = session.busy, onSignOut = sessionModel::signOut) {
+                    busy = session.busy, onSignOut = sessionModel::signOut,
+                    onSaveExport = { model ->
+                        val state = model.state.value
+                        val id = state.export?.id
+                        if (id != null && state.saved && !state.busy && pendingExport == null) {
+                            pendingExport = ExportCopySelection(id, container.privateSessionEpoch()) to model
+                            saveExport.launch("adminifender-export.zip")
+                        }
+                    }, onLeaveExports = { pendingExport = null }) {
                     sessionModel.signIn(CredentialManagerPasskeys(activity))
                 }
             }
@@ -123,7 +166,8 @@ fun AppRoot(container: AppContainer, activity: Activity, destination: MutableSta
 }
 
 @Composable
-private fun SignedIn(container: AppContainer, activity: Activity, destination: MutableStateFlow<String?>, needsSignIn: Boolean, busy: Boolean, onSignOut: () -> Unit, onSignIn: () -> Unit) {
+private fun SignedIn(container: AppContainer, activity: Activity, destination: MutableStateFlow<String?>, needsSignIn: Boolean, busy: Boolean, onSignOut: () -> Unit,
+    onSaveExport: (ExportViewModel) -> Unit, onLeaveExports: () -> Unit, onSignIn: () -> Unit) {
     val inboxModel = viewModel { InboxViewModel(container.concerns) }
     val inbox by inboxModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -229,13 +273,19 @@ private fun SignedIn(container: AppContainer, activity: Activity, destination: M
                 Route.ExportsRoute -> {
                     val exportModel = viewModel { ExportViewModel(container.exports) }
                     val export by exportModel.state.collectAsStateWithLifecycle()
+                    DisposableEffect(exportModel) { onDispose { onLeaveExports() } }
                     TextButton(onClick = ::back) { Text(stringResource(R.string.back)) }
-                    ExportScreen(export, now, exportModel::create, exportModel::refresh, exportModel::download, exportModel::remove, exportModel::newExport)
+                    ExportScreen(export, now, exportModel::create, exportModel::refresh, exportModel::download, exportModel::remove, exportModel::newExport,
+                        onSaveCopy = { onSaveExport(exportModel) })
                 }
                 Route.PendingEditsRoute -> {
                     val edits by remember { container.concerns.pendingEdits() }.collectAsStateWithLifecycle(emptyList())
                     TextButton(onClick = ::back) { Text(stringResource(R.string.back)) }
                     PendingEditsScreen(edits, { scope.launch { container.concerns.reapply(it) } }, { scope.launch { container.concerns.discard(it) } })
+                }
+                Route.HealthRoute -> {
+                    TextButton(onClick = ::back) { Text(stringResource(R.string.back)) }
+                    HealthRoute(container.health, container.healthProbe, inbox.freshness)
                 }
                 null -> when (tab) {
                     Tab.INBOX -> InboxScreen(inbox, now, inboxModel::select, inboxModel::refresh, { open(Route.ConcernRoute(it)) })
@@ -268,7 +318,8 @@ private fun SignedIn(container: AppContainer, activity: Activity, destination: M
                     Tab.CHAT -> ChatRoute(container.chat, refreshKey = inbox.freshness?.lastSyncedAtMs) { open(Route.SourceRoute(it)) }
                     Tab.SETTINGS -> SettingsScreen(inbox.freshness, now, inboxModel::refresh, onSignOut,
                         onNotificationsChanged = { PushRegistrationWorker.enqueue(context) },
-                        onExports = { open(Route.ExportsRoute) }, onPendingEdits = { open(Route.PendingEditsRoute) })
+                        onExports = { open(Route.ExportsRoute) }, onPendingEdits = { open(Route.PendingEditsRoute) },
+                        onHealth = { open(Route.HealthRoute) })
                 }
             }
         }

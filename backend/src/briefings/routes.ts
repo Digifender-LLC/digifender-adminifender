@@ -11,7 +11,7 @@ export const SECTION_LIMIT = 100;
 export const SNAPSHOT_LIMIT = 200;
 export const SNAPSHOT_TTL_MS = 24 * 60 * 60_000;
 /** Events that make a concern new or changed for the owner; their own review edits and non-material links do not. */
-const ATTENTION_EVENTS = ['created', 'evidence_added', 'snooze_expired', 'follow_up_due', 'split_from'];
+const ATTENTION_EVENTS = ['created', 'evidence_added', 'model_triaged', 'snooze_expired', 'follow_up_due', 'split_from'];
 
 interface ReviewState {
   last_meaningful_at: number | null;

@@ -1,4 +1,10 @@
 <resources>
+    <string name="export_external_warning">Save a separate ZIP only to a destination you choose. That copy remains independent: later in-app deletion or sign-out cannot remove it.</string>
+    <string name="export_save_copy">Save ZIP…</string>
+    <string name="export_copy_saved">Verified ZIP saved to your chosen destination. Manage or remove that independent copy there.</string>
+    <string name="export_save_cancelled">Saving was cancelled. No external copy was written.</string>
+    <string name="export_save_failed_removed">The copy could not be completed or verified. The new partial document was removed.</string>
+    <string name="export_save_failed_partial">The copy could not be completed or verified, and its new destination could not be removed. A partial file may remain at the destination you chose.</string>
     <string name="transfer_cleanup_pending">The private copy could not be removed yet. Retry cleanup; the file is not confirmed removed.</string>
     <string name="transfer_journal_unavailable">Request recovery state could not be read or saved. No replacement request was created.</string>
     <string name="transfer_download">Download privately</string>
@@ -15,11 +21,11 @@
     <string name="transfer_unavailable">The request could not be verified. Check the connection and try again.</string>
     <string name="deletion_open">Review permanent deletion</string>
     <string name="deletion_title">Review deletion</string>
-    <string name="deletion_warning">Permanently delete %1$d source email(s) and %2$d attachment(s). This cannot be undone.</string>
+    <string name="deletion_warning">Permanently delete this selection. Source emails: %1$d. Attachments: %2$d. This cannot be undone.</string>
     <string name="deletion_source_identity">Source %1$s · revision %2$d</string>
     <string name="deletion_concern_identity">Linked item %1$s · revision %2$d</string>
     <string name="deletion_quarantine">Quarantined source</string>
-    <string name="deletion_concerns">%1$d linked item(s) will be erased. %2$d will keep other evidence with the deleted links and quoted titles removed.</string>
+    <string name="deletion_concerns">Linked items erased: %1$d. Linked items retained with other evidence: %2$d. Deleted links and quoted titles will be removed.</string>
     <string name="deletion_derivatives">Also removes archive text, search entries, extracted text, the retained raw message and triage results. Exports containing this source become unavailable. Other devices purge cached copies at their next authenticated sync.</string>
     <string name="deletion_expiry">Review expires %1$s. Changes to any reviewed revision require a new review.</string>
     <string name="deletion_digest">Exact review digest: %1$s</string>
@@ -49,8 +55,8 @@
     <string name="export_failed">The server could not build this export.</string>
     <string name="export_pending">The export is still being prepared.</string>
     <string name="export_ready">The server last reported this export ready. Availability is checked again before download.</string>
-    <string name="export_counts">%1$d sources · %2$d attachments · %3$d linked items · %4$d rules · %5$d services</string>
-    <string name="export_omissions">%1$d source(s) omitted from this snapshot</string>
+    <string name="export_counts">Sources: %1$d · Attachments: %2$d · Linked items: %3$d · Rules: %4$d · Services: %5$d</string>
+    <string name="export_omissions">Sources omitted from this snapshot: %1$d</string>
     <string name="export_omitted_source">Omitted deleted source: %1$s</string>
     <string name="export_download">Download and verify privately</string>
     <string name="export_saved">ZIP saved privately on this device. Every file hash matches its manifest; no file has been opened or shared.</string>

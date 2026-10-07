@@ -6,7 +6,7 @@ import type { Env } from '../env';
 import { HttpError } from '../http/errors';
 import { v } from '../http/validate';
 import { REGISTRY_COLUMNS, REGISTRY_FROM, type RegistryRow } from '../sources/registry';
-import { INFER_TASK, MAX_DEVICE_CHUNKS, inputDigest, knownServiceIds, loadBodyChunks, queueLocalStatement, resultStatement } from './job';
+import { INFER_TASK, MAX_DEVICE_CHUNKS, inputDigest, knownServiceIds, loadBodyChunks, queueLocalStatement, resultStatements } from './job';
 import { THERMAL_STATES, type Readiness, localReady } from './routing';
 import { loadSettings } from './settings';
 import { normalizeTriage, parseModelJson, validateTriage } from './triage-output';
@@ -86,7 +86,7 @@ const triageTask: DeviceTask = {
     const parsed = parseModelJson(outputJson);
     const checked = parsed.ok ? validateTriage(normalizeTriage(parsed.value), new Map(loaded.chunks.map((c) => [c.id, c.text.length])), await knownServiceIds(db)) : parsed;
     if (!checked.ok) return checked;
-    return { ok: true, store: [await resultStatement(db, { id: row.id, jobId: row.job_id, route: 'local', modelId: row.model_id }, { id: source.id, revision: row.source_revision!, privacy: source.privacy }, policyRevision, checked.value, now)] };
+    return { ok: true, store: await resultStatements(db, { id: row.id, jobId: row.job_id, route: 'local', modelId: row.model_id }, { id: source.id, revision: row.source_revision!, privacy: source.privacy }, policyRevision, checked.value, now) };
   },
   async failed() {
     return [];

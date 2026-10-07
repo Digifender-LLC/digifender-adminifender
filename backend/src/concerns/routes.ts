@@ -173,7 +173,7 @@ export async function getConcern(request: Request, env: Env, now: number, [id]: 
     .bind(row.id)
     .all<{ id: string; kind: string; from_revision: number; to_revision: number; created_at: number }>();
   const triage = sourceIds.length
-    ? (await db.prepare(`SELECT source_id, result_json FROM triage_results WHERE source_id IN (${sourceIds.map(() => '?').join(',')}) ORDER BY created_at, id`).bind(...sourceIds).all<{ source_id: string; result_json: string }>()).results
+    ? (await db.prepare(`SELECT id, source_id, source_revision, policy_revision, result_json, provenance_json FROM triage_results WHERE source_id IN (${sourceIds.map(() => '?').join(',')}) ORDER BY created_at, id`).bind(...sourceIds).all<{ id: string; source_id: string; source_revision: number; policy_revision: number; result_json: string; provenance_json: string }>()).results
     : [];
   const lastReported = registry.reduce<number | null>((max, r) => (max === null || r.received_at > max ? r.received_at : max), null);
   return {
@@ -182,8 +182,9 @@ export async function getConcern(request: Request, env: Env, now: number, [id]: 
     sources: registry.map((r) => sourceProjection(r, metadata.get(r.id) ?? null)),
     lastReportedAt: lastReported === null ? null : new Date(lastReported).toISOString(),
     triage: triage.map((t) => {
-      const result = JSON.parse(t.result_json) as { status: string; rules: { importance: string | null; winningRuleId: string | null; matchedRuleIds: string[] } };
-      return { sourceId: t.source_id, status: result.status, ruleImportance: result.rules.importance, winningRuleId: result.rules.winningRuleId, matchedRuleIds: result.rules.matchedRuleIds };
+      const result = JSON.parse(t.result_json) as { status: string; rules?: { importance: string | null; winningRuleId: string | null; matchedRuleIds: string[] }; output?: unknown; application?: unknown };
+      return { sourceId: t.source_id, status: result.status, ruleImportance: result.rules?.importance ?? null, winningRuleId: result.rules?.winningRuleId ?? null, matchedRuleIds: result.rules?.matchedRuleIds ?? [],
+        ...(result.output ? { resultId: t.id, sourceRevision: t.source_revision, policyRevision: t.policy_revision, output: result.output, application: result.application ?? { status: 'pending' }, provenance: JSON.parse(t.provenance_json) } : {}) };
     }),
     events: events.map((e) => ({
       id: e.id,

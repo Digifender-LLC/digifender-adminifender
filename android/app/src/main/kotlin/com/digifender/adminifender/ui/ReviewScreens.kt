@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
@@ -17,7 +18,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.digifender.adminifender.R
 import java.time.Instant
@@ -65,9 +68,9 @@ fun DeletionReviewScreen(state: DeletionUiState, nowMs: Long, onConfirm: () -> U
                     Text(stringResource(R.string.deletion_expired))
                     TextButton(onClick = onReviewAgain) { Text(stringResource(R.string.deletion_review_again)) }
                 } else {
-                    Row {
-                        Checkbox(checked = understood, onCheckedChange = { understood = it })
-                        Text(stringResource(R.string.deletion_acknowledge), modifier = Modifier.padding(top = 12.dp))
+                    Row(modifier = Modifier.toggleable(value = understood, role = Role.Checkbox, onValueChange = { understood = it }), verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = understood, onCheckedChange = null)
+                        Text(stringResource(R.string.deletion_acknowledge))
                     }
                     Button(onClick = onConfirm, enabled = understood) { Text(stringResource(R.string.deletion_confirm)) }
                 }
@@ -82,7 +85,7 @@ fun DeletionReviewScreen(state: DeletionUiState, nowMs: Long, onConfirm: () -> U
 }
 
 @Composable
-fun ExportScreen(state: ExportUiState, nowMs: Long, onCreate: () -> Unit, onRefresh: () -> Unit, onDownload: () -> Unit, onRemove: () -> Unit, onNew: () -> Unit, modifier: Modifier = Modifier) {
+fun ExportScreen(state: ExportUiState, nowMs: Long, onCreate: () -> Unit, onRefresh: () -> Unit, onDownload: () -> Unit, onRemove: () -> Unit, onNew: () -> Unit, modifier: Modifier = Modifier, onSaveCopy: (() -> Unit)? = null) {
     Column(modifier.padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(stringResource(R.string.export_title), style = MaterialTheme.typography.headlineSmall)
         Text(stringResource(R.string.export_scope))
@@ -110,12 +113,17 @@ fun ExportScreen(state: ExportUiState, nowMs: Long, onCreate: () -> Unit, onRefr
                 }
                 if (state.saved) {
                     Text(stringResource(R.string.export_saved))
+                    if (onSaveCopy != null) {
+                        Text(stringResource(R.string.export_external_warning))
+                        Button(onClick = onSaveCopy, enabled = !state.busy) { Text(stringResource(R.string.export_save_copy)) }
+                    }
                     TextButton(onClick = onRemove, enabled = !state.busy) { Text(stringResource(R.string.transfer_remove)) }
                 } else Button(onClick = onDownload, enabled = !state.busy) { Text(stringResource(R.string.export_download)) }
             }
             TextButton(onClick = onRefresh, enabled = !state.busy) { Text(stringResource(R.string.export_refresh)) }
             TextButton(onClick = onNew, enabled = !state.busy) { Text(stringResource(R.string.export_new)) }
         }
+        if (state.copySaved) Text(stringResource(R.string.export_copy_saved))
         if (state.busy) Text(stringResource(R.string.transfer_busy))
         state.code?.let { TransferMessage(it) }
     }
@@ -135,6 +143,9 @@ private fun TransferMessage(code: String) {
         "deleted", "download_invalidated", "invalidated" -> R.string.transfer_invalidated
         "expired" -> R.string.export_expired
         "local_cleanup_pending" -> R.string.transfer_cleanup_pending
+        "save_cancelled" -> R.string.export_save_cancelled
+        "save_failed_removed" -> R.string.export_save_failed_removed
+        "save_failed_partial" -> R.string.export_save_failed_partial
         "journal_unavailable", "journal_unreadable" -> R.string.transfer_journal_unavailable
         else -> R.string.transfer_unavailable
     }))

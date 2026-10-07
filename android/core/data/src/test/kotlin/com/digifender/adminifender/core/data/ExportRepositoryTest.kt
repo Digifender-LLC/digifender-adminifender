@@ -1,6 +1,9 @@
 package com.digifender.adminifender.core.data
 
 import com.digifender.adminifender.core.data.network.*
+import com.digifender.adminifender.core.data.repository.ExportCopyWriter
+import com.digifender.adminifender.core.data.repository.ExportDestination
+import com.digifender.adminifender.core.data.repository.ExportSaveOutcome
 import com.digifender.adminifender.core.data.repository.ExportRepository
 import com.digifender.adminifender.core.data.repository.ExportVerifier
 import com.digifender.adminifender.core.data.repository.PrivateDownloadStore
@@ -10,6 +13,7 @@ import java.security.MessageDigest
 import java.time.Instant
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.*
 import org.junit.Assert.*
@@ -120,9 +124,89 @@ class ExportRepositoryTest {
     }
 
     @Test
+    fun explicitCopyRechecksSnapshotClosesDestinationAndPreservesVerifiedBytes() = runTest {
+        val repo = repo()
+        repo.download(EXPORT_ID)
+        val destination = TestDestination()
+        assertEquals(ExportSaveOutcome.Saved, ExportCopyWriter(repo).write(EXPORT_ID, destination))
+        assertArrayEquals(api.content, destination.output.toByteArray())
+        assertTrue(destination.closed)
+        assertEquals(0, destination.removed)
+        assertEquals(ExportSaveOutcome.Cancelled, ExportCopyWriter(repo).write(EXPORT_ID, null))
+    }
+
+    @Test
+    fun expiredCopyNeverWritesAndRemovesOnlyItsNewDestination() = runTest {
+        val repo = repo()
+        repo.download(EXPORT_ID)
+        now += 1001
+        val destination = TestDestination()
+        assertEquals(ExportSaveOutcome.Failed("expired", true), ExportCopyWriter(repo).write(EXPORT_ID, destination))
+        assertEquals(0, destination.output.size())
+        assertTrue(destination.closed)
+        assertEquals(1, destination.removed)
+    }
+
+    @Test
+    fun signOutDuringCopyDoesNotReportSuccessAndRemovesThePartialDestination() = runTest {
+        val downloads = PrivateDownloadStore(folder.root)
+        val repo = ExportRepository(api, api, downloads, { now })
+        repo.download(EXPORT_ID)
+        val destination = TestDestination(onWrite = { downloads.close() })
+        assertEquals(ExportSaveOutcome.Failed("download_invalidated", true), ExportCopyWriter(repo).write(EXPORT_ID, destination))
+        assertTrue(destination.output.size() > 0)
+        assertTrue(destination.closed)
+        assertEquals(1, destination.removed)
+    }
+
+    @Test
+    fun signOutAndReopenWhileDestinationOpensCannotReauthorizeAnOldCopy() = runTest {
+        val downloads = PrivateDownloadStore(folder.root)
+        val repo = ExportRepository(api, api, downloads, { now })
+        repo.download(EXPORT_ID)
+        val destination = TestDestination(onOpen = {
+            downloads.close()
+            downloads.open()
+        })
+        assertEquals(ExportSaveOutcome.Failed("download_invalidated", true), ExportCopyWriter(repo).write(EXPORT_ID, destination))
+        assertEquals(0, destination.output.size())
+        assertTrue(destination.closed)
+        assertEquals(1, destination.removed)
+    }
+
+    @Test
+    fun cancelledCopyClosesAndRemovesPartialWhileFailedRemovalIsExplicit() = runTest {
+        val repo = repo()
+        repo.download(EXPORT_ID)
+        val cancelled = TestDestination(onWrite = { throw CancellationException("synthetic cancellation") })
+        try {
+            ExportCopyWriter(repo).write(EXPORT_ID, cancelled)
+            fail("Cancellation must propagate")
+        } catch (_: CancellationException) {
+            assertTrue(cancelled.closed)
+            assertEquals(1, cancelled.removed)
+        }
+        val failed = TestDestination(removeSucceeds = false, onWrite = { throw java.io.IOException("synthetic destination failure") })
+        assertEquals(ExportSaveOutcome.Failed("copy_failed", false), ExportCopyWriter(repo).write(EXPORT_ID, failed))
+        assertTrue(failed.closed)
+        assertEquals(1, failed.removed)
+    }
+
+    @Test
     fun malformedReadyMetadataDoesNotEnableDownload() = runTest {
         api.current = exportReady.copy(counts = null)
         assertEquals(TransferResult.Unavailable("malformed_response"), repo().download(EXPORT_ID))
         assertFalse(folder.root.walkTopDown().any { it.isFile })
     }
+}
+
+private class TestDestination(private val removeSucceeds: Boolean = true, private val onWrite: () -> Unit = {}, private val onOpen: () -> Unit = {}) : ExportDestination {
+    var closed = false
+    var removed = 0
+    val output = object : ByteArrayOutputStream() {
+        override fun write(buffer: ByteArray, offset: Int, length: Int) { super.write(buffer, offset, length); onWrite() }
+        override fun close() { closed = true; super.close() }
+    }
+    override fun open(): OutputStream { onOpen(); return output }
+    override fun remove(): Boolean { removed++; return removeSucceeds }
 }

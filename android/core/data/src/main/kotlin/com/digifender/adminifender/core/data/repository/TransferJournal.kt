@@ -9,6 +9,9 @@ import java.io.File
 import java.io.IOException
 import java.security.MessageDigest
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
@@ -22,6 +25,7 @@ data class JournalExport(val creationKey: String, val submitted: Boolean = false
 /** Persist request identity before I/O; restoration never sends a request or confirms an effect by itself. */
 interface TransferJournal {
     val generation: Long
+    val invalidatedSources: StateFlow<Set<String>>
     fun close()
     fun open()
     suspend fun deletion(sourceIds: List<String>): JournalDeletion?
@@ -31,6 +35,7 @@ interface TransferJournal {
     suspend fun putExport(record: JournalExport, generation: Long)
     suspend fun removeExport(generation: Long)
     suspend fun invalidateSources(sourceIds: List<String>)
+    suspend fun retainSources(sourceIds: Set<String>)
     suspend fun clear()
 }
 
@@ -43,6 +48,8 @@ class MemoryTransferJournal : TransferJournal {
     override fun open() { closed = false; generation++ }
     private val deletions = mutableMapOf<List<String>, JournalDeletion>()
     private val deletedSources = mutableSetOf<String>()
+    private val _invalidatedSources = MutableStateFlow<Set<String>>(emptySet())
+    override val invalidatedSources = _invalidatedSources.asStateFlow()
     private var exported: JournalExport? = null
     override suspend fun deletion(sourceIds: List<String>): JournalDeletion? { if (closed) throw IOException("journal_closed"); return deletions[sourceIds.sorted()] }
     override suspend fun putDeletion(record: JournalDeletion, generation: Long) { checkGeneration(generation); deletions[record.sourceIds.sorted()] = protectDeletion(record, deletedSources, deletions[record.sourceIds.sorted()]?.invalidated == true) }
@@ -52,12 +59,17 @@ class MemoryTransferJournal : TransferJournal {
     override suspend fun removeExport(generation: Long) { checkGeneration(generation); exported = null }
     override suspend fun invalidateSources(sourceIds: List<String>) {
         deletedSources += sourceIds
+        _invalidatedSources.value = deletedSources.toSet()
         for ((ids, record) in deletions.toMap()) if (ids.any { it in sourceIds }) {
             if (record.submitted) deletions[ids] = protectDeletion(record, deletedSources, true) else deletions.remove(ids)
         }
         exported = exported?.let { it.copy(export = it.export?.copy(state = "invalidated", counts = null, omissions = null)) }
     }
-    override suspend fun clear() { generation++; deletions.clear(); deletedSources.clear(); exported = null }
+    override suspend fun retainSources(sourceIds: Set<String>) {
+        val missing = deletions.keys.flatten().distinct().filter { it !in sourceIds }
+        if (missing.isNotEmpty()) invalidateSources(missing)
+    }
+    override suspend fun clear() { generation++; deletions.clear(); deletedSources.clear(); _invalidatedSources.value = emptySet(); exported = null }
     private fun checkGeneration(expected: Long) { if (closed || generation != expected) throw IOException("journal_invalidated") }
 }
 
@@ -73,7 +85,13 @@ class FileTransferJournal(private val root: File) : TransferJournal {
     override fun close() = synchronized(lock) { closed = true; epoch++; Unit }
     override fun open() = synchronized(lock) { closed = false; epoch++; Unit }
     private val deletedSources = mutableSetOf<String>()
+    private val _invalidatedSources = MutableStateFlow<Set<String>>(emptySet())
+    override val invalidatedSources = _invalidatedSources.asStateFlow()
     override val generation: Long get() = synchronized(lock) { epoch }
+
+    init {
+        synchronized(lock) { root.listFiles().orEmpty().filter { it.name.endsWith(".part") }.forEach(::remove) }
+    }
 
     override suspend fun deletion(sourceIds: List<String>): JournalDeletion? = withContext(Dispatchers.IO) {
         synchronized(lock) { if (closed) throw IOException("journal_closed"); read(deletionFile(sourceIds), JournalDeletion.serializer()) }
@@ -107,6 +125,7 @@ class FileTransferJournal(private val root: File) : TransferJournal {
     override suspend fun invalidateSources(sourceIds: List<String>) = withContext(Dispatchers.IO) {
         synchronized(lock) {
             deletedSources += sourceIds
+            _invalidatedSources.value = deletedSources.toSet()
             val files = root.listFiles().orEmpty().filter { it.name.startsWith("delete-") && it.extension == "json" }
             for (file in files) {
                 val record = read(file, JournalDeletion.serializer())
@@ -122,10 +141,21 @@ class FileTransferJournal(private val root: File) : TransferJournal {
         }
     }
 
+    override suspend fun retainSources(sourceIds: Set<String>) {
+        val missing = withContext(Dispatchers.IO) {
+            synchronized(lock) {
+                root.listFiles().orEmpty().filter { it.name.startsWith("delete-") && it.extension == "json" }
+                    .flatMap { read(it, JournalDeletion.serializer())?.sourceIds.orEmpty() }.distinct().filter { it !in sourceIds }
+            }
+        }
+        if (missing.isNotEmpty()) invalidateSources(missing)
+    }
+
     override suspend fun clear() = withContext(Dispatchers.IO) {
         synchronized(lock) {
             epoch++
             deletedSources.clear()
+            _invalidatedSources.value = emptySet()
             if (root.exists() && (!root.deleteRecursively() || root.exists())) throw IOException("journal_cleanup_failed")
         }
     }

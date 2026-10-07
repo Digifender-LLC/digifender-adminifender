@@ -16,8 +16,9 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SessionCleanupViewModelTest {
+    private var optionsCalls = 0
     private val api = object : AuthApi {
-        override suspend fun passkeyOptions(purpose: PasskeyPurpose, deviceId: String?, accessToken: String?): AuthResult<PasskeyChallenge> = error("unexpected")
+        override suspend fun passkeyOptions(purpose: PasskeyPurpose, deviceId: String?, accessToken: String?): AuthResult<PasskeyChallenge> { optionsCalls++; error("unexpected") }
         override suspend fun signInVerify(challengeId: String, assertion: JsonObject, deviceName: String, capabilities: JsonObject): AuthResult<SignedIn> = error("unexpected")
         override suspend fun recentVerify(challengeId: String, assertion: JsonObject): AuthResult<Long> = error("unexpected")
         override suspend fun refresh(refreshToken: String): AuthResult<IssuedTokens> = error("unexpected")
@@ -60,5 +61,45 @@ class SessionCleanupViewModelTest {
         val at = java.time.Instant.parse("2026-10-07T12:30:00Z").toEpochMilli()
         assertTrue(pendingDateTime(at, "Asia/Tokyo").contains("21:30"))
         assertTrue(pendingDateTime(at, "UTC").contains("12:30"))
+    }
+
+    @Test fun dismissedCleanupFailureStillBlocksSignInUntilPrivateRemovalSucceeds() = runTest {
+        var attempts = 0
+        var pending = true
+        val model = SessionViewModel(session, {}, {
+            attempts++
+            session.signOut()
+            throw IOException("synthetic cleanup failure")
+        }, cleanupPending = { pending })
+        model.dismissSignOutError()
+        model.signIn(PasskeyAuthenticator { error("No passkey request may start before cleanup") })
+        assertEquals(2, attempts)
+        assertTrue(model.state.value.signOutFailed)
+        assertFalse(model.state.value.busy)
+        assertEquals(SessionState.SignedOut, model.state.value.session)
+        assertEquals(0, optionsCalls)
+        pending = false
+        model.signIn(PasskeyAuthenticator { error("unexpected prompt") })
+        assertEquals(1, optionsCalls)
+        assertFalse(model.state.value.signOutFailed)
+    }
+
+    @Test fun unreadableVaultDoesNotCrashStartupAndLeavesSignInRetryAvailable() = runTest {
+        val unreadable = object : TokenVault {
+            override suspend fun load(): StoredSession? = throw IOException("synthetic storage failure")
+            override suspend fun save(session: StoredSession) = Unit
+        }
+        val model = SessionViewModel(SessionManager(api, unreadable, { 100 }, "synthetic"), {}, {})
+        assertEquals(SessionState.Unknown, model.state.value.session)
+        assertEquals(SignInMessage.UNAVAILABLE, model.state.value.message)
+        assertFalse(model.state.value.busy)
+    }
+
+    @Test fun unexpectedSignInStorageFailureReleasesBusyState() = runTest {
+        val model = SessionViewModel(session, {}, {})
+        // Fake API throws before the prompt, representing an unexpected adapter/storage failure.
+        model.signIn(PasskeyAuthenticator { error("unexpected prompt") })
+        assertEquals(SignInMessage.UNAVAILABLE, model.state.value.message)
+        assertFalse(model.state.value.busy)
     }
 }

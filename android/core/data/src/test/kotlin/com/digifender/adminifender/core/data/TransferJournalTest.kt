@@ -52,6 +52,15 @@ class TransferJournalTest {
     private fun reviews(journal: TransferJournal = journal()) = ReviewRepository(api, { api.now }, { _, _ -> }, journal = journal)
 
     @Test
+    fun restartRemovesUncommittedJournalPartialsBeforeTheyCanRetainDeletedSubjects() {
+        val root = File(folder.root, "journal")
+        root.mkdirs()
+        File(root, "delete-synthetic.json.part").writeText("Synthetic subject marker")
+        journal()
+        assertTrue(root.listFiles().orEmpty().isEmpty())
+    }
+
+    @Test
     fun unknownReviewCreationReusesPersistedKeyAfterProcessRestart() = runTest {
         api.noAnswer = true
         assertTrue(reviews().prepare(listOf(JOURNAL_SOURCE)) is TransferResult.Unavailable)
@@ -97,6 +106,20 @@ class TransferJournalTest {
         val restored = (reviews().prepare(listOf(JOURNAL_SOURCE)) as TransferResult.Ok).value
         assertTrue(restored.needsReadback)
         assertEquals(1, api.confirmKeys.size)
+    }
+
+    @Test
+    fun rebootstrapMissingSourceScrubsUnknownReviewWithoutLosingItsRequestKey() = runTest {
+        val journal = journal()
+        val repo = reviews(journal)
+        val prepared = (repo.prepare(listOf(JOURNAL_SOURCE)) as TransferResult.Ok).value
+        api.noAnswer = true
+        repo.confirm(prepared, api.now)
+        journal.retainSources(emptySet())
+        val restored = requireNotNull(journal().deletion(listOf(JOURNAL_SOURCE)))
+        assertTrue(restored.invalidated)
+        assertNull(restored.review!!.preview.sources.single().subject)
+        assertEquals(api.confirmKeys.single(), restored.confirmationKey)
     }
 
     @Test

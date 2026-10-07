@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { canonicalJson } from '../../src/http/idempotency';
 import { sha256Hex } from '../../src/ids';
 import { anyDeviceReady } from '../../src/inference/job';
+import { DEFAULT_INFERENCE } from '../../src/inference/settings';
 import type { Env } from '../../src/env';
 import { T0, api, enrollOwner, ingest, runPending } from './support';
 
@@ -244,5 +245,17 @@ describe('device extraction transport', () => {
     const ack = await post(`/${resumed.jobId}/batches`, batch(resumed, 10, [part('Explicitly resumed page', 100)]));
     expect((await finish(resumed, [...hashes, ack.body.data.batchHash])).status).toBe(200);
     expect((await api('GET', '/search?q=resumed', { token })).body.data.results).toHaveLength(1);
+  });
+
+  it.each([{ latinOcr: false, noAi: false }, { latinOcr: true, noAi: true }])('does not let ten ineligible image jobs starve native PDF work (%j)', async ({ latinOcr, noAi }) => {
+    const imageMail = ['From: scans@vendor.example', 'To: inbox@adminifender.example', 'Subject: Older synthetic images', 'MIME-Version: 1.0', 'Content-Type: multipart/mixed; boundary="images"', '',
+      '--images', 'Content-Type: text/plain', '', 'Synthetic images.',
+      ...Array.from({ length: 10 }, (_, index) => ['--images', `Content-Type: image/png; name="scan${index}.png"`, `Content-Disposition: attachment; filename="scan${index}.png"`, 'Content-Transfer-Encoding: base64', '', 'iVBORw0KGgo=']).flat(), '--images--', ''].join('\r\n');
+    await ingest(imageMail, { now: T0 - 1000 });
+    await runPending('extract', T0 - 1000);
+    expect(await env.CONTROL_DB.prepare("SELECT count(*) AS n FROM device_extraction_jobs WHERE kind = 'image'").first()).toEqual({ n: 10 });
+    if (noAi) expect((await api('PATCH', '/settings', { token, key: crypto.randomUUID(), body: { expectedRevision: 0, inference: { ...DEFAULT_INFERENCE, mode: 'no_ai' } } })).status).toBe(200);
+    const response = await post('/claim', { ...readiness, latinOcr });
+    expect(response.body.data.work).toMatchObject({ kind: 'pdf', sourceId });
   });
 });

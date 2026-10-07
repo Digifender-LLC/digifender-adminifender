@@ -97,6 +97,8 @@ jobs:
           api-level: ${{ matrix.api-level }}
           target: google_apis
           arch: x86_64
+          # Current emulator defaults to 12 GiB, exceeding hosted-runner free space after SDK installation.
+          disk-size: 2048M
           disable-linux-hw-accel: false
           emulator-boot-timeout: 300
           emulator-options: -no-window -gpu swiftshader -no-snapshot -noaudio -no-boot-anim -camera-back none
