@@ -72,6 +72,19 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           persist-credentials: false
+      - name: Reserve runner storage for emulator images and Gradle
+        run: |
+          # Paths from runner-images 1275e33f5019b02660b81ecc5622fe196211fa89:
+          # images/ubuntu/Ubuntu2404-Readme.md and scripts/build/install-dotnetcore-sdk.sh.
+          # This job provisions its own SDK below and does not use .NET.
+          df -h "$RUNNER_TEMP"
+          for unused_toolchain in /usr/share/dotnet /usr/local/lib/android/sdk; do
+            if [ -d "$unused_toolchain" ]; then
+              du -sh "$unused_toolchain"
+              sudo rm -rf -- "$unused_toolchain"
+            fi
+          done
+          df -h "$RUNNER_TEMP"
       - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
         with:
           distribution: temurin
@@ -102,6 +115,11 @@ jobs:
           disable-linux-hw-accel: false
           emulator-boot-timeout: 300
           emulator-options: -no-window -gpu swiftshader -no-snapshot -noaudio -no-boot-anim -camera-back none
+          pre-emulator-launch-script: |
+            free_mb="$(df -Pm "$ANDROID_HOME" | awk 'NR == 2 {print $4}')"
+            # Hosted emulator logs required 7372.80 MB even with 2048M userdata.
+            echo "Available Android SDK storage: ${free_mb} MiB (minimum 10240 MiB for image initialization and Gradle)"
+            test "$free_mb" -ge 10240
           script: ./tools/verify_android.sh connected --max-workers=2
       - name: Upload instrumentation reports
         if: always()
