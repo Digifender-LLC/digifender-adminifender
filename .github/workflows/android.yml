@@ -35,7 +35,13 @@ jobs:
         with:
           validate-wrappers: true
       - name: Install compile SDK
-        run: sdkmanager 'platforms;android-37.0' 'build-tools;36.0.0'
+        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3.2.2
+        env:
+          ANDROID_SDK_ROOT: ${{ runner.temp }}/android-sdk
+        with:
+          cmdline-tools-version: '16111833' # 23.0; understands the android-37.0 package ID
+          packages: 'platform-tools platforms;android-37.0 build-tools;36.0.0'
+          log-accepted-android-sdk-licenses: false
       - name: Domain and data JVM tests
         run: ../tools/verify_android.sh unit --max-workers=2
       - name: Compile, lint and unsigned release build
@@ -74,7 +80,13 @@ jobs:
         with:
           validate-wrappers: true
       - name: Install compile SDK
-        run: sdkmanager 'platforms;android-37.0' 'build-tools;36.0.0'
+        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3.2.2
+        env:
+          ANDROID_SDK_ROOT: ${{ runner.temp }}/android-sdk
+        with:
+          cmdline-tools-version: '16111833' # 23.0; understands the android-37.0 package ID
+          packages: 'platform-tools platforms;android-37.0 build-tools;36.0.0'
+          log-accepted-android-sdk-licenses: false
       - name: Enable runner KVM access
         run: |
           test -c /dev/kvm
