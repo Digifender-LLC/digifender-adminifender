@@ -1,0 +1,436 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 3,
+    "identityHash": "03536eebbf6566a7c0342a22fe9efa4a",
+    "entities": [
+      {
+        "tableName": "concerns",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `revision` INTEGER NOT NULL, `title` TEXT NOT NULL, `status` TEXT NOT NULL, `importance` TEXT NOT NULL, `criticalBasis` TEXT, `readAt` INTEGER, `acknowledgedAt` INTEGER, `resolvedAt` INTEGER, `snoozeUntil` INTEGER, `waitingNote` TEXT, `awaitedParty` TEXT, `followUpAt` INTEGER, `hasWaiting` INTEGER NOT NULL, `dueAt` INTEGER, `dueZone` TEXT, `dueSourceText` TEXT, `dueRevision` INTEGER, `sourceIdsJson` TEXT NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "revision",
+            "columnName": "revision",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "importance",
+            "columnName": "importance",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "criticalBasis",
+            "columnName": "criticalBasis",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "readAt",
+            "columnName": "readAt",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "acknowledgedAt",
+            "columnName": "acknowledgedAt",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "resolvedAt",
+            "columnName": "resolvedAt",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "snoozeUntil",
+            "columnName": "snoozeUntil",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "waitingNote",
+            "columnName": "waitingNote",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "awaitedParty",
+            "columnName": "awaitedParty",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "followUpAt",
+            "columnName": "followUpAt",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "hasWaiting",
+            "columnName": "hasWaiting",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dueAt",
+            "columnName": "dueAt",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "dueZone",
+            "columnName": "dueZone",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "dueSourceText",
+            "columnName": "dueSourceText",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "dueRevision",
+            "columnName": "dueRevision",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "sourceIdsJson",
+            "columnName": "sourceIdsJson",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_concerns_status_updatedAt",
+            "unique": false,
+            "columnNames": [
+              "status",
+              "updatedAt"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_concerns_status_updatedAt` ON `${TABLE_NAME}` (`status`, `updatedAt`)"
+          }
+        ]
+      },
+      {
+        "tableName": "sources",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `revision` INTEGER NOT NULL, `state` TEXT NOT NULL, `quarantined` INTEGER NOT NULL, `privacy` TEXT NOT NULL, `receivedAt` INTEGER NOT NULL, `subject` TEXT, `fromJson` TEXT NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "revision",
+            "columnName": "revision",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "quarantined",
+            "columnName": "quarantined",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "privacy",
+            "columnName": "privacy",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "receivedAt",
+            "columnName": "receivedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "subject",
+            "columnName": "subject",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "fromJson",
+            "columnName": "fromJson",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_sources_quarantined_receivedAt",
+            "unique": false,
+            "columnNames": [
+              "quarantined",
+              "receivedAt"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_sources_quarantined_receivedAt` ON `${TABLE_NAME}` (`quarantined`, `receivedAt`)"
+          }
+        ]
+      },
+      {
+        "tableName": "pending_mutations",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`idempotencyKey` TEXT NOT NULL, `concernId` TEXT NOT NULL, `expectedRevision` INTEGER NOT NULL, `kind` TEXT NOT NULL, `argsJson` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `attempts` INTEGER NOT NULL, `state` TEXT NOT NULL, `nextAttemptAt` INTEGER NOT NULL, `errorCode` TEXT, `currentRevision` INTEGER, PRIMARY KEY(`idempotencyKey`))",
+        "fields": [
+          {
+            "fieldPath": "idempotencyKey",
+            "columnName": "idempotencyKey",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "concernId",
+            "columnName": "concernId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "expectedRevision",
+            "columnName": "expectedRevision",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kind",
+            "columnName": "kind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "argsJson",
+            "columnName": "argsJson",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "attempts",
+            "columnName": "attempts",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nextAttemptAt",
+            "columnName": "nextAttemptAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "errorCode",
+            "columnName": "errorCode",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "currentRevision",
+            "columnName": "currentRevision",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "idempotencyKey"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_pending_mutations_concernId",
+            "unique": false,
+            "columnNames": [
+              "concernId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_pending_mutations_concernId` ON `${TABLE_NAME}` (`concernId`)"
+          },
+          {
+            "name": "index_pending_mutations_createdAt",
+            "unique": false,
+            "columnNames": [
+              "createdAt"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_pending_mutations_createdAt` ON `${TABLE_NAME}` (`createdAt`)"
+          }
+        ]
+      },
+      {
+        "tableName": "sync_state",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `throughSeq` INTEGER NOT NULL, `needsBootstrap` INTEGER NOT NULL, `lastSyncedAt` INTEGER, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "throughSeq",
+            "columnName": "throughSeq",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "needsBootstrap",
+            "columnName": "needsBootstrap",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastSyncedAt",
+            "columnName": "lastSyncedAt",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "source_texts",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`sourceId` TEXT NOT NULL, `revision` INTEGER NOT NULL, `text` TEXT, `textComplete` INTEGER NOT NULL, `attachmentsJson` TEXT NOT NULL, `cachedAt` INTEGER NOT NULL, PRIMARY KEY(`sourceId`))",
+        "fields": [
+          {
+            "fieldPath": "sourceId",
+            "columnName": "sourceId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "revision",
+            "columnName": "revision",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "text",
+            "columnName": "text",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "textComplete",
+            "columnName": "textComplete",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "attachmentsJson",
+            "columnName": "attachmentsJson",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cachedAt",
+            "columnName": "cachedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "sourceId"
+          ]
+        }
+      },
+      {
+        "tableName": "suppressed_sources",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "concern_deletion_fences",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `revision` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "revision",
+            "columnName": "revision",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '03536eebbf6566a7c0342a22fe9efa4a')"
+    ]
+  }
+}

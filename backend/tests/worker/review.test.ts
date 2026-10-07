@@ -106,8 +106,8 @@ describe('briefings', () => {
     expect(ids(first.newConcerns)).toEqual([a.concernId]);
     expect(first.newSourceIds).toEqual([a.sourceId]);
     expect(ids(first.unacknowledged)).toEqual([a.concernId]);
-    // Opening it again reuses the same snapshot.
-    expect((await api('GET', '/briefings/current', { token, now: T0 + MIN })).body.data.id).toBe(first.id);
+    // Each rendered snapshot has its own review identity, even when the current cards agree.
+    expect((await api('GET', '/briefings/current', { token, now: T0 + MIN })).body.data.id).not.toBe(first.id);
 
     const reviewed = await post(`/briefings/${first.id}/review`, {}, T0 + 2 * MIN);
     expect(reviewed.body.data).toMatchObject({ reviewedThroughSeq: first.snapshotSeq });

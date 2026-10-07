@@ -5,22 +5,82 @@ import com.digifender.adminifender.core.data.network.ReadResult
 import com.digifender.adminifender.core.data.sync.MutationState
 import com.digifender.adminifender.core.data.sync.SyncEngine
 import com.digifender.adminifender.core.data.sync.SyncOutcome
+import com.digifender.adminifender.core.data.sync.LocalStore
+import com.digifender.adminifender.core.data.network.SyncChange
+import com.digifender.adminifender.core.data.network.AdminifenderApi
+import com.digifender.adminifender.core.data.network.ChangesPageDto
 import com.digifender.adminifender.core.model.ConcernAction
 import com.digifender.adminifender.core.model.SendResult
 import com.digifender.adminifender.core.model.Status
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runCurrent
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
 import org.junit.Test
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class SyncEngineTest {
     private val c1 = "0b4e6f8a-2c3d-4e5f-8a9b-1c2d3e4f5a6b"
     private val c2 = "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d"
     private var now = 1_000L
     private val api = FakeApi()
     private val store = InMemoryStore()
-    private val engine = SyncEngine(api, store) { now }
+    private val engine = SyncEngine(api, store, clock = { now })
+
+    @Test
+    fun signOutBarrierWaitsForSuspendedCommitThenClearsAndBlocksNewPasses() = runTest {
+        bootstrapped()
+        val committing = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val gatedStore = object : LocalStore by store {
+            override suspend fun applyChanges(changes: List<SyncChange>, throughSeq: Long, nowMs: Long) {
+                committing.complete(Unit)
+                release.await()
+                store.applyChanges(changes, throughSeq, nowMs)
+            }
+        }
+        var generation = 0L
+        var active = true
+        val guarded = SyncEngine(api, gatedStore, { now }, { generation }, { active })
+        api.changePages += ReadResult.Ok(page(concernChange(11, c1, 5)))
+        val running = async { guarded.syncOnce() }
+        committing.await()
+        active = false
+        generation++
+        var cleared = false
+        val signOut = launch { guarded.awaitIdle(); store.concerns.clear(); cleared = true }
+        runCurrent()
+        assertFalse(cleared)
+        release.complete(Unit)
+        running.await()
+        signOut.join()
+        assertTrue(cleared)
+        assertTrue(store.concerns.isEmpty())
+        assertEquals(SyncOutcome.SignInRequired, guarded.syncOnce())
+        assertTrue(store.concerns.isEmpty())
+    }
+
+    @Test
+    fun responseFromAnEarlierSessionCannotEnterTheStore() = runTest {
+        bootstrapped()
+        var generation = 0L
+        val delayed = object : AdminifenderApi by api {
+            override suspend fun changes(after: Long, limit: Int): ReadResult<ChangesPageDto> {
+                generation++
+                return ReadResult.Ok(page(concernChange(11, c1, 99)))
+            }
+        }
+        val guarded = SyncEngine(delayed, store, { now }, { generation })
+        assertEquals(SyncOutcome.SignInRequired, guarded.syncOnce())
+        assertEquals(4, store.concerns.getValue(c1).revision)
+        assertEquals(10L, store.state.throughSeq)
+    }
 
     private suspend fun bootstrapped() {
         api.bootstrapPages += ReadResult.Ok(BootstrapPageDto(10, listOf(snapshot(c1, 4), snapshot(c2, 1)), null))

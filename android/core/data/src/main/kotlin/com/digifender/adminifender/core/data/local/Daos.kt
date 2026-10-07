@@ -26,6 +26,9 @@ interface ConcernDao {
     @Query("SELECT * FROM concerns WHERE id = :id")
     suspend fun get(id: String): ConcernEntity?
 
+    @Query("SELECT * FROM concerns")
+    suspend fun all(): List<ConcernEntity>
+
     @Query("SELECT * FROM concerns WHERE status <> 'resolved' ORDER BY updatedAt DESC, id")
     fun observeUnresolved(): Flow<List<ConcernEntity>>
 
@@ -115,6 +118,24 @@ interface MutationDao {
 
     @Query("UPDATE pending_mutations SET state = :state, attempts = :attempts, nextAttemptAt = :nextAttemptAt, errorCode = :errorCode, currentRevision = :currentRevision WHERE idempotencyKey = :key")
     suspend fun update(key: String, state: String, attempts: Int, nextAttemptAt: Long, errorCode: String?, currentRevision: Int?)
+
+    @Query("UPDATE pending_mutations SET state = 'CONFLICT', errorCode = 'source_deleted', currentRevision = NULL WHERE concernId = :concernId AND state IN ('QUEUED', 'HELD')")
+    suspend fun holdAfterDeletion(concernId: String)
+}
+
+@Dao
+interface DeletionFenceDao {
+    @Upsert
+    suspend fun suppress(rows: List<SuppressedSourceEntity>)
+
+    @Upsert
+    suspend fun fence(row: ConcernDeletionFenceEntity)
+
+    @Query("SELECT id FROM suppressed_sources")
+    suspend fun suppressedIds(): List<String>
+
+    @Query("SELECT revision FROM concern_deletion_fences WHERE id = :id")
+    suspend fun revision(id: String): Int?
 }
 
 @Dao

@@ -56,13 +56,26 @@ class RoomLocalStore(private val db: AppDatabase) : LocalStore {
     }
 
     private suspend fun write(changes: List<SyncChange>) {
+        val suppressed = db.deletionFences().suppressedIds().toMutableSet()
         for (change in changes) {
             when (change) {
-                is SyncChange.ConcernChanged -> db.concerns().upsert(listOf(change.concern.toEntity()))
-                is SyncChange.SourceChanged -> db.sources().upsert(listOf(change.source.toEntity()))
+                is SyncChange.ConcernChanged -> {
+                    val concern = change.concern
+                    if (concern.sourceIds.none { it in suppressed } && concern.revision > (db.deletionFences().revision(concern.id) ?: 0)) {
+                        db.concerns().upsert(listOf(concern.toEntity()))
+                    }
+                }
+                is SyncChange.SourceChanged -> if (change.source.id !in suppressed) db.sources().upsert(listOf(change.source.toEntity()))
                 is SyncChange.Removed -> when (change.entityType) {
-                    "concern" -> db.concerns().delete(change.entityId)
-                    "source" -> db.sources().delete(change.entityId)
+                    "concern" -> {
+                        db.deletionFences().fence(ConcernDeletionFenceEntity(change.entityId, Int.MAX_VALUE))
+                        db.concerns().delete(change.entityId)
+                        db.mutations().holdAfterDeletion(change.entityId)
+                    }
+                    "source" -> {
+                        LocalCache(db).invalidateSources(listOf(change.entityId))
+                        suppressed += change.entityId
+                    }
                 }
                 is SyncChange.Ignored -> Unit
             }
@@ -90,8 +103,13 @@ class RoomLocalStore(private val db: AppDatabase) : LocalStore {
 
     override suspend fun mutations(): List<QueuedMutation> = db.mutations().all().map { it.toQueued() }
 
-    override suspend fun enqueue(key: String, concernId: String, action: ConcernAction, nowMs: Long): PendingMutation? = db.withTransaction {
+    override suspend fun enqueue(key: String, concernId: String, action: ConcernAction, nowMs: Long): PendingMutation? = enqueueGuarded(key, concernId, null, action, nowMs)
+
+    override suspend fun enqueueIfRevision(key: String, concernId: String, expectedRevision: Int, action: ConcernAction, nowMs: Long): PendingMutation? = enqueueGuarded(key, concernId, expectedRevision, action, nowMs)
+
+    private suspend fun enqueueGuarded(key: String, concernId: String, expectedRevision: Int?, action: ConcernAction, nowMs: Long): PendingMutation? = db.withTransaction {
         val revision = db.concerns().revision(concernId) ?: return@withTransaction null
+        if (expectedRevision != null && revision != expectedRevision) return@withTransaction null
         val expected = revision + db.mutations().openCount(concernId)
         val (kind, args) = ActionCodec.encode(action)
         db.mutations().insert(PendingMutationEntity(key, concernId, expected, kind, args, nowMs, 0, MutationState.QUEUED.name, nowMs, null, null))
@@ -100,6 +118,8 @@ class RoomLocalStore(private val db: AppDatabase) : LocalStore {
 
     override suspend fun record(key: String, decision: OutboxDecision, nowMs: Long) = db.withTransaction {
         val row = db.mutations().get(key) ?: return@withTransaction
+        // An old HTTP failure must not requeue work after deletion made its target unsafe to display/reapply.
+        if (row.errorCode == "source_deleted" && decision != OutboxDecision.Remove) return@withTransaction
         when (decision) {
             OutboxDecision.Remove -> db.mutations().delete(key)
             is OutboxDecision.Retry -> db.mutations().update(key, MutationState.QUEUED.name, decision.next.attempts, nowMs + decision.delayMs, null, null)
@@ -113,8 +133,8 @@ class RoomLocalStore(private val db: AppDatabase) : LocalStore {
 
     override suspend fun reapply(key: String, newKey: String, nowMs: Long): PendingMutation? = db.withTransaction {
         val row = db.mutations().get(key) ?: return@withTransaction null
-        db.mutations().delete(key)
         val revision = db.concerns().revision(row.concernId) ?: return@withTransaction null
+        db.mutations().delete(key)
         val expected = revision + db.mutations().openCount(row.concernId)
         db.mutations().insert(row.copy(idempotencyKey = newKey, expectedRevision = expected, createdAt = nowMs, attempts = 0, state = MutationState.QUEUED.name, nextAttemptAt = nowMs, errorCode = null, currentRevision = null))
         PendingMutation(newKey, row.concernId, expected, ActionCodec.decode(row.kind, row.argsJson), nowMs)

@@ -42,7 +42,9 @@ async function recordReadiness(db: D1Database, deviceId: string, body: ReturnTyp
 // POST /device-work/readiness — OS-reported capability; routing prefers a ready phone over cloud.
 export async function reportReadiness(env: Env, now: number, body: ReturnType<typeof readinessBody>, auth: AuthContext) {
   const report = await recordReadiness(env.CONTROL_DB, auth.deviceId, body, now);
-  return { ready: localReady(report, 'background', now) };
+  const busy = await env.CONTROL_DB.prepare("SELECT 1 WHERE EXISTS (SELECT 1 FROM inference_attempts WHERE device_id = ? AND state = 'leased' AND lease_until >= ?) OR EXISTS (SELECT 1 FROM device_extraction_jobs WHERE device_id = ? AND state = 'leased' AND lease_until >= ?)")
+    .bind(auth.deviceId, now, auth.deviceId, now).first();
+  return { ready: localReady(report, 'background', now) && !busy };
 }
 
 export interface AttemptRow {
@@ -106,7 +108,7 @@ export async function claimWork(env: Env, now: number, body: ReturnType<typeof r
   const report = await recordReadiness(db, auth.deviceId, body, now);
   const background = localReady(report, 'background', now);
   if (!background && !localReady(report, 'interactive', now)) return { work: null, reason: 'not_ready' };
-  const busy = await db.prepare("SELECT 1 AS hit FROM inference_attempts WHERE device_id = ? AND state = 'leased' AND lease_until >= ?").bind(auth.deviceId, now).first();
+  const busy = await db.prepare("SELECT 1 AS hit WHERE EXISTS (SELECT 1 FROM inference_attempts WHERE device_id = ? AND state = 'leased' AND lease_until >= ?) OR EXISTS (SELECT 1 FROM device_extraction_jobs WHERE device_id = ? AND state = 'leased' AND lease_until >= ?)").bind(auth.deviceId, now, auth.deviceId, now).first();
   if (busy) return { work: null, reason: 'busy' };
   const settings = await loadSettings(db);
   const condition = claimable(background ? Object.keys(TASKS) : [CHAT_TASK]);
@@ -117,9 +119,12 @@ export async function claimWork(env: Env, now: number, body: ReturnType<typeof r
       .prepare(
         `UPDATE inference_attempts SET state = 'leased', lease_token = ?, lease_until = ?, device_id = ?, model_id = ?
          WHERE id = (SELECT id FROM inference_attempts WHERE ${condition} ORDER BY created_at, rowid LIMIT 1) AND ${condition}
+           AND NOT EXISTS (SELECT 1 FROM inference_attempts WHERE device_id = ? AND state = 'leased' AND lease_until >= ?)
+           AND NOT EXISTS (SELECT 1 FROM device_extraction_jobs WHERE device_id = ? AND state = 'leased' AND lease_until >= ?)
+           AND EXISTS (SELECT 1 FROM devices WHERE id = ? AND revoked_at IS NULL)
          RETURNING id, job_id, model_id, source_id, source_revision, policy_revision, input_digest, task, usage_kind, repair, chunk_ids_json`,
       )
-      .bind(token, now + DEVICE_LEASE_MS, auth.deviceId, body.modelId, now, now)
+      .bind(token, now + DEVICE_LEASE_MS, auth.deviceId, body.modelId, now, now, auth.deviceId, now, auth.deviceId, now, auth.deviceId)
       .first<AttemptRow>();
     if (!row) return { work: null, reason: 'no_work' };
 

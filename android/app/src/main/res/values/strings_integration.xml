@@ -1,0 +1,35 @@
+<resources>
+    <string name="nav_chat">Chat</string>
+    <string name="context_chat">Chat about this item</string>
+    <string name="settings_exports">Archive exports</string>
+    <string name="pending_edits_title">Pending edits</string>
+    <string name="pending_edits_empty">All edits have been synchronized.</string>
+    <string name="pending_deleted_item">Item removed after deletion</string>
+    <string name="pending_uncached_item">Item unavailable in this cache</string>
+    <string name="pending_queued_at">Queued %1$s</string>
+    <string name="pending_action_snooze">Snooze</string>
+    <string name="pending_action_read">Mark as read</string>
+    <string name="pending_waiting_sync">Waiting to synchronize</string>
+    <string name="pending_needs_signin">Sign in to synchronize this edit</string>
+    <string name="pending_needs_review">Review this edit before sending it again</string>
+    <string name="pending_failed">This edit could not be applied</string>
+    <string name="device_processing_title">On-device processing</string>
+    <string name="device_processing_unconfigured">Local inference is not configured. Model installation and device verification are still required.</string>
+    <string name="signing_out">Clearing private data…</string>
+    <string name="sign_out_failed_title">Sign-out could not finish</string>
+    <string name="sign_out_failed_body">Private data may remain on this device. Retry to finish signing out and clearing it.</string>
+    <string name="sign_out_retry_cleanup">Retry cleanup</string>
+    <string name="pending_none">None</string>
+    <string name="pending_requested_due">Requested deadline: %1$s</string>
+    <string name="pending_current_due">Current deadline: %1$s</string>
+    <string name="pending_zone">Requested time zone: %1$s</string>
+    <string name="pending_current_zone">Current time zone: %1$s</string>
+    <string name="pending_evidence">Deadline evidence: %1$s</string>
+    <string name="pending_snooze_until">Snooze until %1$s</string>
+    <string name="pending_wait_party">Waiting for: %1$s</string>
+    <string name="pending_wait_note">Requested note: %1$s</string>
+    <string name="pending_follow_up">Requested follow-up: %1$s</string>
+    <string name="pending_current_wait_party">Currently waiting for: %1$s</string>
+    <string name="pending_current_wait_note">Current note: %1$s</string>
+    <string name="pending_current_follow_up">Current follow-up: %1$s</string>
+</resources>

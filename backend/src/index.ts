@@ -3,7 +3,7 @@ import { admitEmail } from './admission/capture';
 import { handleFetch } from './http/router';
 import { JOB_HANDLERS } from './jobs/handlers';
 import { parseQueueEnvelope } from './jobs/queue-envelope';
-import { wakeSnoozed } from './concerns/lifecycle';
+import { wakeTimedConcerns } from './concerns/lifecycle';
 import { expireExports } from './exports/job';
 import { releaseExpiredReservations } from './inference/budget';
 import { scheduleInactivity } from './notifications/events';
@@ -45,7 +45,7 @@ export default {
   async scheduled(_controller, env, _ctx) {
     const now = Date.now();
     await reconcile(env, now);
-    await wakeSnoozed(env.CONTROL_DB, now);
+    await wakeTimedConcerns(env.CONTROL_DB, now);
     await pruneChanges(env.CONTROL_DB, now);
     await expireExports(env, now);
     await releaseExpiredReservations(env.CONTROL_DB, now);

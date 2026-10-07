@@ -139,6 +139,23 @@ class ConcernRepositoryTest {
     }
 
     @Test
+    fun pendingEditsStayReachableWithoutDeletedTitlesAndReapplyWaitsForANewProjection() = runTest {
+        repo.act("a", ConcernAction.Resolve)
+        store.queue[0] = store.queue[0].copy(state = MutationState.CONFLICT, errorCode = "source_deleted")
+        store.concerns.remove("a")
+        publish()
+        val hidden = repo.pendingEdits().first().single()
+        assertNull(hidden.title)
+        assertEquals(false, hidden.canReapply)
+        assertEquals("key-1", hidden.queued.mutation.idempotencyKey)
+        store.concerns["a"] = concern("a", revision = 5).copy(title = "Retained item")
+        publish()
+        val restored = repo.pendingEdits().first().single()
+        assertEquals("Retained item", restored.title)
+        assertEquals(true, restored.canReapply)
+    }
+
+    @Test
     fun anActionIsQueuedWithAFreshKeyAndStartsASync() = runTest {
         assertEquals(ActResult.Queued, repo.act("a", ConcernAction.Resolve))
         assertEquals(listOf("key-1"), store.queue.map { it.mutation.idempotencyKey })
@@ -161,6 +178,41 @@ class ConcernRepositoryTest {
         assertEquals(ActResult.SnoozeInPast, repo.act("a", ConcernAction.Snooze(NOW - 1)))
         assertEquals(ActResult.NotCached, repo.act("missing", ConcernAction.Resolve))
         assertEquals(listOf("key-1", "key-2"), store.queue.map { it.mutation.idempotencyKey })
+    }
+
+    @Test
+    fun waitingAndDueEditsStaySeparateAndPreserveSourceWordingThroughQueuedChanges() = runTest {
+        store.concerns["a"] = concern("a", revision = 4).copy(due = Due(NOW, "Europe/Berlin", "next Friday", 1))
+        publish()
+        assertEquals(ActResult.Queued, repo.act("a", ConcernAction.Wait("Asked finance", "Finance", NOW + 60_000)))
+        publish()
+        assertEquals(ActResult.Queued, repo.act("a", ConcernAction.SetDue(NOW + 120_000, "UTC", null)))
+        publish()
+        val shown = repo.concern("a").first()!!.shown
+        assertEquals(Status.WAITING, shown.status)
+        assertEquals(NOW + 60_000, shown.waiting?.followUpAtMs)
+        assertEquals(NOW + 120_000, shown.due?.atMs)
+        assertEquals("next Friday", shown.due?.sourceText)
+        assertEquals(listOf(4, 5), store.queue.map { it.mutation.expectedRevision })
+        assertEquals(ActResult.Queued, repo.act("a", ConcernAction.SetDue(null, "UTC", null)))
+        publish()
+        assertNull(repo.concern("a").first()!!.shown.due?.atMs)
+        assertEquals("next Friday", repo.concern("a").first()!!.shown.due?.sourceText)
+    }
+
+    @Test
+    fun formBasedOnAnOldRevisionCannotSilentlyOverwriteANewSyncedDate() = runTest {
+        store.concerns["a"] = concern("a", revision = 5, dueAt = NOW + 500_000)
+        publish()
+        assertEquals(ActResult.NotAvailable, repo.act("a", ConcernAction.SetDue(NOW, "UTC", null), expectedRevision = 4))
+        assertEquals(emptyList<QueuedMutation>(), store.queue)
+        // Even if the observable cache lags the transaction's actual row, the persistent guard refuses it.
+        cache.concerns.value = listOf(concern("a", revision = 4))
+        assertEquals(ActResult.NotAvailable, repo.act("a", ConcernAction.Wait(null, "Finance", null), expectedRevision = 4))
+        assertEquals(emptyList<QueuedMutation>(), store.queue)
+        publish()
+        assertEquals(ActResult.Queued, repo.act("a", ConcernAction.SetDue(NOW, "UTC", null), expectedRevision = 5))
+        assertEquals(5, store.queue.single().mutation.expectedRevision)
     }
 
     @Test

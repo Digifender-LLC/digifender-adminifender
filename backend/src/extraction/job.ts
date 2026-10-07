@@ -4,6 +4,7 @@ import { sha256Hex } from '../ids';
 import { CLAIM_GUARD, type ClaimedJob, type JobResult, guardParams } from '../jobs/runner';
 import { REGISTRY_COLUMNS, REGISTRY_FROM, type RegistryRow, archiveFor } from '../sources/registry';
 import { docxText } from './docx';
+import { queueDeviceExtraction } from './device';
 import { detectKind, plainText } from './text';
 import { ExtractionError, MAX_EXPANDED_BYTES } from './zip';
 
@@ -88,25 +89,30 @@ export async function extractJob(job: ClaimedJob, env: Env, now: number): Promis
 
   const archive = archiveFor(env, source);
   const attachment = archive
-    ? await archive.prepare('SELECT a.id, a.name, a.declared_type, a.sha256, a.object_key, s.subject FROM attachments a JOIN sources s ON s.id = a.source_id WHERE a.id = ?').bind(row.attachment_id).first<{
+    ? await archive.prepare('SELECT a.id, a.name, a.declared_type, a.sha256, a.object_key, a.size_bytes, s.subject FROM attachments a JOIN sources s ON s.id = a.source_id WHERE a.id = ?').bind(row.attachment_id).first<{
         id: string;
         name: string;
         declared_type: string | null;
         sha256: string;
         object_key: string;
+        size_bytes: number;
         subject: string;
       }>()
     : null;
   if (!archive || !attachment) return { kind: 'retry', errorCode: 'archive_unavailable' };
   const object = await env.ARCHIVE_BUCKET.get(attachment.object_key);
   if (!object) return { kind: 'retry', errorCode: 'attachment_unavailable' };
+  if (object.size > MAX_EXPANDED_BYTES) return { kind: 'complete', output: { reason: 'file_limit' }, statements: publish(env, job, row, { state: 'unsupported', detail: 'limit' }, now) };
   const bytes = new Uint8Array(await object.arrayBuffer());
   if ((await sha256Hex(bytes)) !== attachment.sha256) return { kind: 'fail', errorCode: 'attachment_hash_mismatch', statements: publish(env, job, row, { state: 'failed', detail: 'parser_error' }, now) };
 
   const kind = detectKind(attachment.name, attachment.declared_type, bytes);
   if (kind === 'unsupported') return { kind: 'complete', output: { kind }, statements: publish(env, job, row, { state: 'unsupported', detail: 'unsupported_type' }, now) };
   if (kind === 'image' && source.privacy === 'no_ai') return { kind: 'complete', output: { kind }, statements: publish(env, job, row, { state: 'unsupported', detail: 'policy_blocked' }, now) };
-  if (kind === 'pdf' || kind === 'image') return { kind: 'complete', output: { kind }, statements: publish(env, job, row, { state: 'deferred', detail: 'device_unavailable' }, now) };
+  if (kind === 'pdf' || kind === 'image') return { kind: 'complete', output: { kind }, statements: [
+    ...publish(env, job, row, { state: 'deferred', detail: 'device_unavailable' }, now),
+    queueDeviceExtraction(db, job, source, attachment, kind, now),
+  ] };
 
   let text: string;
   try {

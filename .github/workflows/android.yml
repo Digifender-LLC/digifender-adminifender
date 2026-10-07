@@ -2,10 +2,10 @@ name: Android
 
 on:
   pull_request:
-    paths: ['android/**', '.github/workflows/android.yml']
+    paths: ['android/**', 'contracts/**', 'tools/verify_android.sh', '.github/workflows/android.yml']
   push:
     branches: [main]
-    paths: ['android/**', '.github/workflows/android.yml']
+    paths: ['android/**', 'contracts/**', 'tools/verify_android.sh', '.github/workflows/android.yml']
   workflow_dispatch:
 
 permissions:
@@ -34,7 +34,68 @@ jobs:
       - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
         with:
           validate-wrappers: true
+      - name: Install compile SDK
+        run: sdkmanager 'platforms;android-37.0' 'build-tools;36.0.0'
       - name: Domain and data JVM tests
-        run: ./gradlew --no-daemon :core:model:test :core:data:testDebugUnitTest :app:testDebugUnitTest
+        run: ../tools/verify_android.sh unit --max-workers=2
       - name: Compile, lint and unsigned release build
-        run: ./gradlew --no-daemon :core:data:lintDebug :core:data:assembleDebugAndroidTest :app:assembleDebug :app:lintDebug :app:assembleRelease
+        run: ../tools/verify_android.sh build --max-workers=2
+      - name: Upload JVM and lint reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: android-jvm-and-lint
+          path: |
+            android/**/build/test-results/**/*.xml
+            android/**/build/reports/tests/**
+            android/**/build/reports/lint-results-*.html
+            android/**/build/reports/lint-results-*.xml
+          retention-days: 14
+          if-no-files-found: warn
+
+  instrumentation:
+    name: Room and Keystore (API ${{ matrix.api-level }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        # Minimum supported API and current targetSdk. Physical S24+ acceptance is separate.
+        api-level: [31, 36]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+        with:
+          validate-wrappers: true
+      - name: Install compile SDK
+        run: sdkmanager 'platforms;android-37.0' 'build-tools;36.0.0'
+      - name: Enable runner KVM access
+        run: |
+          test -c /dev/kvm
+          sudo chmod a+rw /dev/kvm
+      - name: Execute Room and Keystore instrumentation
+        uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: ${{ matrix.api-level }}
+          target: google_apis
+          arch: x86_64
+          disable-linux-hw-accel: false
+          emulator-boot-timeout: 300
+          emulator-options: -no-window -gpu swiftshader -no-snapshot -noaudio -no-boot-anim -camera-back none
+          script: ./tools/verify_android.sh connected --max-workers=2
+      - name: Upload instrumentation reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: android-instrumentation-api-${{ matrix.api-level }}
+          path: |
+            android/core/data/build/outputs/androidTest-results/connected/**
+            android/core/data/build/reports/androidTests/connected/**
+          retention-days: 14
+          if-no-files-found: warn

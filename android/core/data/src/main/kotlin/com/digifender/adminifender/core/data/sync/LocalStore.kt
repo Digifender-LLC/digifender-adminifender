@@ -41,6 +41,12 @@ interface LocalStore {
     /** Stores a new change; the expected revision is predicted from the server copy plus changes already queued. */
     suspend fun enqueue(key: String, concernId: String, action: ConcernAction, nowMs: Long): PendingMutation?
 
+    /**
+     * Form submissions must retain the server revision the owner edited. Check and enqueue in one transaction;
+     * returning null refuses a changed/missing row. Implementations without this guard must fail closed.
+     */
+    suspend fun enqueueIfRevision(key: String, concernId: String, expectedRevision: Int, action: ConcernAction, nowMs: Long): PendingMutation? = null
+
     suspend fun record(key: String, decision: OutboxDecision, nowMs: Long)
 
     /** Owner's explicit choice for a conflict: drop it, or reapply it on top of the current server revision. */

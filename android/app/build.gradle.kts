@@ -66,4 +66,5 @@ dependencies {
     implementation(libs.lifecycle.viewmodel.compose)
     testImplementation(libs.junit)
     testImplementation(libs.coroutines.test)
+    testImplementation(libs.serialization.json)
 }

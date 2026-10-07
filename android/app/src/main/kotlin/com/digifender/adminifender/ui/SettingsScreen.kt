@@ -9,6 +9,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -38,6 +40,8 @@ fun SettingsScreen(
     onSyncNow: () -> Unit,
     onSignOut: () -> Unit,
     onNotificationsChanged: () -> Unit,
+    onExports: () -> Unit,
+    onPendingEdits: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var confirming by rememberSaveable { mutableStateOf(false) }
@@ -57,7 +61,7 @@ fun SettingsScreen(
         allowed = granted
         onNotificationsChanged()
     }
-    Column(modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(modifier.padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(stringResource(R.string.settings_notifications), style = MaterialTheme.typography.titleMedium)
         Text(
             stringResource(
@@ -81,6 +85,10 @@ fun SettingsScreen(
         Text(stringResource(R.string.settings_sync), style = MaterialTheme.typography.titleMedium)
         freshness?.let { Text(freshnessText(it, nowMs)) }
         OutlinedButton(onClick = onSyncNow) { Text(stringResource(R.string.settings_sync_now)) }
+        OutlinedButton(onClick = onPendingEdits) { Text(stringResource(R.string.pending_edits_title)) }
+        OutlinedButton(onClick = onExports) { Text(stringResource(R.string.settings_exports)) }
+        Text(stringResource(R.string.device_processing_title), style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(R.string.device_processing_unconfigured))
         Text(stringResource(R.string.settings_sign_out_body), style = MaterialTheme.typography.bodyMedium)
         OutlinedButton(onClick = { confirming = true }) { Text(stringResource(R.string.settings_sign_out)) }
     }

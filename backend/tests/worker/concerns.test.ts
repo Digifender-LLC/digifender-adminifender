@@ -1,6 +1,6 @@
 import { env } from 'cloudflare:workers';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { wakeSnoozed } from '../../src/concerns/lifecycle';
+import { wakeTimedConcerns } from '../../src/concerns/lifecycle';
 import { assertion, isAssertionFailure } from '../../src/db/assert';
 import { runJob } from '../../src/jobs/runner';
 import { T0, api, enrollOwner, ingest, quietEnv, runPending } from './support';
@@ -229,9 +229,45 @@ describe('snooze expiry and conflicts', () => {
   it('returns due snoozes to open as a new revision', async () => {
     const { concernId } = await triaged(mail({}));
     await act(concernId, 1, 'snooze', { until: new Date(T0 + 30 * MIN).toISOString() });
-    expect(await wakeSnoozed(env.CONTROL_DB, T0 + 29 * MIN)).toEqual({ woken: 0 });
-    expect(await wakeSnoozed(env.CONTROL_DB, T0 + 30 * MIN)).toEqual({ woken: 1 });
+    expect(await wakeTimedConcerns(env.CONTROL_DB, T0 + 29 * MIN)).toEqual({ woken: 0 });
+    expect(await wakeTimedConcerns(env.CONTROL_DB, T0 + 30 * MIN)).toEqual({ woken: 1 });
     expect((await getConcern(concernId)).concern).toMatchObject({ status: 'open', snoozeUntil: null, revision: 3 });
+  });
+
+  it('returns a due waiting follow-up to open once, preserving due date, acknowledgment and review time', async () => {
+    const { concernId } = await triaged(mail({}));
+    await act(concernId, 1, 'set_due', { at: new Date(T0 + 120 * MIN).toISOString(), zone: 'Europe/Berlin', sourceText: 'Friday' });
+    await act(concernId, 2, 'acknowledge');
+    await act(concernId, 3, 'wait', { note: 'Asked finance', awaitedParty: 'Finance', followUpAt: new Date(T0 + 30 * MIN).toISOString() });
+    const before = (await getConcern(concernId)).concern;
+    const briefing = (await api('GET', '/briefings/current', { token })).body.data;
+    await api('POST', `/briefings/${briefing.id}/review`, { token, key: key(), body: {} });
+    const review = await env.CONTROL_DB.prepare('SELECT last_meaningful_at FROM review_state').first();
+    const notifications = await env.CONTROL_DB.prepare('SELECT COUNT(*) AS n FROM notification_events').first();
+    expect(await wakeTimedConcerns(env.CONTROL_DB, T0 + 29 * MIN)).toEqual({ woken: 0 });
+    expect(await wakeTimedConcerns(env.CONTROL_DB, T0 + 30 * MIN)).toEqual({ woken: 1 });
+    expect(await wakeTimedConcerns(env.CONTROL_DB, T0 + 31 * MIN)).toEqual({ woken: 0 });
+    // A fresh session is unnecessary for these reads: service fixtures retain their original request clock.
+    const after = (await getConcern(concernId)).concern;
+    expect(after).toMatchObject({ status: 'open', waiting: null, revision: 5, due: before.due, acknowledgedAt: before.acknowledgedAt });
+    expect(await env.CONTROL_DB.prepare('SELECT last_meaningful_at FROM review_state').first()).toEqual(review);
+    expect(await env.CONTROL_DB.prepare('SELECT COUNT(*) AS n FROM notification_events').first()).toEqual(notifications);
+    expect((await api('GET', '/briefings/current', { token })).body.data.changedConcerns.map((c: { id: string }) => c.id)).toEqual([concernId]);
+  });
+
+  it('leaves waiting without a follow-up and resolved or snoozed waiting history alone', async () => {
+    const noDate = await triaged(mail({ body: 'Await without a follow-up' }));
+    await act(noDate.concernId, 1, 'wait', { awaitedParty: 'Finance' });
+    const resolved = await triaged(mail({ body: 'Await then resolve' }));
+    await act(resolved.concernId, 1, 'wait', { followUpAt: new Date(T0 + MIN).toISOString() });
+    await act(resolved.concernId, 2, 'resolve');
+    const snoozed = await triaged(mail({ body: 'Await then snooze' }));
+    await act(snoozed.concernId, 1, 'wait', { followUpAt: new Date(T0 + MIN).toISOString() });
+    await act(snoozed.concernId, 2, 'snooze', { until: new Date(T0 + 60 * MIN).toISOString() });
+    expect(await wakeTimedConcerns(env.CONTROL_DB, T0 + 2 * MIN)).toEqual({ woken: 0 });
+    expect((await getConcern(noDate.concernId)).concern.status).toBe('waiting');
+    expect((await getConcern(resolved.concernId)).concern.status).toBe('resolved');
+    expect((await getConcern(snoozed.concernId)).concern.status).toBe('snoozed');
   });
 
   it('aborts a whole batch when an assertion fails', async () => {

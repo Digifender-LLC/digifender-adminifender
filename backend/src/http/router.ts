@@ -22,6 +22,7 @@ import * as diagnostics from '../diagnostics/export';
 import { fail, ok } from './envelope';
 import { HttpError } from './errors';
 import { withIdempotency } from './idempotency';
+import * as deviceExtraction from '../extraction/device';
 import { WithStatus } from './status';
 import { type Validator, readJson } from './validate';
 
@@ -130,6 +131,12 @@ const ROUTES: Route[] = [
   { method: 'GET', pattern: /^\/inference\/budget$/, handler: inference.inferenceBudget },
   { method: 'POST', pattern: new RegExp(`^/inference/attempts/${ID}/reconcile$`), handler: mutation(inference.reconcileBody, inference.reconcileAttempt) },
   { method: 'POST', pattern: /^\/device-work\/readiness$/, handler: ownerMutation(device.readinessBody, device.reportReadiness, { recentAuth: false }) },
+  { method: 'POST', pattern: /^\/device-work\/extraction\/claim$/, handler: ownerMutation(deviceExtraction.extractionClaimBody, deviceExtraction.claimExtraction, { recentAuth: false }) },
+  { method: 'POST', pattern: new RegExp(`^/device-work/extraction/${ID}/heartbeat$`), handler: ownerMutation(deviceExtraction.extractionHeartbeatBody, deviceExtraction.heartbeatExtraction, { recentAuth: false }) },
+  { method: 'POST', pattern: new RegExp(`^/device-work/extraction/${ID}/batches$`), handler: ownerMutation(deviceExtraction.extractionBatchBody, deviceExtraction.submitExtractionBatch, { recentAuth: false }) },
+  { method: 'POST', pattern: new RegExp(`^/device-work/extraction/${ID}/finish$`), handler: ownerMutation(deviceExtraction.extractionFinishBody, deviceExtraction.finishExtraction, { recentAuth: false }) },
+  { method: 'POST', pattern: new RegExp(`^/device-work/extraction/${ID}/defer$`), handler: ownerMutation(deviceExtraction.extractionDeferBody, deviceExtraction.deferExtraction, { recentAuth: false }) },
+  { method: 'POST', pattern: new RegExp(`^/device-work/extraction/${ID}/resume$`), handler: ownerMutation(deviceExtraction.extractionResumeBody, deviceExtraction.resumeExtraction, { recentAuth: false }) },
   { method: 'POST', pattern: /^\/device-work\/claim$/, handler: ownerMutation(device.readinessBody, device.claimWork, { recentAuth: false }) },
   { method: 'POST', pattern: new RegExp(`^/device-work/${ID}/heartbeat$`), handler: ownerMutation(device.heartbeatBody, device.heartbeat, { recentAuth: false }) },
   { method: 'POST', pattern: new RegExp(`^/device-work/${ID}/result$`), handler: ownerMutation(device.resultBody, device.submitResult, { recentAuth: false }) },

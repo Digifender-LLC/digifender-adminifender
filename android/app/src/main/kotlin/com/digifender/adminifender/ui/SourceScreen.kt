@@ -23,7 +23,17 @@ import com.digifender.adminifender.R
 import com.digifender.adminifender.core.data.repository.AttachmentInfo
 
 @Composable
-fun SourceScreen(state: SourceUiState, busy: Boolean, onRetry: () -> Unit, onOpenConcern: (String) -> Unit, modifier: Modifier = Modifier) {
+fun SourceScreen(
+    state: SourceUiState,
+    busy: Boolean,
+    onRetry: () -> Unit,
+    onOpenConcern: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    attachmentState: Map<String, AttachmentDownloadState> = emptyMap(),
+    onDownloadAttachment: ((String) -> Unit)? = null,
+    onRemoveAttachment: ((String) -> Unit)? = null,
+    onDelete: (() -> Unit)? = null,
+) {
     Column(modifier.padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         val summary = state.summary
         if (state.status == TextStatus.GONE) {
@@ -68,7 +78,23 @@ fun SourceScreen(state: SourceUiState, busy: Boolean, onRetry: () -> Unit, onOpe
 
             Text(stringResource(R.string.source_attachments), style = MaterialTheme.typography.titleMedium)
             if (text.attachments.isEmpty()) Text(stringResource(R.string.source_no_attachments))
-            text.attachments.forEach { AttachmentRow(it) }
+            text.attachments.forEach { attachment ->
+                AttachmentRow(attachment)
+                val download = attachmentState[attachment.id]
+                if (download != null) Text(stringResource(when (download) {
+                    AttachmentDownloadState.DOWNLOADING -> R.string.transfer_busy
+                    AttachmentDownloadState.SAVED -> R.string.transfer_saved
+                    AttachmentDownloadState.REMOVED -> R.string.transfer_removed
+                    AttachmentDownloadState.SIGN_IN -> R.string.transfer_sign_in
+                    AttachmentDownloadState.FAILED -> R.string.transfer_unavailable
+                    AttachmentDownloadState.REMOVE_FAILED -> R.string.transfer_cleanup_pending
+                }), style = MaterialTheme.typography.bodySmall)
+                if (download in setOf(AttachmentDownloadState.SAVED, AttachmentDownloadState.REMOVE_FAILED) && onRemoveAttachment != null) {
+                    TextButton(onClick = { onRemoveAttachment(attachment.id) }) { Text(stringResource(R.string.transfer_remove)) }
+                } else if (onDownloadAttachment != null) {
+                    TextButton(onClick = { onDownloadAttachment(attachment.id) }, enabled = download != AttachmentDownloadState.DOWNLOADING) { Text(stringResource(R.string.transfer_download)) }
+                }
+            }
         }
 
         Text(stringResource(R.string.source_concerns), style = MaterialTheme.typography.titleMedium)
@@ -81,6 +107,7 @@ fun SourceScreen(state: SourceUiState, busy: Boolean, onRetry: () -> Unit, onOpe
                 }
             }
         }
+        if (summary != null && onDelete != null) TextButton(onClick = onDelete) { Text(stringResource(R.string.deletion_open)) }
     }
 }
 

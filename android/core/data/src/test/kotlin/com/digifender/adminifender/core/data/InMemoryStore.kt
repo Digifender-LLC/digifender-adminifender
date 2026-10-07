@@ -61,6 +61,11 @@ class InMemoryStore : LocalStore {
         return m
     }
 
+    override suspend fun enqueueIfRevision(key: String, concernId: String, expectedRevision: Int, action: ConcernAction, nowMs: Long): PendingMutation? {
+        if (concerns[concernId]?.revision != expectedRevision) return null
+        return enqueue(key, concernId, action, nowMs)
+    }
+
     override suspend fun record(key: String, decision: OutboxDecision, nowMs: Long) {
         val i = queue.indexOfFirst { it.mutation.idempotencyKey == key }
         if (i < 0) return

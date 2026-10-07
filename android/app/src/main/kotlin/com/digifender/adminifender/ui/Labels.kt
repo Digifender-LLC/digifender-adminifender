@@ -33,7 +33,7 @@ fun freshLine(freshness: Freshness, nowMs: Long): FreshLine {
 }
 
 /**
- * One-tap controls shown on the detail screen. Waiting and due dates need input forms and arrive later; mark-read
+ * One-tap controls shown on the detail screen. Waiting and due dates have separate input forms; mark-read
  * happens on open.
  */
 fun quickActions(status: Status): List<ActionKind> =

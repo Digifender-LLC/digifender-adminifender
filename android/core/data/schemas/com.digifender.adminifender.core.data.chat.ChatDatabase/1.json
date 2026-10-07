@@ -1,0 +1,75 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "c0f8f1b139e61bf256046472b3299a02",
+    "entities": [
+      {
+        "tableName": "chat_sessions",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`scopeKey` TEXT NOT NULL, `scopeKind` TEXT NOT NULL, `scopeId` TEXT, `threadKey` TEXT NOT NULL, `threadId` TEXT, `draft` TEXT NOT NULL, `requestId` TEXT, `requestContent` TEXT, `requestKnown` INTEGER NOT NULL, PRIMARY KEY(`scopeKey`))",
+        "fields": [
+          {
+            "fieldPath": "scopeKey",
+            "columnName": "scopeKey",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "scopeKind",
+            "columnName": "scopeKind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "scopeId",
+            "columnName": "scopeId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "threadKey",
+            "columnName": "threadKey",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "threadId",
+            "columnName": "threadId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "draft",
+            "columnName": "draft",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "requestId",
+            "columnName": "requestId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "requestContent",
+            "columnName": "requestContent",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "requestKnown",
+            "columnName": "requestKnown",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "scopeKey"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'c0f8f1b139e61bf256046472b3299a02')"
+    ]
+  }
+}

@@ -4,7 +4,7 @@ import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
-/** Server projection of a concern. Only sync writes this table; queued edits live in `pending_mutations`. */
+/** Server projection of a concern. Sync publishes it; confirmed deletion may evict it. Edits live in the outbox. */
 @Entity(tableName = "concerns", indices = [Index("status", "updatedAt")])
 data class ConcernEntity(
     @PrimaryKey val id: String,
@@ -78,3 +78,11 @@ data class SourceTextEntity(
     val attachmentsJson: String,
     val cachedAt: Long,
 )
+
+/** Explicit deletion is irreversible for this ID; stale in-flight sync pages cannot republish it. */
+@Entity(tableName = "suppressed_sources")
+data class SuppressedSourceEntity(@PrimaryKey val id: String)
+
+/** A detached concern may return only after its reviewed pre-deletion revision has advanced. */
+@Entity(tableName = "concern_deletion_fences")
+data class ConcernDeletionFenceEntity(@PrimaryKey val id: String, val revision: Int)

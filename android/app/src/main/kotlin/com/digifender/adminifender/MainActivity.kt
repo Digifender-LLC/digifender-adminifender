@@ -33,4 +33,14 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         destinationOf(intent)?.let { destination.value = it }
     }
+
+    override fun onStart() {
+        super.onStart()
+        (application as AdminifenderApplication).container.deviceConditions.setForeground(true)
+    }
+
+    override fun onStop() {
+        (application as AdminifenderApplication).container.deviceConditions.setForeground(false)
+        super.onStop()
+    }
 }

@@ -21,6 +21,11 @@ interface CacheSource {
     fun syncState(): Flow<Pair<Long?, Boolean>>
 }
 
+data class PendingEditView(val queued: QueuedMutation, val current: Concern?) {
+    val title: String? get() = current?.title
+    val canReapply: Boolean get() = current != null
+}
+
 /** Starts background sync; the app backs it with WorkManager. */
 interface SyncScheduler {
     fun requestNow()
@@ -60,19 +65,33 @@ class ConcernRepository(
 
     fun freshness(): Flow<Freshness> = combine(cache.syncState(), cache.mutations()) { (last, bootstrap), mutations -> freshness(last, bootstrap, mutations) }
 
+    /** Includes edits whose projection was removed: their intent stays reachable without retaining stale titles. */
+    fun pendingEdits(): Flow<List<PendingEditView>> = combine(cache.concerns(), cache.mutations()) { concerns, mutations ->
+        val byId = concerns.associateBy { it.id }
+        mutations.map { queued ->
+            val concern = byId[queued.mutation.concernId]
+            PendingEditView(queued, concern)
+        }
+    }
+
     /** Owner-requested refresh; the result shows up through [freshness], not as a return value. */
     fun refresh() = scheduler.requestNow()
 
     /** Checks the control against what the owner sees, then queues it with a new idempotency key. */
-    suspend fun act(id: String, action: ConcernAction): ActResult {
+    suspend fun act(id: String, action: ConcernAction, expectedRevision: Int? = null): ActResult {
         val now = clock()
         val view = views().first().firstOrNull { it.server.id == id } ?: return ActResult.NotCached
+        if (expectedRevision != null && view.server.revision != expectedRevision) return ActResult.NotAvailable
         when (applyOptimistic(view.shown, action, now)) {
             is Transition.NotAvailable -> return ActResult.NotAvailable
             Transition.SnoozeInPast -> return ActResult.SnoozeInPast
             is Transition.Applied -> Unit
         }
-        store.enqueue(newKey(), id, action, now) ?: return ActResult.NotCached
+        if (expectedRevision == null) {
+            store.enqueue(newKey(), id, action, now) ?: return ActResult.NotCached
+        } else {
+            store.enqueueIfRevision(newKey(), id, expectedRevision, action, now) ?: return ActResult.NotAvailable
+        }
         scheduler.requestNow()
         return ActResult.Queued
     }

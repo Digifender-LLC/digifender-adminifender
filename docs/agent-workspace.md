@@ -1,6 +1,6 @@
 # Shared Codex and Claude workspace
 
-The two agents use `AGENTS.md`, the same feature contracts, and the same executable checks. This workspace currently contains design documents, not an Android or Worker implementation. Claude imports `AGENTS.md` through `CLAUDE.md`; Codex reads it directly.
+The two agents use `AGENTS.md`, the same feature contracts, and the same executable checks. This workspace contains the Worker, shared contracts and an Android implementation in progress. The [roadmap](roadmap.md) records each slice's verification scope. Claude imports `AGENTS.md` through `CLAUDE.md`; Codex reads it directly.
 
 ## Manual workflows
 
@@ -22,13 +22,13 @@ Use a fresh reviewing session for independence. Subagents require explicit user 
 
 Today, run `python3 tools/check_docs.py` after instruction or documentation changes; the same command is available as a VS Code task. It checks repository-relative Markdown link targets and the seven canonical skill/Claude adapter pairs. Historical absolute links into the separate TellUmo checkout are outside this check. It does not validate product behavior. Inspect `git status` and the intended diff before edits.
 
-When source is added, use the **committed wrapper and scripts**, not a global Gradle/Node version or Whumpo's `pnpm` scripts. `docs/verification.md` lists the required check classes and intended commands. Add each runnable command and its CI job in the same slice that adds its build files. Do not create a green CI job that skips a present Android or Worker module.
+Use the **committed wrapper and scripts**, not a global Gradle/Node version or Whumpo's `pnpm` scripts. In `backend/`, `npm ci && npm run check` runs typechecking, contract/Worker tests and a dry-run bundle. The Android commands are recorded in its README and CI workflow; `docs/verification.md` lists verification classes and their current limits. Add each runnable command and its CI job in the same slice that adds its build files. Do not create a green CI job that skips a present Android or Worker module. The [release tools](../ops/README.md) inventory inputs and reject missing evidence without contacting providers.
 
 For local Worker fixtures, use loopback networking, disposable D1/R2/Queue bindings, synthetic mail, fake clocks/models/providers and no operator secrets. For Android, use JVM tests for pure domain logic, instrumentation for Room/migrations/Compose/OS behavior, and a physical device for model, thermal, passkey, FCM and Play-build acceptance. Stop only processes you started. Keep logs and screenshots local and sanitized.
 
 ## CI and evidence
 
-`.github/workflows/docs.yml` is a read-only docs check on hosted PRs and pushes to `main`. It does not deploy or use secrets. Inspect its actual run before claiming CI passed. Future PR CI must compile, lint and unit-test Android; typecheck, lint, build and integration-test the Worker; validate shared contracts and migrations; and preserve failure artifacts without uploading personal data. Instrumentation and physical-device evidence are separate gates, with their limits reported explicitly.
+`.github/workflows/docs.yml` is a read-only docs check on hosted PRs and pushes to `main`. It does not deploy or use secrets. Backend CI runs typechecking, contract/Worker tests and a dry-run bundle. Android CI runs JVM tests, compilation, lint, instrumentation compilation and an unsigned release build. Inspect actual hosted runs before claiming CI passed. Instrumentation execution and physical-device evidence remain separate gates, with their limits reported explicitly.
 
 CI success establishes only what its jobs executed. Record the source revision, test fixtures, exact command/exit status and relevant report path. Screenshot capture is an observation; inspect images and accessibility/interaction results. A build run against changing source is inconclusive for a stable revision. Never relabel a mock provider response as a live accepted effect.
 

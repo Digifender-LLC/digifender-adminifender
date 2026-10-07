@@ -142,7 +142,10 @@ interface AttemptRow {
 /** Fresh readiness of any active device for this kind of task. */
 export async function anyDeviceReady(db: D1Database, now: number, task: TaskKind = 'background'): Promise<boolean> {
   const { results } = await db
-    .prepare('SELECT r.reported_at, r.foreground, r.charging, r.battery_percent, r.thermal, r.model_id FROM device_readiness r JOIN devices d ON d.id = r.device_id WHERE d.revoked_at IS NULL')
+    .prepare(`SELECT r.reported_at, r.foreground, r.charging, r.battery_percent, r.thermal, r.model_id FROM device_readiness r JOIN devices d ON d.id = r.device_id WHERE d.revoked_at IS NULL
+      AND NOT EXISTS (SELECT 1 FROM inference_attempts a WHERE a.device_id = d.id AND a.state = 'leased' AND a.lease_until >= ?)
+      AND NOT EXISTS (SELECT 1 FROM device_extraction_jobs e WHERE e.device_id = d.id AND e.state = 'leased' AND e.lease_until >= ?)`)
+    .bind(now, now)
     .all<{ reported_at: number; foreground: number; charging: number; battery_percent: number; thermal: Thermal; model_id: string | null }>();
   return results.some((r) =>
     localReady({ reportedAt: r.reported_at, foreground: r.foreground === 1, charging: r.charging === 1, batteryPercent: r.battery_percent, thermal: r.thermal, modelId: r.model_id } satisfies Readiness, task, now),

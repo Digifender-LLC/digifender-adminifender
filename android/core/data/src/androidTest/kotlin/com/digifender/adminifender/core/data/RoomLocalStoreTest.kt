@@ -37,6 +37,15 @@ class RoomLocalStoreTest {
     fun close() = db.close()
 
     @Test
+    fun staleFormRevisionCannotQueueAgainstANewerCacheRow() = runTest {
+        store.applyChanges(listOf(SyncChange.ConcernChanged(1, concern("a", 4))), 1, 10)
+        store.applyChanges(listOf(SyncChange.ConcernChanged(2, concern("a", 5))), 2, 20)
+        assertEquals(null, store.enqueueIfRevision("stale", "a", 4, ConcernAction.SetDue(30, "UTC", null), 30))
+        assertEquals(emptyList<Any>(), store.mutations())
+        assertEquals(5, store.enqueueIfRevision("fresh", "a", 5, ConcernAction.SetDue(30, "UTC", null), 30)?.expectedRevision)
+    }
+
+    @Test
     fun snapshotReplacesCacheButKeepsQueuedEdits() = runTest {
         store.applyChanges(listOf(SyncChange.ConcernChanged(1, concern("a", 4)), SyncChange.ConcernChanged(2, concern("b", 1))), 2, 10)
         store.enqueue("k1", "a", ConcernAction.Acknowledge, 10)

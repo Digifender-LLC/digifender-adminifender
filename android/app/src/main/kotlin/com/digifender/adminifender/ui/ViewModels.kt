@@ -13,6 +13,7 @@ import com.digifender.adminifender.core.data.session.SessionState
 import com.digifender.adminifender.core.data.session.SignInOutcome
 import com.digifender.adminifender.core.model.ConcernAction
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -26,18 +27,24 @@ import kotlinx.coroutines.launch
 private const val STOP_TIMEOUT_MS = 5_000L
 
 /** Sign-in screen state. [busy] covers the whole passkey round trip so the button cannot start a second one. */
-data class SessionUiState(val session: SessionState, val busy: Boolean = false, val message: SignInMessage? = null)
+data class SessionUiState(val session: SessionState, val busy: Boolean = false, val message: SignInMessage? = null, val signOutFailed: Boolean = false)
 
 enum class SignInMessage { CANCELLED, NO_PASSKEY, REFUSED, UNAVAILABLE }
 
-class SessionViewModel(private val session: SessionManager, private val onSignedIn: () -> Unit, private val signOutAll: suspend () -> Unit) : ViewModel() {
+class SessionViewModel(private val session: SessionManager, private val onSignedIn: () -> Unit, private val signOutAll: suspend () -> Unit,
+    private val cleanupPending: () -> Boolean = { false },
+) : ViewModel() {
     private val busy = MutableStateFlow(false)
     private val message = MutableStateFlow<SignInMessage?>(null)
-    val state: StateFlow<SessionUiState> = combine(session.state, busy, message) { s, b, m -> SessionUiState(s, b, m) }
+    private val signOutFailed = MutableStateFlow(false)
+    val state: StateFlow<SessionUiState> = combine(session.state, busy, message, signOutFailed) { s, b, m, failed -> SessionUiState(s, b, m, failed) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, SessionUiState(SessionState.Unknown))
 
     init {
-        viewModelScope.launch { if (session.restore() is SessionState.SignedIn) onSignedIn() }
+        viewModelScope.launch {
+            if (cleanupPending()) signOut()
+            else if (session.restore() is SessionState.SignedIn) onSignedIn()
+        }
     }
 
     fun signIn(passkeys: PasskeyAuthenticator) {
@@ -57,8 +64,19 @@ class SessionViewModel(private val session: SessionManager, private val onSigned
     }
 
     fun signOut() {
-        viewModelScope.launch { signOutAll() }
+        if (busy.value) return
+        busy.value = true
+        signOutFailed.value = false
+        viewModelScope.launch {
+            try { signOutAll() } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                signOutFailed.value = true
+            } finally { busy.value = false }
+        }
     }
+
+    fun dismissSignOutError() { signOutFailed.value = false }
 }
 
 data class InboxUiState(val filter: InboxFilter, val items: List<ConcernView>?, val freshness: Freshness?)
@@ -96,9 +114,9 @@ class ConcernViewModel(private val id: String, private val concerns: ConcernRepo
         ConcernUiState(true, view)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), ConcernUiState(false, null))
 
-    fun act(action: ConcernAction) {
+    fun act(action: ConcernAction, expectedRevision: Int? = null) {
         viewModelScope.launch {
-            _message.value = when (concerns.act(id, action)) {
+            _message.value = when (concerns.act(id, action, expectedRevision)) {
                 ActResult.Queued -> ActMessage.QUEUED
                 ActResult.NotAvailable -> ActMessage.NOT_AVAILABLE
                 ActResult.SnoozeInPast -> ActMessage.SNOOZE_IN_PAST
