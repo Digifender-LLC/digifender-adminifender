@@ -19,7 +19,7 @@ Flags: `--no-daemon --continue --max-workers=1 -Dorg.gradle.jvmargs='-Xmx1536m -
 
 | Invocation | Tasks | Result |
 | --- | --- | --- |
-| 1 | `:core:model:test :core:data:testDebugUnitTest :app:testDebugUnitTest :app:assembleDebug :app:lintDebug` | Exit 1 at `app compileDebugUnitTestKotlin`: serialization dependency missing. Model and data tasks passed: 124 tests, 0 failures (27 model, 97 data). App tests: 38 passed before compile failure. Room generated `core/data/schemas/.../3.json` during this invocation. |
+| 1 | `:core:model:test :core:data:testDebugUnitTest :app:testDebugUnitTest :app:assembleDebug :app:lintDebug` | Exit 1 at `app compileDebugUnitTestKotlin`: serialization dependency missing. Model and data tasks passed: 124 tests, 0 failures (27 model, 97 data). App tests: not reached (the compile failure stopped the app unit-test task before any app test ran). Room generated `core/data/schemas/.../3.json` during this invocation. |
 | 2 | `:app:testDebugUnitTest :app:assembleDebug :app:lintDebug :core:data:compileDebugAndroidTestKotlin :app:assembleRelease` | Exit 1 after adding `testImplementation(libs.serialization.json)`. App JVM tests: 38 passed. Android Lint: 7 findings reported. Debug APK build and unsigned release APK (build 18132) succeeded. Compose and Room compilation succeeded; androidTest Kotlin compile succeeded. |
 | 3 | `:app:testDebugUnitTest :app:lintDebug :app:assembleDebug` | Exit 0, BUILD SUCCESSFUL in 6m 16s, on the latest code (build 59307). App JVM tests: 38 passed. `lint-results-debug.txt` reads "No issues found." Debug APK built successfully. |
 
@@ -39,6 +39,6 @@ Reported honestly:
 
 ## Not run
 
-- `RoomBriefingCacheTest` and the other Room store, migration (including 2 to 3) and Keystore vault tests were compiled (androidTest Kotlin compile in run 3) but never executed.
+- `RoomBriefingCacheTest` and the other Room store, migration (including 2 to 3) and Keystore vault tests were compiled (androidTest Kotlin compile in invocation 2) but never executed.
 - No emulator, physical device, screenshot or TalkBack inspection, live FCM, live passkey, or CI run inspection.
 - Nothing on staging; no Play-installed build.
