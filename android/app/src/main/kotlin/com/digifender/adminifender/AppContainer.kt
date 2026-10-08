@@ -9,6 +9,7 @@ import com.digifender.adminifender.core.data.platform.WorkSyncScheduler
 import com.digifender.adminifender.core.data.push.HttpPushApi
 import com.digifender.adminifender.push.PushRegistrationWorker
 import com.digifender.adminifender.core.data.repository.ArchiveRepository
+import com.digifender.adminifender.core.data.repository.BriefingRepository
 import com.digifender.adminifender.core.data.repository.ConcernRepository
 import com.digifender.adminifender.core.data.session.HttpAuthApi
 import com.digifender.adminifender.core.data.session.SessionManager
@@ -31,6 +32,7 @@ class AppContainer(context: Context) {
     val syncEngine = SyncEngine(api, cache.store, clock)
     val concerns = ConcernRepository(cache.source, cache.store, scheduler, clock)
     val archive = ArchiveRepository(api, cache.archive, cache.source, clock)
+    val briefing = BriefingRepository(api, cache.briefing, clock)
     val push = HttpPushApi(http, baseUrl, session)
 
     /** Starts background sync for a signed-in owner. */
@@ -45,6 +47,8 @@ class AppContainer(context: Context) {
         scheduler.cancelAll()
         PushRegistrationWorker.cancel(app)
         session.signOut()
+        // Reads still in flight must not write into the cache after it is cleared.
+        briefing.invalidate()
         cache.clear()
     }
 }

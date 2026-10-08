@@ -78,7 +78,7 @@ class InboxViewModel(private val concerns: ConcernRepository) : ViewModel() {
     fun refresh() = concerns.refresh()
 }
 
-enum class ActMessage { QUEUED, NOT_AVAILABLE, SNOOZE_IN_PAST, GONE }
+enum class ActMessage { QUEUED, NOT_AVAILABLE, SNOOZE_IN_PAST, GONE, WRONG_ITEM }
 
 data class ConcernUiState(val loaded: Boolean, val view: ConcernView?)
 
@@ -96,7 +96,15 @@ class ConcernViewModel(private val id: String, private val concerns: ConcernRepo
         ConcernUiState(true, view)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), ConcernUiState(false, null))
 
-    fun act(action: ConcernAction) {
+    /**
+     * Queues [action] for this concern. [forConcern] is the concern the form or button was opened for: a save that
+     * belongs to another concern (a push opened a different one while a dialog was up) is refused, not redirected.
+     */
+    fun act(action: ConcernAction, forConcern: String = id) {
+        if (forConcern != id) {
+            _message.value = ActMessage.WRONG_ITEM
+            return
+        }
         viewModelScope.launch {
             _message.value = when (concerns.act(id, action)) {
                 ActResult.Queued -> ActMessage.QUEUED

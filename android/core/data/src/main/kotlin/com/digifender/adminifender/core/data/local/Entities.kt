@@ -78,3 +78,23 @@ data class SourceTextEntity(
     val attachmentsJson: String,
     val cachedAt: Long,
 )
+
+/**
+ * The last briefing snapshot read from the server, by reference only: concern IDs with the revision the snapshot
+ * showed, and new source IDs. Titles and text are never copied here, so a deleted item disappears from the briefing
+ * with the sync tombstone and nothing private outlives sign-out (which clears every table). Holds at most one row.
+ * The review columns record the owner's "mark reviewed" intent before it is sent, so an unanswered send is retried
+ * as the same request after process death.
+ */
+@Entity(tableName = "briefing")
+data class BriefingEntity(
+    @PrimaryKey val briefingId: String,
+    val snapshotSeq: Long,
+    val throughTime: Long,
+    val lastReviewedAt: Long?,
+    val fetchedAt: Long,
+    val itemsJson: String,
+    val reviewPhase: String,
+    val reviewKey: String?,
+    val reviewedAt: Long?,
+)

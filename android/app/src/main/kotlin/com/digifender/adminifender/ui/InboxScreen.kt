@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import com.digifender.adminifender.R
 import com.digifender.adminifender.core.data.repository.ConcernView
 import com.digifender.adminifender.core.data.repository.InboxFilter
+import java.time.ZoneId
 
 @Composable
 fun InboxScreen(state: InboxUiState, nowMs: Long, onFilter: (InboxFilter) -> Unit, onRefresh: () -> Unit, onOpen: (String) -> Unit, modifier: Modifier = Modifier) {
@@ -74,7 +75,7 @@ private fun ConcernCard(view: ConcernView, onOpen: (String) -> Unit) {
             val labels = buildList {
                 add(importanceText(c.importance))
                 if (c.readAtMs == null) add(stringResource(R.string.label_unread))
-                c.due?.atMs?.let { add(stringResource(R.string.label_due, dateTime(it))) }
+                dueDisplay(c.due, ZoneId.systemDefault())?.let { add(dueText(it)) }
                 if (view.pending > 0) add(stringResource(R.string.label_pending))
                 if (view.conflicts.isNotEmpty() || view.failed.isNotEmpty()) add(pluralStringResource(R.plurals.needs_owner, view.conflicts.size + view.failed.size, view.conflicts.size + view.failed.size))
             }

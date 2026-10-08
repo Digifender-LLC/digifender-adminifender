@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
     <string name="app_name">Adminifender</string>
 
     <string name="sign_in_title">Sign in</string>
@@ -74,6 +74,8 @@
     <string name="act_queued">Saved on this phone. It will be sent when online.</string>
     <string name="act_not_available">That isn\'t available for this item any more.</string>
     <string name="act_snooze_past">Pick a time in the future.</string>
+    <string name="act_wrong_item">That form was opened for a different item, so nothing was saved.</string>
+    <string name="form_follow_up_passed">The follow-up date has passed. Keep it, pick a future date, or clear the date to remove the follow-up.</string>
     <string name="act_gone">This item is no longer on this phone.</string>
     <string name="concern_missing">This item is no longer on this phone.</string>
 
@@ -177,4 +179,81 @@
     <string name="source_no_concerns">No items on this phone come from this message.</string>
     <string name="concern_sources">Source emails</string>
     <string name="concern_source_not_cached">A source email that isn\'t on this phone yet</string>
+    <string name="nav_briefing">Briefing</string>
+    <string name="briefing_title">Briefing</string>
+    <string name="briefing_loading">Loading the briefing…</string>
+    <string name="briefing_loaded">Briefing %1$s</string>
+    <string name="briefing_through">Covers changes up to %1$s.</string>
+    <string name="briefing_more">More new or changed items are waiting. This briefing stops before them, so marking it reviewed leaves them for the next briefing.</string>
+    <string name="briefing_since">Since your last review on %1$s.</string>
+    <string name="briefing_first">Nothing has been marked reviewed yet.</string>
+    <string name="briefing_offline">Couldn\'t reach the server. Showing the briefing that was already loaded.</string>
+    <string name="briefing_sign_in">Sign in again to refresh the briefing. Showing the briefing that was already loaded.</string>
+    <string name="briefing_unavailable">The server couldn\'t give the briefing right now. Showing the briefing that was already loaded.</string>
+    <string name="briefing_phone_offline">Couldn\'t reach the server, and no briefing has been loaded yet.</string>
+    <string name="briefing_phone_sign_in">Sign in to load the briefing.</string>
+    <string name="briefing_phone_unavailable">The server couldn\'t give the briefing right now, and none has been loaded yet.</string>
+    <string name="briefing_phone_only">This is not the server\'s briefing. It lists only what this phone can work out itself, using this phone\'s clock, and can\'t tell what is new or changed. It can\'t be marked reviewed.</string>
+    <string name="briefing_review_button">Mark briefing reviewed</string>
+    <string name="briefing_review_note">This covers only what is listed here. It doesn\'t acknowledge, resolve or snooze anything.</string>
+    <string name="briefing_review_done">Marked reviewed.</string>
+    <string name="briefing_review_done_at">Marked reviewed %1$s.</string>
+    <string name="briefing_review_unconfirmed">Not confirmed: the server didn\'t answer. Mark it reviewed again to send the same request.</string>
+    <string name="review_msg_reviewed">Marked reviewed.</string>
+    <string name="review_msg_already">This briefing was already marked reviewed.</string>
+    <string name="review_msg_not_confirmed">Not confirmed. The server didn\'t answer, so it may or may not have been recorded. Try again.</string>
+    <string name="review_msg_sign_in">Sign in again, then mark it reviewed.</string>
+    <string name="review_msg_gone">The server no longer has this briefing. Refresh to load the current one.</string>
+    <string name="review_msg_refused">The server didn\'t accept this review. Refresh and try again.</string>
+    <string name="review_msg_changed">A newer briefing was loaded. Look at it, then mark it reviewed.</string>
+    <string name="briefing_section_new">New</string>
+    <string name="briefing_section_changed">Changed</string>
+    <string name="briefing_section_overdue">Overdue</string>
+    <string name="briefing_section_unacknowledged">Not acknowledged yet</string>
+    <string name="briefing_section_emails">New emails</string>
+    <string name="briefing_nothing">Nothing new or changed since your last review, and nothing overdue or waiting for acknowledgement.</string>
+    <plurals name="briefing_not_on_phone">
+        <item quantity="one">%d item in this briefing isn\'t on this phone yet. It appears after the next sync.</item>
+        <item quantity="other">%d items in this briefing aren\'t on this phone yet. They appear after the next sync.</item>
+    </plurals>
+    <string name="briefing_review_blocked_missing">Some items or emails in this briefing aren\'t on this phone, so you can\'t have seen them here. Sync or refresh the briefing, then mark it reviewed.</string>
+    <string name="briefing_review_blocked_behind">Some items here are older on this phone than in the briefing. Sync first, then mark it reviewed.</string>
+    <string name="briefing_behind">A newer version hasn\'t synced to this phone yet</string>
+
+    <string name="label_follow_up">Follow up %1$s</string>
+    <string name="label_due_in_zone">Due %1$s (%2$s)</string>
+    <string name="label_due_unconfirmed">Date not confirmed: “%1$s”</string>
+    <string name="action_wait">Wait for a reply…</string>
+    <string name="action_wait_edit">Edit wait…</string>
+    <string name="action_set_due">Set due date…</string>
+    <string name="action_change_due">Change due date…</string>
+    <string name="action_confirm_due">Confirm due date…</string>
+
+    <string name="form_wait_title">Wait for a reply</string>
+    <string name="form_wait_body">The item stays open on your list, marked waiting. A follow-up time is only a note for you.</string>
+    <string name="form_due_title">Due date</string>
+    <string name="form_due_email_said">The email said: “%1$s”</string>
+    <string name="form_note">Note (optional)</string>
+    <string name="form_party">Waiting on (optional)</string>
+    <string name="form_follow_up_date">Follow-up date (yyyy-mm-dd, optional)</string>
+    <string name="form_due_date">Date (yyyy-mm-dd)</string>
+    <string name="form_time">Time (24-hour, hh:mm)</string>
+    <string name="form_zone">Times are in %1$s.</string>
+    <string name="form_today">Today</string>
+    <string name="form_tomorrow">Tomorrow</string>
+    <string name="form_in_a_week">In a week</string>
+    <string name="form_save">Save</string>
+    <string name="form_remove_due">Remove date</string>
+    <string name="form_pick_earlier">The first time (%1$s)</string>
+    <string name="form_pick_later">The second time (%1$s)</string>
+    <string name="problem_note_too_long">Use at most 500 characters in the note.</string>
+    <string name="problem_party_too_long">Use at most 200 characters for who you\'re waiting on.</string>
+    <!-- The hyphens are the literal ISO 8601 example the user must type (year-month-day, 2026-10-12);
+         an en dash here would show a date the parser rejects, so TypographyDashes is ignored for this string only. -->
+    <string name="problem_bad_date" tools:ignore="TypographyDashes">Write the date as year-month-day, for example 2026-10-12, between 2000 and 2099.</string>
+    <string name="problem_bad_time">Write the time as hours and minutes, for example 09:30 or 17:00.</string>
+    <string name="problem_date_missing">Enter a date.</string>
+    <string name="problem_follow_up_past">Pick a follow-up time in the future.</string>
+    <string name="problem_time_skipped">That time doesn\'t exist on that date because the clocks go forward. Pick another time.</string>
+    <string name="problem_time_repeats">The clocks go back that night, so that time happens twice. Which one do you mean?</string>
 </resources>

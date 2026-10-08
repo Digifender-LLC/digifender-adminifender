@@ -4,6 +4,7 @@ import com.digifender.adminifender.core.model.ConcernAction
 import com.digifender.adminifender.core.model.SendResult
 import java.io.IOException
 import java.time.Instant
+import java.time.format.DateTimeParseException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.KSerializer
@@ -39,7 +40,7 @@ const val MAX_RESPONSE_BYTES = 8L * 1024 * 1024
  * OkHttp adapter for [AdminifenderApi]. Error bodies are reduced to their fixed codes; nothing from a response is
  * logged.
  */
-class HttpApi(private val client: OkHttpClient, private val baseUrl: HttpUrl, private val tokens: AccessTokens) : AdminifenderApi, ArchiveApi {
+class HttpApi(private val client: OkHttpClient, private val baseUrl: HttpUrl, private val tokens: AccessTokens) : AdminifenderApi, ArchiveApi, BriefingApi {
     private val jsonType = "application/json; charset=utf-8".toMediaType()
 
     private fun url(path: String, query: Map<String, String?> = emptyMap()): HttpUrl {
@@ -86,6 +87,9 @@ class HttpApi(private val client: OkHttpClient, private val baseUrl: HttpUrl, pr
         ReadResult.Unavailable("network")
     } catch (_: IllegalArgumentException) {
         ReadResult.Unavailable("malformed_response")
+    } catch (_: NoSuchElementException) {
+        // A success body without its `data` envelope key.
+        ReadResult.Unavailable("malformed_response")
     }
 
     override suspend fun changes(after: Long, limit: Int) = read(url("sync/changes", mapOf("after" to after.toString(), "limit" to limit.toString())), ChangesPageDto.serializer())
@@ -118,6 +122,40 @@ class HttpApi(private val client: OkHttpClient, private val baseUrl: HttpUrl, pr
         ),
         SearchPageDto.serializer(),
     )
+
+    override suspend fun currentBriefing(): ReadResult<BriefingDto> = read(url("briefings/current"), BriefingDto.serializer())
+
+    override suspend fun reviewBriefing(id: String, idempotencyKey: String): ReviewResult {
+        if (!isBriefingId(id)) return ReviewResult.NotFound
+        return try {
+            val request = Request.Builder().url(url("briefings/$id/review")).header("idempotency-key", idempotencyKey).post("{}".toRequestBody(jsonType))
+            val response = execute(request) ?: return ReviewResult.SessionExpired
+            response.use {
+                val text = it.boundedBody()
+                if (it.isSuccessful) {
+                    val done = wireJson.decodeFromJsonElement(BriefingReviewedDto.serializer(), wireJson.parseToJsonElement(text).jsonObject.getValue("data"))
+                    return ReviewResult.Reviewed(done.id, done.reviewedThroughSeq, Instant.parse(done.reviewedAt).toEpochMilli())
+                }
+                val (code, _) = errorCode(text)
+                when {
+                    it.code == 401 -> ReviewResult.SessionExpired
+                    it.code == 404 -> ReviewResult.NotFound
+                    code == "already_reviewed" -> ReviewResult.AlreadyReviewed
+                    // A request still being processed under this key is retryable; the same key then replays its answer.
+                    it.code == 429 || it.code >= 500 || code == "request_in_progress" -> ReviewResult.NoAnswer
+                    else -> ReviewResult.Rejected(code)
+                }
+            }
+        } catch (_: IOException) {
+            ReviewResult.NoAnswer
+        } catch (_: IllegalArgumentException) {
+            ReviewResult.NoAnswer
+        } catch (_: NoSuchElementException) {
+            ReviewResult.NoAnswer
+        } catch (_: DateTimeParseException) {
+            ReviewResult.NoAnswer
+        }
+    }
 
     override suspend fun concernAction(concernId: String, idempotencyKey: String, expectedRevision: Int, action: ConcernAction): SendResult {
         val body = actionBody(expectedRevision, action).toString().toRequestBody(jsonType)

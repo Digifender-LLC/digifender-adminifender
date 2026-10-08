@@ -1,8 +1,10 @@
 package com.digifender.adminifender.core.data
 
+import com.digifender.adminifender.core.data.network.BriefingDto
 import com.digifender.adminifender.core.data.network.ChangesPageDto
 import com.digifender.adminifender.core.data.network.SyncChange
 import com.digifender.adminifender.core.data.network.toChange
+import com.digifender.adminifender.core.data.network.toDomain
 import com.digifender.adminifender.core.data.network.wireJson
 import com.digifender.adminifender.core.model.Due
 import com.digifender.adminifender.core.model.Importance
@@ -42,5 +44,24 @@ class DtoTest {
     fun refusesAProjectionWithAnUnknownStatus() {
         val page = wireJson.decodeFromString(ChangesPageDto.serializer(), contractFile("fixtures/v1/sync-changes/invalid/unknown-status.json"))
         assertThrows(IllegalArgumentException::class.java) { page.changes.single().toChange() }
+    }
+
+    @Test
+    fun parsesTheSharedBriefingFixtureAndItsConcernProjections() {
+        val dto = wireJson.decodeFromString(BriefingDto.serializer(), contractFile("fixtures/v1/briefing/valid/four-sections.json"))
+        assertEquals("4f8c0d2e-6a71-4c93-8e3f-5a6b7c8d9e0f", dto.id)
+        val overdue = dto.overdue.single().toDomain()!!
+        assertEquals(Due(ms("2026-10-05T16:00:00.000Z"), "Europe/London", "by 5pm Monday", 1), overdue.due)
+        val changed = dto.changedConcerns.single().toDomain()!!
+        assertEquals(Status.WAITING, changed.status)
+        assertEquals(Waiting("Asked for the new terms", "Landlord", ms("2026-10-12T09:00:00.000Z")), changed.waiting)
+        // A proposed date nobody confirmed: wording only, no instant.
+        assertEquals(Due(null, null, "next Thursday", 0), dto.unacknowledged.last().toDomain()!!.due)
+    }
+
+    @Test
+    fun aBriefingSummaryIsIgnoredUntilTheInferenceSliceDefinesIt() {
+        val text = contractFile("fixtures/v1/briefing/invalid/summary-before-inference.json")
+        assertEquals("4f8c0d2e-6a71-4c93-8e3f-5a6b7c8d9e0f", wireJson.decodeFromString(BriefingDto.serializer(), text).id)
     }
 }

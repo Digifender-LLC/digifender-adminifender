@@ -16,6 +16,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -33,12 +35,13 @@ import com.digifender.adminifender.core.data.platform.CredentialManagerPasskeys
 import com.digifender.adminifender.core.data.session.SessionState
 import com.digifender.adminifender.push.BRIEFING_DESTINATION
 import com.digifender.adminifender.push.PushRegistrationWorker
+import java.util.UUID
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 
 private const val CLOCK_TICK_MS = 30_000L
 
-private enum class Tab { INBOX, ARCHIVE, SETTINGS }
+private enum class Tab { INBOX, BRIEFING, ARCHIVE, SETTINGS }
 
 /** One open detail screen. The stack is saved as text: only IDs, never content (lld.md#android). */
 private sealed interface Route {
@@ -74,7 +77,10 @@ private fun SignedIn(container: AppContainer, destination: MutableStateFlow<Stri
     val inbox by inboxModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var tab by rememberSaveable { mutableStateOf(Tab.INBOX) }
+    val stay = rememberSaveable { UUID.randomUUID().toString() }
     var saved by rememberSaveable { mutableStateOf("") }
+    // Bumped by each notification that names the briefing, so one arriving while it is already showing still refreshes it.
+    var briefingPushes by rememberSaveable { mutableIntStateOf(0) }
     val stack = decode(saved)
     fun open(route: Route) {
         saved = encode(stack + route)
@@ -94,7 +100,8 @@ private fun SignedIn(container: AppContainer, destination: MutableStateFlow<Stri
     val target by destination.collectAsStateWithLifecycle()
     LaunchedEffect(target) {
         val t = target ?: return@LaunchedEffect
-        tab = Tab.INBOX
+        tab = if (t == BRIEFING_DESTINATION) Tab.BRIEFING else Tab.INBOX
+        if (t == BRIEFING_DESTINATION) briefingPushes += 1
         saved = if (t == BRIEFING_DESTINATION) "" else encode(listOf(Route.ConcernRoute(t)))
         destination.value = null
     }
@@ -105,6 +112,7 @@ private fun SignedIn(container: AppContainer, destination: MutableStateFlow<Stri
             if (stack.isEmpty()) {
                 NavigationBar {
                     NavigationBarItem(selected = tab == Tab.INBOX, onClick = { tab = Tab.INBOX }, icon = {}, label = { Text(stringResource(R.string.nav_inbox)) })
+                    NavigationBarItem(selected = tab == Tab.BRIEFING, onClick = { tab = Tab.BRIEFING }, icon = {}, label = { Text(stringResource(R.string.nav_briefing)) })
                     NavigationBarItem(selected = tab == Tab.ARCHIVE, onClick = { tab = Tab.ARCHIVE }, icon = {}, label = { Text(stringResource(R.string.nav_archive)) })
                     NavigationBarItem(selected = tab == Tab.SETTINGS, onClick = { tab = Tab.SETTINGS }, icon = {}, label = { Text(stringResource(R.string.nav_settings)) })
                 }
@@ -123,27 +131,31 @@ private fun SignedIn(container: AppContainer, destination: MutableStateFlow<Stri
             when (val route = stack.lastOrNull()) {
                 is Route.ConcernRoute -> {
                     val id = route.id
-                    val concernModel = viewModel(key = "concern-$id") { ConcernViewModel(id, container.concerns) }
-                    val concern by concernModel.state.collectAsStateWithLifecycle()
-                    val message by concernModel.message.collectAsStateWithLifecycle()
-                    val sourceIds = concern.view?.shown?.sourceIds.orEmpty()
-                    val sources by remember(sourceIds) { container.archive.sources(sourceIds) }.collectAsStateWithLifecycle(emptyList())
-                    TextButton(onClick = ::back, modifier = Modifier.padding(horizontal = 8.dp)) { Text(stringResource(R.string.back)) }
-                    message?.let {
-                        Text(
-                            stringResource(
-                                when (it) {
-                                    ActMessage.QUEUED -> R.string.act_queued
-                                    ActMessage.NOT_AVAILABLE -> R.string.act_not_available
-                                    ActMessage.SNOOZE_IN_PAST -> R.string.act_snooze_past
-                                    ActMessage.GONE -> R.string.act_gone
-                                },
-                            ),
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                        )
+                    // Everything remembered below (open forms, typed text) belongs to this concern only.
+                    key(id) {
+                        val concernModel = viewModel(key = "concern-$id") { ConcernViewModel(id, container.concerns) }
+                        val concern by concernModel.state.collectAsStateWithLifecycle()
+                        val message by concernModel.message.collectAsStateWithLifecycle()
+                        val sourceIds = concern.view?.shown?.sourceIds.orEmpty()
+                        val sources by remember(sourceIds) { container.archive.sources(sourceIds) }.collectAsStateWithLifecycle(emptyList())
+                        TextButton(onClick = ::back, modifier = Modifier.padding(horizontal = 8.dp)) { Text(stringResource(R.string.back)) }
+                        message?.let {
+                            Text(
+                                stringResource(
+                                    when (it) {
+                                        ActMessage.QUEUED -> R.string.act_queued
+                                        ActMessage.NOT_AVAILABLE -> R.string.act_not_available
+                                        ActMessage.SNOOZE_IN_PAST -> R.string.act_snooze_past
+                                        ActMessage.GONE -> R.string.act_gone
+                                        ActMessage.WRONG_ITEM -> R.string.act_wrong_item
+                                    },
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                            )
+                        }
+                        ConcernScreen(concern, now, { target, action -> concernModel.act(action, target) }, concernModel::reapply, concernModel::discard, sources, { open(Route.SourceRoute(it)) })
                     }
-                    ConcernScreen(concern, now, concernModel::act, concernModel::reapply, concernModel::discard, sources, { open(Route.SourceRoute(it)) })
                 }
                 is Route.SourceRoute -> {
                     val id = route.id
@@ -155,6 +167,14 @@ private fun SignedIn(container: AppContainer, destination: MutableStateFlow<Stri
                 }
                 null -> when (tab) {
                     Tab.INBOX -> InboxScreen(inbox, now, inboxModel::select, inboxModel::refresh, { open(Route.ConcernRoute(it)) })
+                    Tab.BRIEFING -> {
+                        // One briefing model per signed-in stay: sign-out leaves this composition and the next sign-in starts clean.
+                        val briefingModel = viewModel(key = "briefing-$stay") { BriefingViewModel(container.briefing, container.concerns, container.archive::sources, container.clock) }
+                        val briefing by briefingModel.state.collectAsStateWithLifecycle()
+                        // Runs on every entry to this screen (tab switch, back from a concern) and on each briefing push.
+                        LaunchedEffect(briefingPushes) { briefingModel.onOpened() }
+                        BriefingScreen(briefing, now, briefingModel::refresh, briefingModel::markReviewed, { open(Route.ConcernRoute(it)) }, { open(Route.SourceRoute(it)) })
+                    }
                     Tab.ARCHIVE -> {
                         val archiveModel = viewModel { ArchiveViewModel(container.archive, container.clock) }
                         val archive by archiveModel.state.collectAsStateWithLifecycle()

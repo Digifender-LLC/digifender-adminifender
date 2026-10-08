@@ -128,3 +128,22 @@ interface SyncStateDao {
     @Upsert
     suspend fun put(row: SyncStateEntity)
 }
+
+@Dao
+interface BriefingDao {
+    @Query("SELECT * FROM briefing LIMIT 1")
+    fun observe(): Flow<BriefingEntity?>
+
+    @Query("SELECT * FROM briefing LIMIT 1")
+    suspend fun get(): BriefingEntity?
+
+    @Query("DELETE FROM briefing")
+    suspend fun clear()
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun put(row: BriefingEntity)
+
+    /** Returns 0 when the stored briefing is no longer [id]. */
+    @Query("UPDATE briefing SET reviewPhase = :phase, reviewKey = :key, reviewedAt = :reviewedAt WHERE briefingId = :id")
+    suspend fun setReview(id: String, phase: String, key: String?, reviewedAt: Long?): Int
+}

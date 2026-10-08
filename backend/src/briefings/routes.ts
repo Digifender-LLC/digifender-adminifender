@@ -18,31 +18,79 @@ async function reviewState(db: D1Database): Promise<ReviewState> {
   return (await db.prepare('SELECT last_meaningful_at, last_reviewed_seq FROM review_state WHERE id = ?').bind('owner').first<ReviewState>()) ?? { last_meaningful_at: null, last_reviewed_seq: 0 };
 }
 
+/** D1 allows 100 bound parameters per query (developers.cloudflare.com/d1/platform/limits, checked 2026-10-08); a briefing can name 400 concerns. */
+const ID_BATCH = 90;
+function inBatches(ids: string[]): string[][] {
+  const out: string[][] = [];
+  for (let i = 0; i < ids.length; i += ID_BATCH) out.push(ids.slice(i, i + ID_BATCH));
+  return out;
+}
+
 async function concernsByIds(db: D1Database, ids: string[]): Promise<ConcernRow[]> {
-  if (ids.length === 0) return [];
-  const { results } = await db.prepare(`SELECT ${CONCERN_COLUMNS.join(', ')} FROM concerns WHERE id IN (${ids.map(() => '?').join(',')})`).bind(...ids).all<ConcernRow>();
+  const rows: ConcernRow[] = [];
+  for (const batch of inBatches(ids)) {
+    const { results } = await db.prepare(`SELECT ${CONCERN_COLUMNS.join(', ')} FROM concerns WHERE id IN (${batch.map(() => '?').join(',')})`).bind(...batch).all<ConcernRow>();
+    rows.push(...results);
+  }
+  return rows;
+}
+
+interface Attention {
+  id: string;
+  /** Earliest and latest attention change after the review cursor; the earliest orders the cap, the latest the cards. */
+  first_seq: number;
+  seq: number;
+}
+
+/**
+ * Concerns with attention events in (after, upTo], oldest first and at most one past the section cap. A concern is
+ * new when its creation (or split) falls in the range, which then holds its earliest event; otherwise it changed.
+ */
+async function attentionConcerns(db: D1Database, after: number, upTo: number, isNew: boolean): Promise<Attention[]> {
+  const marks = ATTENTION_EVENTS.map(() => '?').join(',');
+  const { results } = await db
+    .prepare(
+      `SELECT c.entity_id AS id, MIN(c.seq) AS first_seq, MAX(c.seq) AS seq
+       FROM changes c JOIN concern_events e ON e.concern_id = c.entity_id AND e.to_revision = c.revision
+       WHERE c.entity_type = 'concern' AND c.seq > ? AND c.seq <= ? AND e.kind IN (${marks})
+       GROUP BY c.entity_id HAVING MAX(CASE WHEN e.kind IN ('created', 'split_from') THEN 1 ELSE 0 END) = ?
+       ORDER BY first_seq LIMIT ?`,
+    )
+    .bind(after, upTo, ...ATTENTION_EVENTS, isNew ? 1 : 0, SECTION_LIMIT + 1)
+    .all<Attention>();
   return results;
 }
 
 /**
  * GET /briefings/current (lld.md#briefings): since the persisted review cursor, new and changed concerns, plus
  * overdue and unacknowledged unresolved items. The snapshot is stored so Mark reviewed covers only what was shown.
+ * New and changed concerns and new sources are capped per section; when work exceeds a cap, `snapshotSeq` stops before
+ * the first omitted item and `hasMore` is true, so repeated reviewed briefings reach every item in order.
  */
 export async function currentBriefing(request: Request, env: Env, now: number) {
   await authenticate(request, env, now);
   const db = env.CONTROL_DB;
   const state = await reviewState(db);
-  const snapshotSeq = (await db.prepare('SELECT COALESCE(MAX(seq), 0) AS seq FROM changes').first<{ seq: number }>())?.seq ?? 0;
-  const marks = ATTENTION_EVENTS.map(() => '?').join(',');
-  const { results: touched } = await db
-    .prepare(
-      `SELECT c.entity_id AS id, MAX(CASE WHEN e.kind IN ('created', 'split_from') THEN 1 ELSE 0 END) AS is_new, MAX(c.seq) AS seq
-       FROM changes c JOIN concern_events e ON e.concern_id = c.entity_id AND e.to_revision = c.revision
-       WHERE c.entity_type = 'concern' AND c.seq > ? AND c.seq <= ? AND e.kind IN (${marks})
-       GROUP BY c.entity_id ORDER BY seq DESC LIMIT ?`,
-    )
-    .bind(state.last_reviewed_seq, snapshotSeq, ...ATTENTION_EVENTS, SECTION_LIMIT * 2)
-    .all<{ id: string; is_new: number; seq: number }>();
+  const latestSeq = (await db.prepare('SELECT COALESCE(MAX(seq), 0) AS seq FROM changes').first<{ seq: number }>())?.seq ?? 0;
+  // Each list is read oldest first with one row past its cap. If a cap overflows, the snapshot ends just before the
+  // first omitted item, so Mark reviewed can never move the cursor over work that was not shown.
+  const newConcerns = await attentionConcerns(db, state.last_reviewed_seq, latestSeq, true);
+  const changedConcerns = await attentionConcerns(db, state.last_reviewed_seq, latestSeq, false);
+  const { results: readySources } = await db
+    .prepare("SELECT id, ready_seq AS seq, ready_seq AS first_seq FROM source_registry WHERE ready_seq > ? AND ready_seq <= ? AND state = 'ready' AND admission = 'normal' ORDER BY ready_seq LIMIT ?")
+    .bind(state.last_reviewed_seq, latestSeq, SECTION_LIMIT + 1)
+    .all<{ id: string; seq: number; first_seq: number }>();
+  let snapshotSeq = latestSeq;
+  for (const list of [newConcerns, changedConcerns, readySources]) {
+    if (list.length > SECTION_LIMIT) snapshotSeq = Math.min(snapshotSeq, list[SECTION_LIMIT]!.first_seq - 1);
+  }
+  const covered = <T extends { first_seq: number }>(list: T[]) => list.filter((t) => t.first_seq <= snapshotSeq).slice(0, SECTION_LIMIT);
+  const byRecent = <T extends { seq: number }>(list: T[]) => [...list].sort((a, b) => b.seq - a.seq);
+  const touched = [
+    ...byRecent(covered(newConcerns)).map((t) => ({ ...t, is_new: true })),
+    ...byRecent(covered(changedConcerns)).map((t) => ({ ...t, is_new: false })),
+  ];
+  const newSources = byRecent(covered(readySources));
   const touchedRows = new Map((await concernsByIds(db, touched.map((t) => t.id))).map((r) => [r.id, r]));
   const { results: overdue } = await db
     .prepare(`SELECT ${CONCERN_COLUMNS.join(', ')} FROM concerns WHERE status <> 'resolved' AND due_at IS NOT NULL AND due_at < ? ORDER BY due_at, id LIMIT ?`)
@@ -52,10 +100,6 @@ export async function currentBriefing(request: Request, env: Env, now: number) {
     .prepare(`SELECT ${CONCERN_COLUMNS.join(', ')} FROM concerns WHERE status IN ('open', 'waiting') AND acknowledged_at IS NULL ORDER BY updated_at DESC, id DESC LIMIT ?`)
     .bind(SECTION_LIMIT)
     .all<ConcernRow>();
-  const { results: newSources } = await db
-    .prepare("SELECT id FROM source_registry WHERE ready_seq > ? AND ready_seq <= ? AND state = 'ready' AND admission = 'normal' ORDER BY ready_seq DESC LIMIT ?")
-    .bind(state.last_reviewed_seq, snapshotSeq, SECTION_LIMIT)
-    .all<{ id: string }>();
 
   const shown = [...touchedRows.values(), ...overdue, ...unacknowledged];
   const included: Record<string, number> = {};
@@ -70,12 +114,14 @@ export async function currentBriefing(request: Request, env: Env, now: number) {
     .bind(snapshotSeq, includedJson)
     .first<{ id: string; through_time: number }>();
   if (!briefing) {
-    briefing = { id: crypto.randomUUID(), through_time: now };
+    // A complete snapshot is current as of now; a bounded one is only current as of its last covered change.
+    const lastCovered = snapshotSeq < latestSeq ? await db.prepare('SELECT created_at FROM changes WHERE seq <= ? ORDER BY seq DESC LIMIT 1').bind(snapshotSeq).first<{ created_at: number }>() : null;
+    briefing = { id: crypto.randomUUID(), through_time: Math.min(now, lastCovered?.created_at ?? now) };
     await db.prepare('INSERT INTO briefings(id, snapshot_seq, through_time, included_revisions_json, summary_json, created_at) VALUES (?, ?, ?, ?, NULL, ?)')
-      .bind(briefing.id, snapshotSeq, now, includedJson, now)
+      .bind(briefing.id, snapshotSeq, briefing.through_time, includedJson, now)
       .run();
   }
-  const pick = (isNew: boolean) => touched.filter((t) => (t.is_new === 1) === isNew).slice(0, SECTION_LIMIT).flatMap((t) => (touchedRows.has(t.id) ? [view(touchedRows.get(t.id)!)] : []));
+  const pick = (isNew: boolean) => touched.filter((t) => t.is_new === isNew).flatMap((t) => (touchedRows.has(t.id) ? [view(touchedRows.get(t.id)!)] : []));
   return {
     id: briefing.id,
     snapshotSeq,
@@ -86,6 +132,7 @@ export async function currentBriefing(request: Request, env: Env, now: number) {
     overdue: overdue.map(view),
     unacknowledged: unacknowledged.map(view),
     newSourceIds: newSources.map((s) => s.id),
+    hasMore: snapshotSeq < latestSeq,
     // Optional inference summaries arrive with the inference slice; deterministic cards are always present.
     summary: null,
   };
@@ -93,15 +140,16 @@ export async function currentBriefing(request: Request, env: Env, now: number) {
 
 async function sourceIdsFor(db: D1Database, ids: string[]): Promise<Map<string, string[]>> {
   const out = new Map<string, string[]>(ids.map((id) => [id, []]));
-  if (ids.length === 0) return out;
-  const { results } = await db
-    .prepare(
-      `SELECT cs.concern_id, cs.source_id FROM concern_sources cs JOIN source_registry r ON r.id = cs.source_id
-       WHERE cs.concern_id IN (${ids.map(() => '?').join(',')}) AND r.state NOT IN ('deleting', 'deleted') ORDER BY r.received_at, r.id`,
-    )
-    .bind(...ids)
-    .all<{ concern_id: string; source_id: string }>();
-  for (const r of results) out.get(r.concern_id)?.push(r.source_id);
+  for (const batch of inBatches(ids)) {
+    const { results } = await db
+      .prepare(
+        `SELECT cs.concern_id, cs.source_id FROM concern_sources cs JOIN source_registry r ON r.id = cs.source_id
+         WHERE cs.concern_id IN (${batch.map(() => '?').join(',')}) AND r.state NOT IN ('deleting', 'deleted') ORDER BY r.received_at, r.id`,
+      )
+      .bind(...batch)
+      .all<{ concern_id: string; source_id: string }>();
+    for (const r of results) out.get(r.concern_id)?.push(r.source_id);
+  }
   return out;
 }
 

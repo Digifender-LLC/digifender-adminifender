@@ -21,8 +21,11 @@ sealed interface FreshLine {
     data class Days(val n: Long) : FreshLine
 }
 
-fun freshLine(freshness: Freshness, nowMs: Long): FreshLine {
-    val last = freshness.lastSyncedAtMs ?: return FreshLine.NeverSynced
+fun freshLine(freshness: Freshness, nowMs: Long): FreshLine = ageLine(freshness.lastSyncedAtMs, nowMs)
+
+/** Age of any read, for example when a briefing was loaded; the same wording rules as [freshLine]. */
+fun ageLine(atMs: Long?, nowMs: Long): FreshLine {
+    val last = atMs ?: return FreshLine.NeverSynced
     val minutes = maxOf(0, nowMs - last) / 60_000
     return when {
         minutes < 1 -> FreshLine.JustNow
@@ -32,10 +35,7 @@ fun freshLine(freshness: Freshness, nowMs: Long): FreshLine {
     }
 }
 
-/**
- * One-tap controls shown on the detail screen. Waiting and due dates need input forms and arrive later; mark-read
- * happens on open.
- */
+/** One-tap controls shown on the detail screen. Waiting and due dates open forms ([formActions]); mark-read happens on open. */
 fun quickActions(status: Status): List<ActionKind> =
     availableActions(status).filter { it != ActionKind.WAIT && it != ActionKind.SET_DUE && it != ActionKind.MARK_READ }
 

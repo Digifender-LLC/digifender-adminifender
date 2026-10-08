@@ -52,7 +52,8 @@ class ConcernRepository(
     private val clock: () -> Long,
     private val newKey: () -> String = { UUID.randomUUID().toString() },
 ) {
-    private fun views(): Flow<List<ConcernView>> = combine(cache.concerns(), cache.mutations()) { concerns, mutations -> overlay(concerns, mutations, clock()) }
+    /** Every cached concern with queued edits applied, for screens that list items by ID (the briefing). */
+    fun views(): Flow<List<ConcernView>> = combine(cache.concerns(), cache.mutations()) { concerns, mutations -> overlay(concerns, mutations, clock()) }
 
     fun inbox(filter: InboxFilter): Flow<List<ConcernView>> = views().map { inbox(it, filter) }
 
