@@ -31,7 +31,7 @@ class RoomArchiveCacheTest {
     private lateinit var cache: RoomArchiveCache
 
     @get:Rule
-    val migrations = MigrationTestHelper(InstrumentationRegistry.getInstrumentation(), AppDatabase::class.java)
+    val migrations = migrationHelper()
 
     private fun source(id: String, revision: Int = 1, subject: String = "Water bill", quarantined: Boolean = false, from: String = "billing@water.example", at: Long = 100) =
         SourceSummary(id, revision, "ready", quarantined, "hybrid", at, subject, listOf(from))

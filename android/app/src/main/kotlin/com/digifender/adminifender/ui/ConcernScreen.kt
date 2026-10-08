@@ -25,6 +25,9 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.digifender.adminifender.R
+import com.digifender.adminifender.core.data.network.ChatScope
+import com.digifender.adminifender.core.data.network.ScopeKind
+import com.digifender.adminifender.core.data.network.isRecordId
 import com.digifender.adminifender.core.data.network.SourceSummary
 import com.digifender.adminifender.core.data.repository.ConcernView
 import com.digifender.adminifender.core.data.sync.QueuedMutation
@@ -44,6 +47,8 @@ fun ConcernScreen(
     onDiscard: (String) -> Unit,
     sources: List<SourceSummary>,
     onOpenSource: (String) -> Unit,
+    /** Starts (or returns to) a chat scoped to this concern or its service. */
+    onAsk: (ChatScope) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val view = state.view
@@ -92,6 +97,13 @@ fun ConcernScreen(
                     }
                     else -> Unit
                 }
+            }
+        }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = { onAsk(ChatScope(ScopeKind.CONCERN, c.id)) }) { Text(stringResource(R.string.chat_ask_concern)) }
+            // Only a service the Worker linked to this concern; the phone has no list of services to offer otherwise.
+            c.serviceId?.takeIf { isRecordId(it) }?.let { service ->
+                OutlinedButton(onClick = { onAsk(ChatScope(ScopeKind.SERVICE, service)) }) { Text(stringResource(R.string.chat_ask_service)) }
             }
         }
         // The dialogs keep their typed values in remembered state; keying by concern gives each concern its own.

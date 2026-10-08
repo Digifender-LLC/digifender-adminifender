@@ -12,6 +12,7 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.intOrNull
@@ -40,7 +41,7 @@ const val MAX_RESPONSE_BYTES = 8L * 1024 * 1024
  * OkHttp adapter for [AdminifenderApi]. Error bodies are reduced to their fixed codes; nothing from a response is
  * logged.
  */
-class HttpApi(private val client: OkHttpClient, private val baseUrl: HttpUrl, private val tokens: AccessTokens) : AdminifenderApi, ArchiveApi, BriefingApi {
+class HttpApi(private val client: OkHttpClient, private val baseUrl: HttpUrl, private val tokens: AccessTokens) : AdminifenderApi, ArchiveApi, BriefingApi, ChatApi {
     private val jsonType = "application/json; charset=utf-8".toMediaType()
 
     private fun url(path: String, query: Map<String, String?> = emptyMap()): HttpUrl {
@@ -154,6 +155,106 @@ class HttpApi(private val client: OkHttpClient, private val baseUrl: HttpUrl, pr
             ReviewResult.NoAnswer
         } catch (_: DateTimeParseException) {
             ReviewResult.NoAnswer
+        }
+    }
+
+    override suspend fun createThread(idempotencyKey: String, scope: ChatScope): ThreadResult {
+        if (!scope.wellFormed) return ThreadResult.Refused("invalid_scope")
+        val body = buildJsonObject {
+            put("scope", buildJsonObject {
+                put("kind", scope.kind.wire)
+                scope.id?.let { put("id", it) }
+            })
+        }.toString()
+        return try {
+            val response = execute(Request.Builder().url(url("chat/threads")).header("idempotency-key", idempotencyKey).post(body.toRequestBody(jsonType))) ?: return ThreadResult.SessionExpired
+            response.use {
+                val text = it.boundedBody()
+                if (it.isSuccessful) {
+                    return ThreadResult.Created(wireJson.decodeFromJsonElement(ThreadDto.serializer(), wireJson.parseToJsonElement(text).jsonObject.getValue("data")))
+                }
+                val (code, _) = errorCode(text)
+                when {
+                    it.code == 401 -> ThreadResult.SessionExpired
+                    it.code == 429 || it.code >= 500 || code == "request_in_progress" -> ThreadResult.NoAnswer
+                    else -> ThreadResult.Refused(code)
+                }
+            }
+        } catch (_: IOException) {
+            ThreadResult.NoAnswer
+        } catch (_: IllegalArgumentException) {
+            ThreadResult.NoAnswer
+        } catch (_: NoSuchElementException) {
+            ThreadResult.NoAnswer
+        }
+    }
+
+    override suspend fun postTurn(threadId: String, turnId: String, content: String): PostResult {
+        if (!isRecordId(threadId) || !isRecordId(turnId)) return PostResult.Refused("invalid_id")
+        val body = buildJsonObject {
+            put("turnId", turnId)
+            put("content", content)
+        }.toString()
+        return try {
+            // The turn ID is also the Idempotency-Key, so a resend can only ever be the same request.
+            val request = Request.Builder().url(url("chat/threads/$threadId/turns")).header("idempotency-key", turnId).post(body.toRequestBody(jsonType))
+            val response = execute(request) ?: return PostResult.SessionExpired
+            response.use {
+                val text = it.boundedBody()
+                if (it.isSuccessful) {
+                    val accepted = wireJson.decodeFromJsonElement(TurnAcceptedDto.serializer(), wireJson.parseToJsonElement(text).jsonObject.getValue("data"))
+                    // An answer about another turn confirms nothing about this one.
+                    return if (accepted.turnId == turnId) PostResult.Accepted(accepted.state) else PostResult.NoAnswer
+                }
+                val (code, _) = errorCode(text)
+                when {
+                    it.code == 401 -> PostResult.SessionExpired
+                    it.code == 429 || it.code >= 500 || code == "request_in_progress" -> PostResult.NoAnswer
+                    else -> PostResult.Refused(code)
+                }
+            }
+        } catch (_: IOException) {
+            PostResult.NoAnswer
+        } catch (_: IllegalArgumentException) {
+            PostResult.NoAnswer
+        } catch (_: NoSuchElementException) {
+            PostResult.NoAnswer
+        }
+    }
+
+    override suspend fun turn(turnId: String): ReadResult<TurnDto> {
+        if (!isRecordId(turnId)) return ReadResult.Unavailable("not_found")
+        return read(url("chat/turns/$turnId"), TurnDto.serializer())
+    }
+
+    override suspend fun history(threadId: String, before: String?): ReadResult<HistoryDto> {
+        if (!isRecordId(threadId) || (before != null && !isRecordId(before))) return ReadResult.Unavailable("not_found")
+        return read(url("chat/threads/$threadId/turns", mapOf("before" to before)), HistoryDto.serializer())
+    }
+
+    override suspend fun cancel(turnId: String, idempotencyKey: String): CancelResult {
+        if (!isRecordId(turnId)) return CancelResult.NotFound
+        return try {
+            val response = execute(Request.Builder().url(url("chat/turns/$turnId/cancel")).header("idempotency-key", idempotencyKey).post("{}".toRequestBody(jsonType))) ?: return CancelResult.SessionExpired
+            response.use {
+                val text = it.boundedBody()
+                if (it.isSuccessful) return CancelResult.Cancelled
+                val (code, details) = errorCode(text)
+                when {
+                    it.code == 401 -> CancelResult.SessionExpired
+                    it.code == 404 -> CancelResult.NotFound
+                    code == "already_dispatched" -> CancelResult.AlreadyDispatched
+                    code == "not_cancellable" -> CancelResult.NotCancellable(details?.get("state")?.jsonPrimitive?.contentOrNull)
+                    it.code == 429 || it.code >= 500 || code == "request_in_progress" -> CancelResult.NoAnswer
+                    else -> CancelResult.Refused(code)
+                }
+            }
+        } catch (_: IOException) {
+            CancelResult.NoAnswer
+        } catch (_: IllegalArgumentException) {
+            CancelResult.NoAnswer
+        } catch (_: NoSuchElementException) {
+            CancelResult.NoAnswer
         }
     }
 

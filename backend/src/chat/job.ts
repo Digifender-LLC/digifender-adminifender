@@ -10,6 +10,7 @@ import { POLICY_REVISION_SQL, type Settings, loadSettings } from '../inference/s
 import { parseModelJson } from '../inference/triage-output';
 import { CLAIM_GUARD, type ClaimedJob, type JobResult, guardParams } from '../jobs/runner';
 import { type ChatAnswer, validateAnswer } from './answer';
+import { contextOf } from './provenance';
 import { type Evidence, type Scope, retrieve } from './retrieval';
 
 export const CHAT_TASK = 'chat';
@@ -64,8 +65,9 @@ export function answerChecker(evidence: Evidence[]) {
 
 /**
  * Persists the answer and its completion in one statement, so a turn is never shown complete without its
- * answer. Cited excerpts and every source the model was given are recorded, so deleting any of them later
- * finds and removes the answer text.
+ * answer. Cited excerpts are recorded, and so is every source the model was given with the privacy it had then
+ * (`context`), so deleting any of them finds and removes the answer text and a later, stricter policy on any of
+ * them is recognised when the turn is read.
  */
 export function completeTurnStatement(
   db: D1Database,
@@ -84,7 +86,7 @@ export function completeTurnStatement(
       `UPDATE chat_turns SET state = 'complete', answer = ?, output_json = ?, citations_json = ?, policy_revision = ?, reason = ?, error_code = NULL, completed_at = ?
        WHERE id = ? AND state = ?${guards.map((g) => ` AND ${g.sql}`).join('')}`,
     )
-    .bind(answer.answer, JSON.stringify(answer), JSON.stringify({ cited: refs, context: [...new Set(evidence.map((e) => e.sourceId))] }), fields.policyRevision, fields.reason, now, turnId, fromState, ...guards.flatMap((g) => g.params));
+    .bind(answer.answer, JSON.stringify(answer), JSON.stringify({ cited: refs, context: contextOf(evidence) }), fields.policyRevision, fields.reason, now, turnId, fromState, ...guards.flatMap((g) => g.params));
 }
 
 /** A turn outcome written with the job's settlement; the claim guard keeps a stale run from changing it. */

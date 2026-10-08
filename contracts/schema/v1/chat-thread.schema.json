@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://adminifender.invalid/schema/v1/chat-thread.schema.json",
+  "title": "POST /chat/threads data and the thread inside a history page (lld.md#chat)",
+  "description": "A chat conversation as the Worker stores it. The scope is fixed for the thread's life and shown before any question is sent; an `all` scope has no id and every other kind has one.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "scope", "createdAt"],
+  "properties": {
+    "id": { "$ref": "common.schema.json#/$defs/uuid" },
+    "scope": { "$ref": "#/$defs/scope" },
+    "createdAt": { "$ref": "common.schema.json#/$defs/timestamp" }
+  },
+  "$defs": {
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": { "enum": ["all", "concern", "source", "service"] },
+        "id": { "$ref": "common.schema.json#/$defs/uuid" }
+      },
+      "if": { "properties": { "kind": { "const": "all" } } },
+      "then": { "properties": { "id": false } },
+      "else": { "required": ["id"] }
+    }
+  }
+}

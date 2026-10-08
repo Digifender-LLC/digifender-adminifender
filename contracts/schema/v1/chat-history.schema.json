@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://adminifender.invalid/schema/v1/chat-history.schema.json",
+  "title": "GET /chat/threads/{id}/turns data (lld.md#chat)",
+  "description": "Up to 50 saved turns, oldest first, in the order the Worker stored them. `hasMore` says earlier turns exist; then `nextBefore` is the ID of this page's oldest turn and is what the next request sends as `before`, so a client never derives a paging anchor from its own clock or its own record. `nextBefore` is null exactly when `hasMore` is false. Each turn is the same shape as a single turn read and is judged against current privacy on every read, so a later page cannot bring back an answer that no longer holds.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "thread",
+    "turns",
+    "hasMore",
+    "nextBefore"
+  ],
+  "properties": {
+    "thread": {
+      "$ref": "chat-thread.schema.json"
+    },
+    "turns": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "$ref": "chat-turn.schema.json"
+      }
+    },
+    "hasMore": {
+      "type": "boolean"
+    },
+    "nextBefore": {
+      "oneOf": [
+        {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "hasMore": {
+            "const": true
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "nextBefore": {
+            "type": "string"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "nextBefore": {
+            "type": "null"
+          }
+        }
+      }
+    }
+  ]
+}

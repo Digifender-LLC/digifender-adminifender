@@ -32,7 +32,7 @@ class RoomBriefingCacheTest {
     private lateinit var cache: RoomBriefingCache
 
     @get:Rule
-    val migrations = MigrationTestHelper(InstrumentationRegistry.getInstrumentation(), AppDatabase::class.java)
+    val migrations = migrationHelper()
 
     private fun briefing(id: String, seq: Long = 5) =
         Briefing(id, seq, 100, null, 200, listOf(BriefingItem("c1", 2)), emptyList(), listOf(BriefingItem("c2", 3)), listOf(BriefingItem("c1", 2)), listOf("s1"))

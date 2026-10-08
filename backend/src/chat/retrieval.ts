@@ -50,6 +50,15 @@ export async function scopeSourceIds(db: D1Database, scope: Scope): Promise<stri
   return (await db.prepare(sql).bind(scope.id).all<{ source_id: string }>()).results.map((r) => r.source_id);
 }
 
+/** D1 allows 100 bound parameters per statement; lists are read in slices of at most this many. */
+const BIND_LIMIT = 90;
+
+function slices<T>(items: readonly T[]): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += BIND_LIMIT) out.push(items.slice(i, i + BIND_LIMIT));
+  return out;
+}
+
 interface Eligible {
   privacy: string;
   revision: number;
@@ -59,8 +68,7 @@ interface Eligible {
 async function eligibleSources(db: D1Database, ids: string[] | null, modelOnly = true): Promise<Map<string, Eligible> | null> {
   if (ids === null) return null;
   const out = new Map<string, Eligible>();
-  for (let i = 0; i < ids.length; i += 90) {
-    const slice = ids.slice(i, i + 90);
+  for (const slice of slices(ids)) {
     const { results } = await db
       .prepare(`SELECT id, privacy, revision FROM source_registry WHERE id IN (${slice.map(() => '?').join(',')}) AND state = 'ready' AND admission = 'normal'${modelOnly ? " AND privacy IN ('hybrid', 'local_only')" : ''}`)
       .bind(...slice)
@@ -84,12 +92,13 @@ interface Row {
 
 async function publishedGenerations(db: D1Database, attachmentIds: string[]): Promise<Set<string>> {
   const out = new Set<string>();
-  if (attachmentIds.length === 0) return out;
-  const { results } = await db
-    .prepare(`SELECT attachment_id, active_generation FROM attachment_processing WHERE attachment_id IN (${attachmentIds.map(() => '?').join(',')}) AND active_generation IS NOT NULL`)
-    .bind(...attachmentIds)
-    .all<{ attachment_id: string; active_generation: string }>();
-  for (const r of results) out.add(`${r.attachment_id}\n${r.active_generation}`);
+  for (const slice of slices(attachmentIds)) {
+    const { results } = await db
+      .prepare(`SELECT attachment_id, active_generation FROM attachment_processing WHERE attachment_id IN (${slice.map(() => '?').join(',')}) AND active_generation IS NOT NULL`)
+      .bind(...slice)
+      .all<{ attachment_id: string; active_generation: string }>();
+    for (const r of results) out.add(`${r.attachment_id}\n${r.active_generation}`);
+  }
   return out;
 }
 
@@ -165,16 +174,23 @@ export async function retrieve(env: Env, scope: Scope, question: string): Promis
 export async function loadEvidence(env: Env, chunkIds: string[], options: { modelOnly: boolean } = { modelOnly: true }): Promise<Evidence[]> {
   if (chunkIds.length === 0) return [];
   const db = env.CONTROL_DB;
-  const heads = [...new Set(chunkIds.map((id) => id.slice(0, 36)))];
-  const marks = heads.map(() => '?').join(',');
+  const wanted = [...new Set(chunkIds)];
+  const heads = [...new Set(wanted.map((id) => id.slice(0, 36)))];
   const owners = new Map<string, string>(heads.map((h) => [h, h]));
-  const { results: attachments } = await db.prepare(`SELECT attachment_id, source_id FROM attachment_processing WHERE attachment_id IN (${marks})`).bind(...heads).all<{ attachment_id: string; source_id: string }>();
-  for (const a of attachments) owners.set(a.attachment_id, a.source_id);
+  for (const slice of slices(heads)) {
+    const { results: attachments } = await db
+      .prepare(`SELECT attachment_id, source_id FROM attachment_processing WHERE attachment_id IN (${slice.map(() => '?').join(',')})`)
+      .bind(...slice)
+      .all<{ attachment_id: string; source_id: string }>();
+    for (const a of attachments) owners.set(a.attachment_id, a.source_id);
+  }
   const scoped = (await eligibleSources(db, [...new Set(owners.values())], options.modelOnly))!;
   const rows: Row[] = [];
   for (const archive of await partitions(env)) {
-    const { results } = await archive.prepare(`${SELECT} FROM chunks c JOIN sources s ON s.id = c.source_id WHERE c.id IN (${chunkIds.map(() => '?').join(',')})`).bind(...chunkIds).all<Row>();
-    rows.push(...results);
+    for (const slice of slices(wanted)) {
+      const { results } = await archive.prepare(`${SELECT} FROM chunks c JOIN sources s ON s.id = c.source_id WHERE c.id IN (${slice.map(() => '?').join(',')})`).bind(...slice).all<Row>();
+      rows.push(...results);
+    }
   }
   const found = new Map((await authorize(db, rows, scoped)).map((e) => [e.chunkId, e]));
   return chunkIds.flatMap((id) => (found.has(id) ? [found.get(id)!] : []));

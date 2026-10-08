@@ -1,6 +1,7 @@
 package com.digifender.adminifender.core.data.local
 
 import androidx.room.Entity
+import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
@@ -27,6 +28,7 @@ data class ConcernEntity(
     val dueRevision: Int?,
     val sourceIdsJson: String,
     val updatedAt: Long,
+    val serviceId: String? = null,
 )
 
 @Entity(tableName = "sources", indices = [Index("quarantined", "receivedAt")])
@@ -97,4 +99,58 @@ data class BriefingEntity(
     val reviewPhase: String,
     val reviewKey: String?,
     val reviewedAt: Long?,
+)
+
+/**
+ * A chat conversation. [localId] exists before the Worker has a thread; [serverId] is filled once creation is
+ * confirmed. [createKey] is the fixed Idempotency-Key for creating it. [draft] is the unsent text, kept so it survives
+ * process death. [olderCursor] is the `nextBefore` the Worker gave with the oldest page read so far (null when no earlier
+ * turns are known), and [historyLoaded] says a history page has been read at all. Cleared with every other table at sign-out.
+ */
+@Entity(tableName = "chat_threads", indices = [Index("updatedAt")])
+data class ChatThreadEntity(
+    @PrimaryKey val localId: String,
+    val createKey: String,
+    val serverId: String?,
+    val scopeKind: String,
+    val scopeId: String?,
+    val createState: String,
+    val createError: String?,
+    val draft: String,
+    val olderCursor: String?,
+    val historyLoaded: Boolean,
+    val createdAt: Long,
+    val updatedAt: Long,
+)
+
+/**
+ * One question and the Worker's record of its answer. `turnId` is the UUID the Worker uses as request identity and is
+ * written, with the exact `content` and scope, before anything is sent. `dispatch` names the last step that was
+ * started, so a crash leaves an honest trace. `answerJson` holds the answer and the cited excerpts; it is the only
+ * private model-derived text and is nulled (never merely hidden) when an email it may rest on changes.
+ */
+@Entity(
+    tableName = "chat_turns",
+    foreignKeys = [ForeignKey(entity = ChatThreadEntity::class, parentColumns = ["localId"], childColumns = ["threadLocalId"], onDelete = ForeignKey.CASCADE)],
+    indices = [Index("threadLocalId", "createdAt")],
+)
+data class ChatTurnEntity(
+    @PrimaryKey val turnId: String,
+    val threadLocalId: String,
+    val content: String,
+    val scopeKind: String,
+    val scopeId: String?,
+    val dispatch: String,
+    val dispatchError: String?,
+    val state: String?,
+    val reason: String?,
+    val errorCode: String?,
+    val answerJson: String?,
+    val serverInvalidated: Boolean,
+    val serverWithheld: Boolean,
+    val localInvalid: String?,
+    val cancelNote: String?,
+    val createdAt: Long,
+    val completedAt: Long?,
+    val checkedAt: Long?,
 )

@@ -14,6 +14,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -21,27 +22,33 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.digifender.adminifender.AppContainer
 import com.digifender.adminifender.R
+import com.digifender.adminifender.core.data.network.ChatScope
 import com.digifender.adminifender.core.data.platform.CredentialManagerPasskeys
+import com.digifender.adminifender.core.data.repository.ChatUnsent
 import com.digifender.adminifender.core.data.session.SessionState
 import com.digifender.adminifender.push.BRIEFING_DESTINATION
 import com.digifender.adminifender.push.PushRegistrationWorker
 import java.util.UUID
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 
 private const val CLOCK_TICK_MS = 30_000L
 
-private enum class Tab { INBOX, BRIEFING, ARCHIVE, SETTINGS }
+private enum class Tab { INBOX, BRIEFING, ARCHIVE, CHAT, SETTINGS }
 
 /** One open detail screen. The stack is saved as text: only IDs, never content (lld.md#android). */
 private sealed interface Route {
@@ -49,11 +56,27 @@ private sealed interface Route {
 
     data class ConcernRoute(override val id: String) : Route
     data class SourceRoute(override val id: String) : Route
+
+    /** [id] is the conversation's local ID; the Worker's thread ID is looked up from Room. */
+    data class ChatRoute(override val id: String) : Route
 }
 
-private fun encode(stack: List<Route>) = stack.joinToString("|") { (if (it is Route.ConcernRoute) "c:" else "s:") + it.id }
+private fun encode(stack: List<Route>) = stack.joinToString("|") { route ->
+    val prefix = when (route) {
+        is Route.ConcernRoute -> "c:"
+        is Route.ChatRoute -> "t:"
+        is Route.SourceRoute -> "s:"
+    }
+    prefix + route.id
+}
 
-private fun decode(text: String): List<Route> = text.split("|").filter { it.length > 2 }.map { if (it.startsWith("c:")) Route.ConcernRoute(it.drop(2)) else Route.SourceRoute(it.drop(2)) }
+private fun decode(text: String): List<Route> = text.split("|").filter { it.length > 2 }.map {
+    when {
+        it.startsWith("c:") -> Route.ConcernRoute(it.drop(2))
+        it.startsWith("t:") -> Route.ChatRoute(it.drop(2))
+        else -> Route.SourceRoute(it.drop(2))
+    }
+}
 
 @Composable
 fun AppRoot(container: AppContainer, activity: Activity, destination: MutableStateFlow<String?>) {
@@ -75,6 +98,8 @@ private fun SignedIn(container: AppContainer, destination: MutableStateFlow<Stri
     val sessionModel = viewModel { SessionViewModel(container.session, container::startSync, container::signOut) }
     val inboxModel = viewModel { InboxViewModel(container.concerns) }
     val inbox by inboxModel.state.collectAsStateWithLifecycle()
+    // What signing out would discard in chat; read here so the confirmation can name it.
+    val chatUnsent by remember(container) { container.chat.unsent() }.collectAsStateWithLifecycle(ChatUnsent(0, 0, 0))
     val context = LocalContext.current
     var tab by rememberSaveable { mutableStateOf(Tab.INBOX) }
     val stay = rememberSaveable { UUID.randomUUID().toString() }
@@ -87,6 +112,11 @@ private fun SignedIn(container: AppContainer, destination: MutableStateFlow<Stri
     }
     fun back() {
         saved = encode(stack.dropLast(1))
+    }
+    val askScope = rememberCoroutineScope()
+    // Starts a chat about a concern, email or service, or returns to the latest one for the same subject. No request is made yet.
+    fun ask(scope: ChatScope) {
+        askScope.launch { container.chat.openThread(scope)?.let { open(Route.ChatRoute(it)) } }
     }
     var now by remember { mutableLongStateOf(container.clock()) }
     LaunchedEffect(Unit) {
@@ -114,6 +144,7 @@ private fun SignedIn(container: AppContainer, destination: MutableStateFlow<Stri
                     NavigationBarItem(selected = tab == Tab.INBOX, onClick = { tab = Tab.INBOX }, icon = {}, label = { Text(stringResource(R.string.nav_inbox)) })
                     NavigationBarItem(selected = tab == Tab.BRIEFING, onClick = { tab = Tab.BRIEFING }, icon = {}, label = { Text(stringResource(R.string.nav_briefing)) })
                     NavigationBarItem(selected = tab == Tab.ARCHIVE, onClick = { tab = Tab.ARCHIVE }, icon = {}, label = { Text(stringResource(R.string.nav_archive)) })
+                    NavigationBarItem(selected = tab == Tab.CHAT, onClick = { tab = Tab.CHAT }, icon = {}, label = { Text(stringResource(R.string.nav_chat)) })
                     NavigationBarItem(selected = tab == Tab.SETTINGS, onClick = { tab = Tab.SETTINGS }, icon = {}, label = { Text(stringResource(R.string.nav_settings)) })
                 }
             }
@@ -154,7 +185,7 @@ private fun SignedIn(container: AppContainer, destination: MutableStateFlow<Stri
                                 modifier = Modifier.padding(horizontal = 16.dp),
                             )
                         }
-                        ConcernScreen(concern, now, { target, action -> concernModel.act(action, target) }, concernModel::reapply, concernModel::discard, sources, { open(Route.SourceRoute(it)) })
+                        ConcernScreen(concern, now, { target, action -> concernModel.act(action, target) }, concernModel::reapply, concernModel::discard, sources, { open(Route.SourceRoute(it)) }, ::ask)
                     }
                 }
                 is Route.SourceRoute -> {
@@ -163,7 +194,32 @@ private fun SignedIn(container: AppContainer, destination: MutableStateFlow<Stri
                     val source by sourceModel.state.collectAsStateWithLifecycle()
                     val busy by sourceModel.busy.collectAsStateWithLifecycle()
                     TextButton(onClick = ::back, modifier = Modifier.padding(horizontal = 8.dp)) { Text(stringResource(R.string.back)) }
-                    SourceScreen(source, busy, sourceModel::download, { open(Route.ConcernRoute(it)) })
+                    SourceScreen(source, busy, sourceModel::download, { open(Route.ConcernRoute(it)) }, ::ask)
+                }
+                is Route.ChatRoute -> {
+                    val id = route.id
+                    val chatModel = viewModel(key = "chat-$id") { ChatThreadViewModel(id, container.chat, container.concerns, container.archive, container.syncTicks) }
+                    val chatState by chatModel.state.collectAsStateWithLifecycle()
+                    val draft by chatModel.draftText.collectAsStateWithLifecycle()
+                    // Leaving the foreground stops the poll timers only; it never cancels a question. The app going to
+                    // the background and this screen being left (back, or another screen on top) are different
+                    // events, and the view model outlives both, so each stops the timers.
+                    LifecycleEventEffect(Lifecycle.Event.ON_START) { chatModel.onForeground() }
+                    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { chatModel.onBackground() }
+                    DisposableEffect(chatModel) { onDispose { chatModel.onBackground() } }
+                    TextButton(onClick = ::back, modifier = Modifier.padding(horizontal = 8.dp)) { Text(stringResource(R.string.back)) }
+                    ChatThreadScreen(
+                        chatState,
+                        draft,
+                        now,
+                        onDraft = chatModel::onDraft,
+                        onSend = chatModel::send,
+                        onRefresh = chatModel::refresh,
+                        onLoadEarlier = chatModel::loadEarlier,
+                        onCancel = chatModel::cancel,
+                        onEditAgain = chatModel::editAgain,
+                        onOpenSource = { open(Route.SourceRoute(it)) },
+                    )
                 }
                 null -> when (tab) {
                     Tab.INBOX -> InboxScreen(inbox, now, inboxModel::select, inboxModel::refresh, { open(Route.ConcernRoute(it)) })
@@ -195,7 +251,13 @@ private fun SignedIn(container: AppContainer, destination: MutableStateFlow<Stri
                             onOpen = { open(Route.SourceRoute(it)) },
                         )
                     }
-                    Tab.SETTINGS -> SettingsScreen(inbox.freshness, now, inboxModel::refresh, sessionModel::signOut, onNotificationsChanged = { PushRegistrationWorker.enqueue(context) })
+                    Tab.CHAT -> {
+                        val chatListModel = viewModel { ChatListViewModel(container.chat, container.concerns, container.archive) }
+                        val chatList by chatListModel.state.collectAsStateWithLifecycle()
+                        LifecycleEventEffect(Lifecycle.Event.ON_START) { chatListModel.onForeground() }
+                        ChatListScreen(chatList, { open(Route.ChatRoute(it)) }, { scope -> chatListModel.open(scope) { open(Route.ChatRoute(it)) } })
+                    }
+                    Tab.SETTINGS -> SettingsScreen(inbox.freshness, chatUnsent, now, inboxModel::refresh, sessionModel::signOut, onNotificationsChanged = { PushRegistrationWorker.enqueue(context) })
                 }
             }
         }

@@ -11,6 +11,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -20,10 +21,12 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.digifender.adminifender.R
+import com.digifender.adminifender.core.data.network.ChatScope
+import com.digifender.adminifender.core.data.network.ScopeKind
 import com.digifender.adminifender.core.data.repository.AttachmentInfo
 
 @Composable
-fun SourceScreen(state: SourceUiState, busy: Boolean, onRetry: () -> Unit, onOpenConcern: (String) -> Unit, modifier: Modifier = Modifier) {
+fun SourceScreen(state: SourceUiState, busy: Boolean, onRetry: () -> Unit, onOpenConcern: (String) -> Unit, onAsk: (ChatScope) -> Unit, modifier: Modifier = Modifier) {
     Column(modifier.padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         val summary = state.summary
         if (state.status == TextStatus.GONE) {
@@ -42,6 +45,8 @@ fun SourceScreen(state: SourceUiState, busy: Boolean, onRetry: () -> Unit, onOpe
             if (summary.from.isNotEmpty()) Text(stringResource(R.string.source_from, summary.from.joinToString(", ")))
             Text(stringResource(R.string.source_received, dateTime(summary.receivedAtMs)), style = MaterialTheme.typography.labelLarge)
             Text(sourceLabels(summary), style = MaterialTheme.typography.bodySmall)
+            // Quarantined, unfinished and AI-restricted emails are never offered as a chat scope.
+            if (askable(summary)) OutlinedButton(onClick = { onAsk(ChatScope(ScopeKind.SOURCE, summary.id)) }) { Text(stringResource(R.string.chat_ask_email)) }
         }
 
         Text(stringResource(R.string.source_text), style = MaterialTheme.typography.titleMedium)

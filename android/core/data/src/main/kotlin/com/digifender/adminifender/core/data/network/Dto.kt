@@ -60,6 +60,7 @@ data class ConcernDto(
     val due: DueDto? = null,
     val sourceIds: List<String> = emptyList(),
     val updatedAt: String,
+    val serviceId: String? = null,
 )
 
 @Serializable
@@ -108,6 +109,7 @@ fun ConcernDto.toDomain(): Concern? {
         due = due?.let { Due(ms(it.at), it.zone, it.sourceText, it.revision) },
         sourceIds = sourceIds,
         updatedAtMs = ms(updatedAt) ?: 0,
+        serviceId = serviceId,
     )
 }
 

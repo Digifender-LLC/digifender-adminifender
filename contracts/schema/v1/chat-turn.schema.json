@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://adminifender.invalid/schema/v1/chat-turn.schema.json",
+  "title": "GET /chat/turns/{turnId} data, and each turn of a history page (lld.md#chat)",
+  "description": "The durable state of one question as the owner sees it, rechecked on every read. `answer`, `claims`, `gaps`, `proposals` and `context` are present together: an answer is shown only with the emails it rests on (`context`: every email the model was given, with the privacy each had then), so the phone can check all of them, not only the cited ones. `context` is an empty array for a no-evidence answer and null whenever there is no answer to show. An answer withheld because something it rests on changed has `withheld: true`; one removed by a deletion has `invalidated: true`. Proposals carry no dispatch authority.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["turnId", "threadId", "scope", "content", "state", "reason", "errorCode", "answer", "claims", "gaps", "proposals", "context", "invalidated", "withheld", "createdAt", "completedAt"],
+  "properties": {
+    "turnId": { "$ref": "common.schema.json#/$defs/uuid" },
+    "threadId": { "$ref": "common.schema.json#/$defs/uuid" },
+    "scope": { "$ref": "chat-thread.schema.json#/$defs/scope" },
+    "content": { "type": "string", "minLength": 1, "maxLength": 4000 },
+    "state": { "enum": ["pending", "running", "complete", "failed", "uncertain", "cancelled"] },
+    "reason": { "type": ["string", "null"], "maxLength": 100 },
+    "errorCode": { "type": ["string", "null"], "maxLength": 100 },
+    "answer": { "type": ["string", "null"], "minLength": 1, "maxLength": 4000 },
+    "claims": {
+      "type": "array",
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["text", "basis", "citations"],
+        "properties": {
+          "text": { "type": "string", "minLength": 1, "maxLength": 1000 },
+          "basis": { "enum": ["evidence", "report", "inference", "hypothesis"] },
+          "citations": { "type": "array", "maxItems": 4, "items": { "$ref": "#/$defs/citation" } }
+        },
+        "if": { "properties": { "basis": { "enum": ["evidence", "report"] } } },
+        "then": { "properties": { "citations": { "type": "array", "minItems": 1 } } }
+      }
+    },
+    "gaps": { "type": "array", "maxItems": 5, "items": { "type": "string", "minLength": 1, "maxLength": 300 } },
+    "proposals": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "targetId", "description"],
+        "properties": {
+          "kind": { "const": "email.reply", "description": "P1 proposes only a reply to an email in context; other kinds need their P2/P3 adapters." },
+          "targetId": { "$ref": "common.schema.json#/$defs/uuid" },
+          "description": { "type": "string", "minLength": 1, "maxLength": 500 }
+        }
+      }
+    },
+    "context": {
+      "type": ["array", "null"],
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sourceId", "privacy"],
+        "properties": {
+          "sourceId": { "$ref": "common.schema.json#/$defs/uuid" },
+          "privacy": { "enum": ["hybrid", "local_only"], "description": "The privacy the email had when the model was given it; only model-eligible values exist." }
+        }
+      }
+    },
+    "invalidated": { "type": "boolean" },
+    "withheld": { "type": "boolean" },
+    "createdAt": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "completedAt": { "anyOf": [{ "$ref": "common.schema.json#/$defs/timestamp" }, { "type": "null" }] }
+  },
+  "if": { "properties": { "answer": { "type": "string" } } },
+  "then": { "properties": { "context": { "type": "array" } } },
+  "else": { "properties": { "context": { "type": "null" }, "claims": { "type": "array", "maxItems": 0 }, "gaps": { "type": "array", "maxItems": 0 }, "proposals": { "type": "array", "maxItems": 0 } } },
+  "$defs": {
+    "citation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["chunkId", "sourceId", "attachmentId", "page", "start", "end", "excerpt"],
+      "properties": {
+        "chunkId": { "$ref": "common.schema.json#/$defs/chunkId" },
+        "sourceId": { "$ref": "common.schema.json#/$defs/uuid" },
+        "attachmentId": { "anyOf": [{ "$ref": "common.schema.json#/$defs/uuid" }, { "type": "null" }] },
+        "page": { "type": ["integer", "null"], "minimum": 0 },
+        "start": { "type": "integer", "minimum": 0, "maximum": 6000 },
+        "end": { "type": "integer", "minimum": 1, "maximum": 6000 },
+        "excerpt": { "type": ["string", "null"], "maxLength": 6000, "description": "The cited characters as the Worker read them just now." }
+      }
+    }
+  }
+}

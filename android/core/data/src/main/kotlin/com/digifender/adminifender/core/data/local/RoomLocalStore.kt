@@ -4,6 +4,8 @@ import androidx.room.withTransaction
 import com.digifender.adminifender.core.data.network.SourceSummary
 import com.digifender.adminifender.core.data.network.SyncChange
 import com.digifender.adminifender.core.data.network.wireJson
+import com.digifender.adminifender.core.data.repository.SourceFact
+import com.digifender.adminifender.core.data.repository.restricts
 import com.digifender.adminifender.core.data.sync.ActionCodec
 import com.digifender.adminifender.core.data.sync.LocalStore
 import com.digifender.adminifender.core.data.sync.MutationState
@@ -27,7 +29,7 @@ fun Concern.toEntity() = ConcernEntity(
     readAt = readAtMs, acknowledgedAt = acknowledgedAtMs, resolvedAt = resolvedAtMs, snoozeUntil = snoozeUntilMs,
     waitingNote = waiting?.note, awaitedParty = waiting?.awaitedParty, followUpAt = waiting?.followUpAtMs, hasWaiting = waiting != null,
     dueAt = due?.atMs, dueZone = due?.zone, dueSourceText = due?.sourceText, dueRevision = due?.revision,
-    sourceIdsJson = wireJson.encodeToString(stringList, sourceIds), updatedAt = updatedAtMs,
+    sourceIdsJson = wireJson.encodeToString(stringList, sourceIds), updatedAt = updatedAtMs, serviceId = serviceId,
 )
 
 fun ConcernEntity.toDomain() = Concern(
@@ -35,7 +37,7 @@ fun ConcernEntity.toDomain() = Concern(
     criticalBasis = criticalBasis, readAtMs = readAt, acknowledgedAtMs = acknowledgedAt, resolvedAtMs = resolvedAt, snoozeUntilMs = snoozeUntil,
     waiting = if (hasWaiting) Waiting(waitingNote, awaitedParty, followUpAt) else null,
     due = dueRevision?.let { Due(dueAt, dueZone, dueSourceText, it) },
-    sourceIds = wireJson.decodeFromString(stringList, sourceIdsJson), updatedAtMs = updatedAt,
+    sourceIds = wireJson.decodeFromString(stringList, sourceIdsJson), updatedAtMs = updatedAt, serviceId = serviceId,
 )
 
 fun SourceSummary.toEntity() = SourceEntity(id, revision, state, quarantined, privacy, receivedAtMs, subject, wireJson.encodeToString(stringList, from))
@@ -48,38 +50,64 @@ fun PendingMutationEntity.toQueued() = QueuedMutation(
     currentRevision = currentRevision,
 )
 
+private fun SourceSummary.toFact() = SourceFact(id, quarantined, privacy, state)
+
 /** [LocalStore] on Room; each method is a single transaction. */
 class RoomLocalStore(private val db: AppDatabase) : LocalStore {
+    private val chat = RoomChatCache(db)
+
     override suspend fun syncState(): SyncState {
         val row = db.syncState().get() ?: return SyncState(throughSeq = 0, needsBootstrap = true, lastSyncedAtMs = null)
         return SyncState(row.throughSeq, row.needsBootstrap, row.lastSyncedAt)
     }
 
-    private suspend fun write(changes: List<SyncChange>) {
+    /**
+     * Applies [changes] and returns the emails whose change may have made a stored chat answer unsafe (see
+     * [restricts]). [held] is the set of emails the phone held before a full snapshot replaced them; without it each
+     * email's previous state is read from the table.
+     */
+    private suspend fun write(changes: List<SyncChange>, held: Map<String, SourceFact>? = null): MutableSet<String> {
+        val restricted = mutableSetOf<String>()
         for (change in changes) {
             when (change) {
                 is SyncChange.ConcernChanged -> db.concerns().upsert(listOf(change.concern.toEntity()))
-                is SyncChange.SourceChanged -> db.sources().upsert(listOf(change.source.toEntity()))
+                is SyncChange.SourceChanged -> {
+                    val old = if (held != null) held[change.source.id] else db.sources().get(change.source.id)?.toFact()
+                    if (restricts(old, change.source.toFact())) restricted += change.source.id
+                    db.sources().upsert(listOf(change.source.toEntity()))
+                }
                 is SyncChange.Removed -> when (change.entityType) {
                     "concern" -> db.concerns().delete(change.entityId)
-                    "source" -> db.sources().delete(change.entityId)
+                    "source" -> {
+                        val old = if (held != null) held[change.entityId] else db.sources().get(change.entityId)?.toFact()
+                        if (restricts(old, null)) restricted += change.entityId
+                        db.sources().delete(change.entityId)
+                    }
                 }
                 is SyncChange.Ignored -> Unit
             }
         }
         // Cached text survives only for an unchanged source; deletion and revision changes drop it here.
         db.sourceTexts().pruneStale()
+        return restricted
     }
 
     override suspend fun applyChanges(changes: List<SyncChange>, throughSeq: Long, nowMs: Long) = db.withTransaction {
-        write(changes)
+        val restricted = write(changes)
+        // Stored answers that rest on an email that just became unsafe are dropped in the same transaction.
+        chat.dropRestrictedAnswers(restricted)
         db.syncState().put(SyncStateEntity(throughSeq = throughSeq, needsBootstrap = false, lastSyncedAt = nowMs))
     }
 
     override suspend fun replaceWithSnapshot(changes: List<SyncChange>, snapshotSeq: Long, nowMs: Long) = db.withTransaction {
+        val held = db.sources().all().associate { it.id to it.toFact() }
         db.concerns().clear()
         db.sources().clear()
-        write(changes)
+        val restricted = write(changes, held)
+        // An email the snapshot no longer lists was deleted while this phone was not looking.
+        val listed = changes.filterIsInstance<SyncChange.SourceChanged>().map { it.source.id }.toSet()
+        for ((id, fact) in held) if (id !in listed && restricts(fact, null)) restricted += id
+        chat.dropRestrictedAnswers(restricted)
         db.syncState().put(SyncStateEntity(throughSeq = snapshotSeq, needsBootstrap = false, lastSyncedAt = nowMs))
     }
 

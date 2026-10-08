@@ -26,6 +26,7 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.digifender.adminifender.R
+import com.digifender.adminifender.core.data.repository.ChatUnsent
 import com.digifender.adminifender.core.data.repository.Freshness
 import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -34,6 +35,7 @@ import com.google.firebase.FirebaseApp
 @Composable
 fun SettingsScreen(
     freshness: Freshness?,
+    chatUnsent: ChatUnsent,
     nowMs: Long,
     onSyncNow: () -> Unit,
     onSignOut: () -> Unit,
@@ -85,12 +87,20 @@ fun SettingsScreen(
         OutlinedButton(onClick = { confirming = true }) { Text(stringResource(R.string.settings_sign_out)) }
     }
     if (confirming) {
-        // Unsynced edits are named before they are dropped (lld.md#sync).
+        // Unsynced edits are named before they are dropped (lld.md#sync), and so are chat questions the server has not
+        // confirmed, unsent drafts and questions the server is still answering.
         val unsent = (freshness?.queued ?: 0) + (freshness?.needsOwner ?: 0)
         AlertDialog(
             onDismissRequest = { confirming = false },
             title = { Text(stringResource(R.string.sign_out_confirm_title)) },
-            text = { Text(if (unsent > 0) pluralStringResource(R.plurals.sign_out_unsynced, unsent, unsent) else stringResource(R.string.sign_out_cached)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(if (unsent > 0) pluralStringResource(R.plurals.sign_out_unsynced, unsent, unsent) else stringResource(R.string.sign_out_cached))
+                    if (chatUnsent.unconfirmedQuestions > 0) Text(pluralStringResource(R.plurals.sign_out_chat_unconfirmed, chatUnsent.unconfirmedQuestions, chatUnsent.unconfirmedQuestions))
+                    if (chatUnsent.drafts > 0) Text(pluralStringResource(R.plurals.sign_out_chat_drafts, chatUnsent.drafts, chatUnsent.drafts))
+                    if (chatUnsent.atWorker > 0) Text(pluralStringResource(R.plurals.sign_out_chat_at_worker, chatUnsent.atWorker, chatUnsent.atWorker))
+                }
+            },
             confirmButton = {
                 TextButton(onClick = {
                     confirming = false
