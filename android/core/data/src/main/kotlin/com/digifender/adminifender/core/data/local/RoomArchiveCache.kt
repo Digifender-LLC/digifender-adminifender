@@ -19,7 +19,17 @@ import kotlinx.serialization.builtins.serializer
 private val stringList = ListSerializer(String.serializer())
 
 @Serializable
-private data class StoredAttachment(val id: String, val name: String, val declaredType: String? = null, val sizeBytes: Long, val extraction: String, val extractionDetail: String? = null)
+private data class StoredAttachment(
+    val id: String,
+    val name: String,
+    val declaredType: String? = null,
+    val sizeBytes: Long,
+    val extraction: String,
+    val extractionDetail: String? = null,
+    // Absent in rows written before version 5 of the app; the next download of the email fills them.
+    val sha256: String = "",
+    val disposition: String = "",
+)
 
 private val attachmentList = ListSerializer(StoredAttachment.serializer())
 
@@ -29,7 +39,7 @@ private fun SourceTextEntity.toText() = SourceText(
     revision,
     text,
     textComplete,
-    wireJson.decodeFromString(attachmentList, attachmentsJson).map { AttachmentInfo(it.id, it.name, it.declaredType, it.sizeBytes, it.extraction, it.extractionDetail) },
+    wireJson.decodeFromString(attachmentList, attachmentsJson).map { AttachmentInfo(it.id, it.name, it.declaredType, it.sizeBytes, it.extraction, it.extractionDetail, it.sha256, it.disposition) },
 )
 
 /** Escapes `%`, `_` and the escape character so owner text is matched literally by LIKE. */
@@ -81,7 +91,7 @@ class RoomArchiveCache(private val db: AppDatabase) : ArchiveCache {
     override suspend fun putText(id: String, text: SourceText, nowMs: Long): Boolean = db.withTransaction {
         // A response that arrives after sync deleted or changed the source must not bring old text back.
         if (db.sources().revision(id) != text.revision) return@withTransaction false
-        val attachments = text.attachments.map { StoredAttachment(it.id, it.name, it.declaredType, it.sizeBytes, it.extraction, it.extractionDetail) }
+        val attachments = text.attachments.map { StoredAttachment(it.id, it.name, it.declaredType, it.sizeBytes, it.extraction, it.extractionDetail, it.sha256, it.disposition) }
         db.sourceTexts().put(SourceTextEntity(id, text.revision, text.text, text.complete, wireJson.encodeToString(attachmentList, attachments), nowMs))
         true
     }

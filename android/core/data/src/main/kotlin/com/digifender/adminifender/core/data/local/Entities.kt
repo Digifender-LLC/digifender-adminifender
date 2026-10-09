@@ -154,3 +154,85 @@ data class ChatTurnEntity(
     val completedAt: Long?,
     val checkedAt: Long?,
 )
+
+/**
+ * A downloaded attachment, or the request for one (version 5). The bytes are not here: [blobName] names a sealed file in
+ * app-private storage, and only a READY row of the current [generation] makes that file count. [privacyRank] and
+ * [quarantined] are how restricted the source was when the owner asked; a source that gets stricter, is quarantined or
+ * disappears loses the row in the same transaction that changed the source. Cleared with every other table at sign-out.
+ */
+@Entity(tableName = "local_files", indices = [Index("sourceId"), Index("state", "lastAccessAt")])
+data class LocalFileEntity(
+    @PrimaryKey val attachmentId: String,
+    val sourceId: String,
+    val name: String,
+    val declaredType: String?,
+    val sizeBytes: Long,
+    val sha256: String,
+    val state: String,
+    val errorCode: String?,
+    val generation: String,
+    val blobName: String?,
+    val privacyRank: Int,
+    val quarantined: Boolean,
+    val attempts: Int,
+    val requestedAt: Long,
+    val updatedAt: Long,
+    val lastAccessAt: Long,
+    val verifiedAt: Long?,
+)
+
+/** An email the owner just deleted whose tombstone sync has not delivered yet. While it is here, a stale page cannot bring the email back (version 5). */
+@Entity(tableName = "source_tombstones")
+data class SourceTombstoneEntity(@PrimaryKey val sourceId: String, val recordedAt: Long)
+
+/**
+ * An archive deletion the owner started (version 5). Written before every request, so a crash leaves the intent. It
+ * holds identifiers, revisions, counts and the Worker's receipt, never an email's subject or text.
+ */
+@Entity(tableName = "deletion_reviews", indices = [Index("phase")])
+data class DeletionReviewEntity(
+    @PrimaryKey val localId: String,
+    val sourceIdsJson: String,
+    val prepareKey: String,
+    val phase: String,
+    val errorCode: String?,
+    val reviewId: String?,
+    val paramsDigest: String?,
+    val expiresAt: Long?,
+    val preconditionsJson: String,
+    val previewJson: String?,
+    val confirmKey: String?,
+    val operationId: String?,
+    val receiptJson: String?,
+    val cleanupJson: String?,
+    val cleanupCheckedAt: Long?,
+    val readbackJson: String?,
+    val createdAt: Long,
+    val updatedAt: Long,
+)
+
+/**
+ * An export the owner asked for (version 5): the normalized scope and the Idempotency-Key are written before the
+ * request. [statusJson] is the last read-back in the wire shape, read by the same strict parser. The destination is
+ * remembered as a display name only.
+ */
+@Entity(tableName = "export_intents", indices = [Index("createdAt")])
+data class ExportIntentEntity(
+    @PrimaryKey val localId: String,
+    val createKey: String,
+    val scopeJson: String,
+    val phase: String,
+    val errorCode: String?,
+    val exportId: String?,
+    val statusJson: String?,
+    val checkedAt: Long?,
+    val download: String,
+    val downloadError: String?,
+    val destinationLabel: String?,
+    val destinationDiscarded: Boolean?,
+    val verificationJson: String?,
+    val verifiedAt: Long?,
+    val createdAt: Long,
+    val updatedAt: Long,
+)

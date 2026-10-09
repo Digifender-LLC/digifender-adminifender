@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import com.digifender.adminifender.R
 import com.digifender.adminifender.core.data.repository.ChatUnsent
 import com.digifender.adminifender.core.data.repository.Freshness
+import com.digifender.adminifender.core.data.review.DeletionPending
 import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.google.firebase.FirebaseApp
@@ -40,6 +41,8 @@ fun SettingsScreen(
     onSyncNow: () -> Unit,
     onSignOut: () -> Unit,
     onNotificationsChanged: () -> Unit,
+    onOpenStorage: () -> Unit,
+    deletionPending: DeletionPending,
     modifier: Modifier = Modifier,
 ) {
     var confirming by rememberSaveable { mutableStateOf(false) }
@@ -80,6 +83,9 @@ fun SettingsScreen(
                 }
             }) { Text(stringResource(R.string.notifications_allow)) }
         }
+        Text(stringResource(R.string.settings_storage), style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(R.string.settings_storage_body), style = MaterialTheme.typography.bodyMedium)
+        OutlinedButton(onClick = onOpenStorage) { Text(stringResource(R.string.settings_storage_open)) }
         Text(stringResource(R.string.settings_sync), style = MaterialTheme.typography.titleMedium)
         freshness?.let { Text(freshnessText(it, nowMs)) }
         OutlinedButton(onClick = onSyncNow) { Text(stringResource(R.string.settings_sync_now)) }
@@ -98,6 +104,9 @@ fun SettingsScreen(
                     Text(if (unsent > 0) pluralStringResource(R.plurals.sign_out_unsynced, unsent, unsent) else stringResource(R.string.sign_out_cached))
                     if (chatUnsent.unconfirmedQuestions > 0) Text(pluralStringResource(R.plurals.sign_out_chat_unconfirmed, chatUnsent.unconfirmedQuestions, chatUnsent.unconfirmedQuestions))
                     if (chatUnsent.drafts > 0) Text(pluralStringResource(R.plurals.sign_out_chat_drafts, chatUnsent.drafts, chatUnsent.drafts))
+                    if (deletionPending.unknown > 0) Text(pluralStringResource(R.plurals.sign_out_deletion_unknown, deletionPending.unknown, deletionPending.unknown))
+                    if (deletionPending.open > 0) Text(pluralStringResource(R.plurals.sign_out_deletion_open, deletionPending.open, deletionPending.open))
+                    Text(stringResource(R.string.sign_out_files))
                     if (chatUnsent.atWorker > 0) Text(pluralStringResource(R.plurals.sign_out_chat_at_worker, chatUnsent.atWorker, chatUnsent.atWorker))
                 }
             },

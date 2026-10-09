@@ -2,6 +2,8 @@ package com.digifender.adminifender.ui
 
 import android.app.Activity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -37,7 +39,9 @@ import com.digifender.adminifender.AppContainer
 import com.digifender.adminifender.R
 import com.digifender.adminifender.core.data.network.ChatScope
 import com.digifender.adminifender.core.data.platform.CredentialManagerPasskeys
+import com.digifender.adminifender.SafDestination
 import com.digifender.adminifender.core.data.repository.ChatUnsent
+import com.digifender.adminifender.core.data.review.DeletionPending
 import com.digifender.adminifender.core.data.session.SessionState
 import com.digifender.adminifender.push.BRIEFING_DESTINATION
 import com.digifender.adminifender.push.PushRegistrationWorker
@@ -59,6 +63,19 @@ private sealed interface Route {
 
     /** [id] is the conversation's local ID; the Worker's thread ID is looked up from Room. */
     data class ChatRoute(override val id: String) : Route
+
+    /** A deletion review for these emails, comma-joined IDs: opening it adopts an existing review for the same emails or prepares one. */
+    data class DeleteRoute(override val id: String) : Route
+
+    /** A deletion review the phone already holds, by its local ID. */
+    data class ReviewRoute(override val id: String) : Route
+
+    data class ExportRoute(override val id: String) : Route
+
+    /** The export form; [id] is comma-joined IDs of emails selected for it, or empty. */
+    data class ExportNewRoute(override val id: String) : Route
+
+    data class StorageRoute(override val id: String = "-") : Route
 }
 
 private fun encode(stack: List<Route>) = stack.joinToString("|") { route ->
@@ -66,14 +83,24 @@ private fun encode(stack: List<Route>) = stack.joinToString("|") { route ->
         is Route.ConcernRoute -> "c:"
         is Route.ChatRoute -> "t:"
         is Route.SourceRoute -> "s:"
+        is Route.DeleteRoute -> "x:"
+        is Route.ReviewRoute -> "r:"
+        is Route.ExportRoute -> "e:"
+        is Route.ExportNewRoute -> "n:"
+        is Route.StorageRoute -> "g:"
     }
     prefix + route.id
 }
 
-private fun decode(text: String): List<Route> = text.split("|").filter { it.length > 2 }.map {
+private fun decode(text: String): List<Route> = text.split("|").filter { it.length >= 2 }.map {
     when {
         it.startsWith("c:") -> Route.ConcernRoute(it.drop(2))
         it.startsWith("t:") -> Route.ChatRoute(it.drop(2))
+        it.startsWith("x:") -> Route.DeleteRoute(it.drop(2))
+        it.startsWith("r:") -> Route.ReviewRoute(it.drop(2))
+        it.startsWith("e:") -> Route.ExportRoute(it.drop(2))
+        it.startsWith("n:") -> Route.ExportNewRoute(it.drop(2))
+        it.startsWith("g:") -> Route.StorageRoute()
         else -> Route.SourceRoute(it.drop(2))
     }
 }
@@ -86,20 +113,21 @@ fun AppRoot(container: AppContainer, activity: Activity, destination: MutableSta
         SessionState.Unknown -> Unit
         SessionState.SignedOut -> SignInScreen(session) { sessionModel.signIn(CredentialManagerPasskeys(activity)) }
         // Cached data stays readable while the server wants a fresh sign-in (FR-002).
-        SessionState.SignInRequired, is SessionState.SignedIn -> SignedIn(container, destination, needsSignIn = session.session == SessionState.SignInRequired, busy = session.busy) {
+        SessionState.SignInRequired, is SessionState.SignedIn -> SignedIn(container, activity, destination, needsSignIn = session.session == SessionState.SignInRequired, busy = session.busy) {
             sessionModel.signIn(CredentialManagerPasskeys(activity))
         }
     }
 }
 
 @Composable
-private fun SignedIn(container: AppContainer, destination: MutableStateFlow<String?>, needsSignIn: Boolean, busy: Boolean, onSignIn: () -> Unit) {
+private fun SignedIn(container: AppContainer, activity: Activity, destination: MutableStateFlow<String?>, needsSignIn: Boolean, busy: Boolean, onSignIn: () -> Unit) {
     // Same instance as in AppRoot: one SessionViewModel per activity.
     val sessionModel = viewModel { SessionViewModel(container.session, container::startSync, container::signOut) }
     val inboxModel = viewModel { InboxViewModel(container.concerns) }
     val inbox by inboxModel.state.collectAsStateWithLifecycle()
     // What signing out would discard in chat; read here so the confirmation can name it.
     val chatUnsent by remember(container) { container.chat.unsent() }.collectAsStateWithLifecycle(ChatUnsent(0, 0, 0))
+    val deletionPending by remember(container) { container.deletions.pending() }.collectAsStateWithLifecycle(DeletionPending(0, 0))
     val context = LocalContext.current
     var tab by rememberSaveable { mutableStateOf(Tab.INBOX) }
     val stay = rememberSaveable { UUID.randomUUID().toString() }
@@ -193,8 +221,110 @@ private fun SignedIn(container: AppContainer, destination: MutableStateFlow<Stri
                     val sourceModel = viewModel(key = "source-$id") { SourceViewModel(id, container.archive) }
                     val source by sourceModel.state.collectAsStateWithLifecycle()
                     val busy by sourceModel.busy.collectAsStateWithLifecycle()
+                    val filesModel = viewModel(key = "files-$id") { AttachmentsViewModel(id, container.attachments) }
+                    val files by filesModel.state.collectAsStateWithLifecycle()
+                    // Which attachment a document-picker result is for survives a rotation, so a created document is never left orphaned.
+                    var saving by rememberSaveable { mutableStateOf<String?>(null) }
+                    val resolver = context.contentResolver
+                    val saveLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
+                        val wanted = saving
+                        saving = null
+                        if (uri != null) {
+                            val info = source.text?.attachments?.firstOrNull { it.id == wanted }
+                            val destination = SafDestination(resolver, uri)
+                            if (info != null) filesModel.saveCopy(info, destination) else destination.discard()
+                        }
+                    }
+                    val actions = remember(filesModel) {
+                        AttachmentActions(
+                            onAsk = filesModel::ask,
+                            onCancel = filesModel::remove,
+                            onRemove = filesModel::remove,
+                            onShow = filesModel::show,
+                            onSave = { info ->
+                                saving = info.id
+                                saveLauncher.launch(info.name)
+                            },
+                            onNoticeShown = filesModel::noticeShown,
+                            onClosePreview = filesModel::closePreview,
+                        )
+                    }
                     TextButton(onClick = ::back, modifier = Modifier.padding(horizontal = 8.dp)) { Text(stringResource(R.string.back)) }
-                    SourceScreen(source, busy, sourceModel::download, { open(Route.ConcernRoute(it)) }, ::ask)
+                    SourceScreen(source, busy, files, actions, sourceModel::download, { open(Route.ConcernRoute(it)) }, ::ask, { open(Route.DeleteRoute(it)) })
+                }
+                is Route.DeleteRoute, is Route.ReviewRoute -> {
+                    val target = if (route is Route.DeleteRoute) DeletionTarget.Selection(route.id.split(",").filter { it.isNotEmpty() }.sorted()) else DeletionTarget.Existing(route.id)
+                    key(route.id) {
+                        val deletionModel = viewModel(key = "delete-${route.id}") { DeletionViewModel(target, container.deletions, container.archive) }
+                        val deletion by deletionModel.state.collectAsStateWithLifecycle()
+                        val review = deletion.review
+                        DeletionScreen(
+                            deletion,
+                            now,
+                            confirmable = review != null && deletionModel.confirmable(review, now),
+                            actions = DeletionActions(
+                                onConfirm = { deletionModel.confirm(CredentialManagerPasskeys(activity)) },
+                                onRetryPrepare = deletionModel::retryPrepare,
+                                onPrepareAgain = deletionModel::prepareAgain,
+                                onCheckStatus = deletionModel::checkStatus,
+                                onRefreshCleanup = deletionModel::refreshCleanup,
+                                onStopTracking = deletionModel::stopTracking,
+                                onDismiss = { deletionModel.dismiss(::back) },
+                                onBack = ::back,
+                                onNoteShown = deletionModel::noteShown,
+                            ),
+                        )
+                    }
+                }
+                is Route.ExportNewRoute -> {
+                    val selected = route.id.split(",").filter { it.isNotEmpty() }
+                    val builderModel = viewModel(key = "export-new-${route.id}") { ExportBuilderViewModel(selected, container.exports) }
+                    val builder by builderModel.state.collectAsStateWithLifecycle()
+                    // Once the request is stored, the screen moves to the export itself.
+                    LaunchedEffect(builder.created) {
+                        builder.created?.let { saved = encode(stack.dropLast(1) + Route.ExportRoute(it)) }
+                    }
+                    ExportBuilderScreen(builder, builderModel::kind, builderModel::admission, builderModel::from, builderModel::to, builderModel::sender, builderModel::recipient, builderModel::create, ::back)
+                }
+                is Route.ExportRoute -> {
+                    val id = route.id
+                    val exportModel = viewModel(key = "export-$id") { ExportViewModel(id, container.exports, container::runInBackground) }
+                    val exportState by exportModel.state.collectAsStateWithLifecycle()
+                    LifecycleEventEffect(Lifecycle.Event.ON_START) { exportModel.onForeground() }
+                    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { exportModel.onBackground() }
+                    DisposableEffect(exportModel) { onDispose { exportModel.onBackground() } }
+                    val resolver = context.contentResolver
+                    val saveLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+                        if (uri != null) exportModel.download(SafDestination(resolver, uri))
+                    }
+                    ExportScreen(
+                        exportState,
+                        now,
+                        ExportActions(
+                            onSave = { name -> saveLauncher.launch(name) },
+                            onRefresh = exportModel::refresh,
+                            onResend = exportModel::resend,
+                            onStopTracking = exportModel::stopTracking,
+                            onDismiss = { exportModel.dismiss(::back) },
+                            onNewExport = { saved = encode(stack.dropLast(1) + Route.ExportNewRoute("")) },
+                            onBack = ::back,
+                            onNoteShown = exportModel::noteShown,
+                        ),
+                    )
+                }
+                is Route.StorageRoute -> {
+                    val storageModel = viewModel { StorageViewModel(container.attachments, container.exports, container.deletions) }
+                    val storage by storageModel.state.collectAsStateWithLifecycle()
+                    StorageScreen(
+                        storage,
+                        onRemoveFile = storageModel::removeFile,
+                        onClearFiles = storageModel::clearFiles,
+                        onOpenSource = { open(Route.SourceRoute(it)) },
+                        onOpenExport = { open(Route.ExportRoute(it)) },
+                        onNewExport = { open(Route.ExportNewRoute("")) },
+                        onOpenDeletion = { open(Route.ReviewRoute(it)) },
+                        onBack = ::back,
+                    )
                 }
                 is Route.ChatRoute -> {
                     val id = route.id
@@ -249,6 +379,20 @@ private fun SignedIn(container: AppContainer, destination: MutableStateFlow<Stri
                             onMoreResults = archiveModel::loadMore,
                             onMoreList = archiveModel::showMore,
                             onOpen = { open(Route.SourceRoute(it)) },
+                            selection = SelectionActions(
+                                onStart = archiveModel::startSelecting,
+                                onStop = archiveModel::stopSelecting,
+                                onToggle = archiveModel::toggle,
+                                onReviewDeletion = {
+                                    archiveModel.stopSelecting()
+                                    open(Route.DeleteRoute(it.joinToString(",")))
+                                },
+                                onExportSelected = {
+                                    archiveModel.stopSelecting()
+                                    open(Route.ExportNewRoute(it.joinToString(",")))
+                                },
+                                onNewExport = { open(Route.ExportNewRoute("")) },
+                            ),
                         )
                     }
                     Tab.CHAT -> {
@@ -257,7 +401,16 @@ private fun SignedIn(container: AppContainer, destination: MutableStateFlow<Stri
                         LifecycleEventEffect(Lifecycle.Event.ON_START) { chatListModel.onForeground() }
                         ChatListScreen(chatList, { open(Route.ChatRoute(it)) }, { scope -> chatListModel.open(scope) { open(Route.ChatRoute(it)) } })
                     }
-                    Tab.SETTINGS -> SettingsScreen(inbox.freshness, chatUnsent, now, inboxModel::refresh, sessionModel::signOut, onNotificationsChanged = { PushRegistrationWorker.enqueue(context) })
+                    Tab.SETTINGS -> SettingsScreen(
+                        inbox.freshness,
+                        chatUnsent,
+                        now,
+                        inboxModel::refresh,
+                        sessionModel::signOut,
+                        onNotificationsChanged = { PushRegistrationWorker.enqueue(context) },
+                        onOpenStorage = { open(Route.StorageRoute()) },
+                        deletionPending = deletionPending,
+                    )
                 }
             }
         }

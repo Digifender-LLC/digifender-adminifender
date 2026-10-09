@@ -1,5 +1,6 @@
 package com.digifender.adminifender.core.data.network
 
+import com.digifender.adminifender.core.data.files.blockingWithAbort
 import com.digifender.adminifender.core.model.ConcernAction
 import com.digifender.adminifender.core.model.SendResult
 import java.io.IOException
@@ -52,8 +53,21 @@ class HttpApi(private val client: OkHttpClient, private val baseUrl: HttpUrl, pr
 
     private suspend fun execute(request: Request.Builder): Response? {
         val token = tokens.current() ?: return null
-        val response = withContext(Dispatchers.IO) { client.newCall(request.header("authorization", "Bearer $token").build()).execute() }
+        val call = client.newCall(request.header("authorization", "Bearer $token").build())
+        // Cancelling the caller (sign-out, leaving the screen) cancels the call; nothing blocks a thread while waiting for headers.
+        val response = call.await()
         if (response.code == 401) tokens.rejected(token)
+        try {
+            // The body is read here, on the IO dispatcher and up to the bound, so the callers' later reads never touch the socket
+            // (they run on whatever dispatcher the view model uses, which may be the main thread).
+            blockingWithAbort(call::cancel) { response.body.source().request(MAX_RESPONSE_BYTES + 1) }
+        } catch (e: IOException) {
+            response.close()
+            throw e
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            response.close()
+            throw e
+        }
         return response
     }
 

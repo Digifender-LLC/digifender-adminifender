@@ -3,6 +3,7 @@ package com.digifender.adminifender.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.digifender.adminifender.core.data.network.ArchiveView
+import com.digifender.adminifender.core.data.network.MAX_EXPORT_SOURCES
 import com.digifender.adminifender.core.data.network.SourceSummary
 import com.digifender.adminifender.core.data.repository.ArchiveRepository
 import com.digifender.adminifender.core.data.repository.CachedReason
@@ -54,6 +55,10 @@ data class ArchiveUiState(
     val list: List<SourceSummary>?,
     val total: Int,
     val search: SearchUiState?,
+    /** Selecting emails for a deletion review or an export; the choice is the owner's, and a limit is shown, never applied silently. */
+    val selecting: Boolean = false,
+    val selection: Set<String> = emptySet(),
+    val selectionAtLimit: Boolean = false,
 )
 
 /** Search parameters fixed when the owner submits, so "load more" continues the same query. */
@@ -73,8 +78,36 @@ class ArchiveViewModel(private val archive: ArchiveRepository, private val clock
 
     private val list = combine(view, limit) { v, l -> v to l }.flatMapLatest { (v, l) -> combine(archive.archive(v, l), archive.count(v)) { rows, n -> Triple(v, rows, n) } }
 
-    val state: StateFlow<ArchiveUiState> = combine(list, search) { (v, rows, n), s -> ArchiveUiState(v, rows, n, s) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), ArchiveUiState(ArchiveView.ARCHIVE, null, 0, null))
+    private val selecting = MutableStateFlow(false)
+    private val selection = MutableStateFlow<Set<String>>(emptySet())
+    private val atLimit = MutableStateFlow(false)
+
+    val state: StateFlow<ArchiveUiState> = combine(list, search, selecting, selection, atLimit) { (v, rows, n), s, picking, picked, limit ->
+        ArchiveUiState(v, rows, n, s, picking, picked, limit)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), ArchiveUiState(ArchiveView.ARCHIVE, null, 0, null))
+
+    fun startSelecting() {
+        selecting.value = true
+    }
+
+    fun stopSelecting() {
+        selecting.value = false
+        selection.value = emptySet()
+        atLimit.value = false
+    }
+
+    /** Adds or removes one email. At the most an export takes, the next one is refused out loud (the screen says so), not dropped quietly. */
+    fun toggle(id: String) {
+        val current = selection.value
+        when {
+            id in current -> {
+                selection.value = current - id
+                atLimit.value = false
+            }
+            current.size >= MAX_EXPORT_SOURCES -> atLimit.value = true
+            else -> selection.value = current + id
+        }
+    }
 
     fun selectView(next: ArchiveView) {
         if (view.value == next) return

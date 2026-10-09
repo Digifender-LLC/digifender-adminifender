@@ -47,6 +47,9 @@ interface SourceDao {
     @Query("DELETE FROM sources")
     suspend fun clear()
 
+    @Query("DELETE FROM sources WHERE id IN (:ids)")
+    suspend fun deleteMany(ids: List<String>)
+
     @Query("SELECT * FROM sources WHERE quarantined = :quarantined ORDER BY receivedAt DESC, id LIMIT :limit")
     fun observe(quarantined: Boolean, limit: Int): Flow<List<SourceEntity>>
 
@@ -239,4 +242,97 @@ interface ChatDao {
     /** Removes the answer for good: the row keeps the question and the reason, never the model's text or the excerpts. */
     @Query("UPDATE chat_turns SET answerJson = NULL, localInvalid = 'SOURCE_CHANGED' WHERE turnId IN (:ids)")
     suspend fun invalidate(ids: List<String>): Int
+}
+
+@Dao
+interface LocalFileDao {
+    @Query("SELECT * FROM local_files ORDER BY requestedAt DESC, attachmentId")
+    fun observeAll(): Flow<List<LocalFileEntity>>
+
+    @Query("SELECT * FROM local_files WHERE sourceId = :sourceId")
+    fun observeSource(sourceId: String): Flow<List<LocalFileEntity>>
+
+    @Query("SELECT * FROM local_files WHERE attachmentId = :id")
+    suspend fun get(id: String): LocalFileEntity?
+
+    @Query("SELECT * FROM local_files")
+    suspend fun all(): List<LocalFileEntity>
+
+    @Upsert
+    suspend fun put(row: LocalFileEntity)
+
+    @Query("DELETE FROM local_files WHERE attachmentId = :id")
+    suspend fun delete(id: String)
+
+    @Query("DELETE FROM local_files")
+    suspend fun clear()
+
+    @Query("SELECT * FROM local_files WHERE sourceId IN (:ids)")
+    suspend fun forSources(ids: List<String>): List<LocalFileEntity>
+
+    @Query("DELETE FROM local_files WHERE sourceId IN (:ids)")
+    suspend fun deleteForSources(ids: List<String>)
+
+    @Query("SELECT blobName FROM local_files WHERE blobName IS NOT NULL")
+    suspend fun blobNames(): List<String>
+}
+
+@Dao
+interface TombstoneDao {
+    @Upsert
+    suspend fun put(rows: List<SourceTombstoneEntity>)
+
+    @Query("SELECT sourceId FROM source_tombstones")
+    suspend fun ids(): List<String>
+
+    @Query("DELETE FROM source_tombstones WHERE sourceId IN (:ids)")
+    suspend fun delete(ids: List<String>)
+
+    @Query("DELETE FROM source_tombstones WHERE recordedAt < :before")
+    suspend fun deleteOlderThan(before: Long)
+
+    @Query("DELETE FROM source_tombstones")
+    suspend fun clear()
+}
+
+@Dao
+interface DeletionReviewDao {
+    @Query("SELECT * FROM deletion_reviews ORDER BY createdAt DESC, localId")
+    fun observeAll(): Flow<List<DeletionReviewEntity>>
+
+    @Query("SELECT * FROM deletion_reviews WHERE localId = :id")
+    fun observe(id: String): Flow<DeletionReviewEntity?>
+
+    @Query("SELECT * FROM deletion_reviews WHERE localId = :id")
+    suspend fun get(id: String): DeletionReviewEntity?
+
+    @Query("SELECT * FROM deletion_reviews")
+    suspend fun all(): List<DeletionReviewEntity>
+
+    @Upsert
+    suspend fun put(row: DeletionReviewEntity)
+
+    @Query("DELETE FROM deletion_reviews WHERE localId = :id")
+    suspend fun delete(id: String)
+}
+
+@Dao
+interface ExportIntentDao {
+    @Query("SELECT * FROM export_intents ORDER BY createdAt DESC, localId")
+    fun observeAll(): Flow<List<ExportIntentEntity>>
+
+    @Query("SELECT * FROM export_intents WHERE localId = :id")
+    fun observe(id: String): Flow<ExportIntentEntity?>
+
+    @Query("SELECT * FROM export_intents WHERE localId = :id")
+    suspend fun get(id: String): ExportIntentEntity?
+
+    @Query("SELECT * FROM export_intents")
+    suspend fun all(): List<ExportIntentEntity>
+
+    @Upsert
+    suspend fun put(row: ExportIntentEntity)
+
+    @Query("DELETE FROM export_intents WHERE localId = :id")
+    suspend fun delete(id: String)
 }
