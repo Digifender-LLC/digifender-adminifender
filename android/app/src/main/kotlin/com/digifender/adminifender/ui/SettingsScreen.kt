@@ -26,12 +26,26 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.digifender.adminifender.R
+import com.digifender.adminifender.core.data.device.ArtifactCheck
+import com.digifender.adminifender.inference.ModelState
 import com.digifender.adminifender.core.data.repository.ChatUnsent
 import com.digifender.adminifender.core.data.repository.Freshness
 import com.digifender.adminifender.core.data.review.DeletionPending
 import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.google.firebase.FirebaseApp
+
+/** The local model as the owner sees it, with the actions Settings offers for it. */
+data class ModelUi(val state: ModelState, val onChoose: () -> Unit, val onRemove: () -> Unit)
+
+@Composable
+private fun modelText(state: ModelState): String = when (state) {
+    ModelState.NotConfigured -> stringResource(R.string.model_not_configured)
+    is ModelState.NotInstalled -> stringResource(R.string.model_not_installed, state.modelId)
+    is ModelState.Installing -> stringResource(R.string.model_installing, state.modelId)
+    is ModelState.Installed -> stringResource(R.string.model_installed, state.modelId)
+    is ModelState.Rejected -> stringResource(if (state.check == ArtifactCheck.WRONG_HASH) R.string.model_wrong_hash else R.string.model_wrong_size, state.modelId)
+}
 
 @Composable
 fun SettingsScreen(
@@ -43,6 +57,7 @@ fun SettingsScreen(
     onNotificationsChanged: () -> Unit,
     onOpenStorage: () -> Unit,
     deletionPending: DeletionPending,
+    model: ModelUi,
     modifier: Modifier = Modifier,
 ) {
     var confirming by rememberSaveable { mutableStateOf(false) }
@@ -82,6 +97,13 @@ fun SettingsScreen(
                     context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName))
                 }
             }) { Text(stringResource(R.string.notifications_allow)) }
+        }
+        Text(stringResource(R.string.settings_local_model), style = MaterialTheme.typography.titleMedium)
+        Text(modelText(model.state))
+        when (model.state) {
+            is ModelState.NotInstalled, is ModelState.Rejected -> OutlinedButton(onClick = model.onChoose) { Text(stringResource(R.string.model_choose)) }
+            is ModelState.Installed -> OutlinedButton(onClick = model.onRemove) { Text(stringResource(R.string.model_remove)) }
+            else -> Unit
         }
         Text(stringResource(R.string.settings_storage), style = MaterialTheme.typography.titleMedium)
         Text(stringResource(R.string.settings_storage_body), style = MaterialTheme.typography.bodyMedium)

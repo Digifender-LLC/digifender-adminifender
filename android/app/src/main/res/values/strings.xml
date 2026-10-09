@@ -351,7 +351,7 @@
     <string name="chat_status_refused">The server refused this question (%1$s). It was not answered.</string>
     <string name="chat_status_answer_rejected">The server\'s answer didn\'t meet the format this app requires, so it isn\'t shown. Ask again.</string>
     <string name="chat_status_withdrawn">Cancelled on this phone before the server confirmed it had this question; the server had no record of it at the time. If it reaches the server later, it will appear here as an ordinary question.</string>
-    <string name="chat_wait_needs_phone_model">Waiting for a model on this phone. This version of the app can\'t run one yet, so the question stays queued at the server until a later version can. You can cancel it.</string>
+    <string name="chat_wait_needs_phone_model">Waiting for a model on this phone. Install one under Settings, On-device model, and keep this screen open; until then the question stays queued at the server. You can cancel it.</string>
     <string name="chat_wait_other">Waiting (reason: %1$s).</string>
     <string name="chat_fail_not_allowed">Not answered: the settings don\'t allow AI for the emails involved.</string>
     <string name="chat_fail_evidence_changed">Not answered: the emails it would use changed while it was waiting.</string>

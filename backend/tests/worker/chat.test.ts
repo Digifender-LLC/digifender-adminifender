@@ -6,7 +6,7 @@ import threadFixture from '../../../contracts/fixtures/v1/chat-thread/valid/conc
 import type { Env } from '../../src/env';
 import { loadEvidence } from '../../src/chat/retrieval';
 import { DEFAULT_INFERENCE, type InferenceSettings, loadSettings } from '../../src/inference/settings';
-import { T0, api, enrollOwner, ingest, runPending } from './support';
+import { T0, api, contractValidator, enrollOwner, ingest, runPending } from './support';
 
 let token: string;
 let keyCount = 0;
@@ -244,6 +244,7 @@ describe('durable turns', () => {
     const foreground = { foreground: true, charging: false, batteryPercent: 60, thermal: 'none', modelId: 'local-test-model', modelManifestHash: 'a'.repeat(64) };
     const work = (await api('POST', '/device-work/claim', { token, key: key(), body: foreground })).body.data.work;
     expect(work).toMatchObject({ task: 'chat', turnId, chunkIds: [`${invoice}:body-v1:0`], repair: false });
+    expect(contractValidator('device-work-claim')({ work }), JSON.stringify(work)).toBe(true);
     // The phone gets the same prompt the cloud adapter would send: instructions, then the question and excerpts as data.
     expect(work.messages.map((m: { role: string }) => m.role)).toEqual(['system', 'user']);
     expect(work.messages[1].content).toContain('When is invoice 4471 due?');

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://adminifender.invalid/schema/v1/device-work-decline.schema.json",
+  "title": "POST /device-work/{attemptId}/decline body (lld.md#triage)",
+  "description": "The phone cannot run this input within its model's token limit. The task ends visibly with that reason instead of being retried by the same phone or answered with invented output; only the holder of the live lease can decline.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "leaseToken",
+    "reason"
+  ],
+  "properties": {
+    "leaseToken": {
+      "$ref": "common.schema.json#/$defs/uuid"
+    },
+    "reason": {
+      "const": "input_too_large"
+    }
+  }
+}

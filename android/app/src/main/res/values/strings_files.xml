@@ -55,6 +55,15 @@
     <string name="attachment_notice_save_leftover">Couldn\'t save %1$s, and a partial file may still be there. Delete it yourself.</string>
     <string name="attachment_notice_damaged">%1$s failed its checks on this phone and was removed. Download it again.</string>
     <string name="attachment_notice_not_available">%1$s isn\'t on this phone any more. Download it again.</string>
+    <string name="settings_local_model">On-device model</string>
+    <string name="model_not_configured">This build has no pinned local model, so work that is allowed to run on the phone only waits until a build with one is installed.</string>
+    <string name="model_not_installed">%1$s is not installed. Choose the model file you downloaded; it is checked against the pinned size and SHA-256 before use.</string>
+    <string name="model_installing">Checking and installing %1$s\u2026</string>
+    <string name="model_installed">%1$s is installed and verified. It runs on the CPU while charging, or in the foreground for chat.</string>
+    <string name="model_wrong_hash">That file is not %1$s: its SHA-256 does not match. Nothing was installed.</string>
+    <string name="model_wrong_size">That file is not %1$s: its size does not match. Nothing was installed.</string>
+    <string name="model_choose">Choose model file</string>
+    <string name="model_remove">Remove model</string>
     <string name="attachment_read_more">Read more pages</string>
     <string name="attachment_notice_read_more_asked">The next pages of %1$s are queued. This phone reads them when it is charged enough and online; what you can search now stays as it is until they are done.</string>
     <string name="attachment_notice_read_more_nothing">%1$s has no further pages waiting to be read.</string>

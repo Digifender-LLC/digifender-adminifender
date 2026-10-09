@@ -1,0 +1,186 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://adminifender.invalid/schema/v1/device-work-claim.schema.json",
+  "title": "POST /device-work/claim data (lld.md#triage)",
+  "description": "Either one leased task or `work: null` with the reason (`not_ready`: the phone's state does not admit any task; `busy`: it already holds a live lease; `no_work`). A triage task names the email and its revision; a chat task names the turn. The phone keeps the lease alive with heartbeats and submits under `leaseToken` before `expiresAt`. `chunkIds` are the evidence passages the prompt contains.",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "work",
+        "reason"
+      ],
+      "properties": {
+        "work": {
+          "type": "null"
+        },
+        "reason": {
+          "enum": [
+            "not_ready",
+            "busy",
+            "no_work"
+          ]
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "work"
+      ],
+      "properties": {
+        "work": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "attemptId",
+            "jobId",
+            "policyRevision",
+            "task",
+            "inputDigest",
+            "chunkIds",
+            "messages",
+            "repair",
+            "modelId",
+            "leaseToken",
+            "expiresAt"
+          ],
+          "properties": {
+            "attemptId": {
+              "$ref": "common.schema.json#/$defs/uuid"
+            },
+            "jobId": {
+              "$ref": "common.schema.json#/$defs/uuid"
+            },
+            "policyRevision": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "task": {
+              "enum": [
+                "triage",
+                "chat"
+              ]
+            },
+            "inputDigest": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "chunkIds": {
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "$ref": "common.schema.json#/$defs/chunkId"
+              }
+            },
+            "messages": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 64,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "role",
+                  "content"
+                ],
+                "properties": {
+                  "role": {
+                    "enum": [
+                      "system",
+                      "user",
+                      "assistant"
+                    ]
+                  },
+                  "content": {
+                    "type": "string",
+                    "maxLength": 200000
+                  }
+                }
+              },
+              "description": "Exactly what the cloud adapter would send, so the local and the cloud model answer the same prompt."
+            },
+            "repair": {
+              "type": "boolean"
+            },
+            "modelId": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "leaseToken": {
+              "$ref": "common.schema.json#/$defs/uuid"
+            },
+            "expiresAt": {
+              "$ref": "common.schema.json#/$defs/timestamp"
+            },
+            "sourceId": {
+              "$ref": "common.schema.json#/$defs/uuid"
+            },
+            "sourceRevision": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "turnId": {
+              "$ref": "common.schema.json#/$defs/uuid"
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "task": {
+                    "const": "triage"
+                  }
+                },
+                "required": [
+                  "task"
+                ]
+              },
+              "then": {
+                "required": [
+                  "sourceId",
+                  "sourceRevision"
+                ],
+                "properties": {
+                  "sourceId": true,
+                  "sourceRevision": true,
+                  "turnId": false
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "task": {
+                    "const": "chat"
+                  }
+                },
+                "required": [
+                  "task"
+                ]
+              },
+              "then": {
+                "required": [
+                  "turnId"
+                ],
+                "properties": {
+                  "turnId": true,
+                  "sourceId": false,
+                  "sourceRevision": false
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
