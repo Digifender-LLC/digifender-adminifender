@@ -1,4 +1,5 @@
 import { env } from 'cloudflare:workers';
+import { validators } from 'virtual:contract-validators';
 import type { Env, QueueEnvelope } from '../../src/env';
 import { handleFetch } from '../../src/http/router';
 import { type InboundEmail, admitEmail } from '../../src/admission/capture';
@@ -61,7 +62,7 @@ export async function enrollOwner(now = T0): Promise<{ token: string; authentica
 }
 
 /** Stages raw MIME and runs its parse job, returning the published source ID. */
-export async function ingest(raw: string, options: { to?: string; now?: number } = {}): Promise<string> {
+export async function ingest(raw: string, options: { to?: string; now?: number; env?: Partial<Env> } = {}): Promise<string> {
   const bytes = new TextEncoder().encode(raw);
   const message: InboundEmail = {
     from: 'sender@example.com',
@@ -75,7 +76,7 @@ export async function ingest(raw: string, options: { to?: string; now?: number }
       throw new Error('unexpected rejection');
     },
   };
-  const quiet = quietEnv();
+  const quiet = Object.assign(quietEnv(), options.env ?? {});
   const outcome = await admitEmail(message, quiet, options.now ?? T0);
   if (outcome.kind !== 'staged') throw new Error(outcome.kind);
   const run = await runJob(quiet, JOB_HANDLERS, outcome.jobId, options.now ?? T0);
@@ -105,4 +106,22 @@ export function sessionClock(owner: { token: string; refreshToken: string }, sta
     issued = now;
     return token;
   };
+}
+
+/** The real JSON Schema of a shared contract, compiled in Node by vitest.config.ts. */
+export function contractValidator(name: string) {
+  const validate = validators[name];
+  if (!validate) throw new Error(`no schema named ${name}`);
+  return validate;
+}
+
+/** Fails with the schema's own error list when a live response does not match its shared contract. */
+export function expectContract(name: string, data: unknown): void {
+  const validate = contractValidator(name);
+  if (!validate(data)) throw new Error(`${name} contract: ${JSON.stringify(validate.errors)} for ${JSON.stringify(data).slice(0, 400)}`);
+}
+
+/** The negative twin: the contract must refuse this shape. */
+export function expectContractViolation(name: string, data: unknown): void {
+  if (contractValidator(name)(data)) throw new Error(`${name} contract unexpectedly accepted ${JSON.stringify(data).slice(0, 400)}`);
 }

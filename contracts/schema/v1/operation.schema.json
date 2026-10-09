@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://adminifender.invalid/schema/v1/operation.schema.json",
+  "title": "GET /operations/{id} data (lld.md#reviewed-actions)",
+  "description": "One consumed review's operation with its sanitized receipt. For `archive.delete`, `cleanup` reports the asynchronous removal of live archive content from the deletion ledger: `complete` (every source cleaned), `partial` (some cleaned, none failing), `pending` (none cleaned yet), `failed` (a cleanup job exhausted its retries and needs attention) and `unknown` (the ledger does not account for every source, or a source's ledger row contradicts its finished cleanup job; such sources are counted in `unrecorded` and nothing is claimed). `scope` is always `live_archive`: export objects (they expire and are swept on their own schedule) and backups (which keep deleted bytes until their retention ends) are not reported here. Other effects have `cleanup: null`.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "reviewId", "state", "intent", "receipt", "errorCode", "createdAt", "settledAt", "cleanup"],
+  "properties": {
+    "id": { "$ref": "common.schema.json#/$defs/uuid" },
+    "reviewId": { "$ref": "common.schema.json#/$defs/uuid" },
+    "state": { "$ref": "#/$defs/state" },
+    "intent": { "oneOf": [{ "$ref": "review-request.schema.json#/oneOf/0" }, { "$ref": "review-request.schema.json#/oneOf/1" }] },
+    "receipt": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/receipt" }] },
+    "errorCode": { "oneOf": [{ "type": "null" }, { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" }] },
+    "createdAt": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "settledAt": { "oneOf": [{ "type": "null" }, { "$ref": "common.schema.json#/$defs/timestamp" }] },
+    "cleanup": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/cleanup" }] }
+  },
+  "if": { "properties": { "intent": { "type": "object", "properties": { "effect": { "const": "archive.delete" } } } } },
+  "then": { "properties": { "cleanup": { "type": "object" } } },
+  "else": { "properties": { "cleanup": { "type": "null" } } },
+  "$defs": {
+    "state": { "enum": ["prepared", "dispatching", "succeeded", "failed", "uncertain", "cancelled"] },
+    "receipt": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ledgerSeq", "ledgerRecordHash", "sourcesDeleted"],
+          "properties": {
+            "ledgerSeq": { "type": "integer", "minimum": 1 },
+            "ledgerRecordHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "sourcesDeleted": { "type": "integer", "minimum": 1 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["deviceRevoked"],
+          "properties": { "deviceRevoked": { "$ref": "common.schema.json#/$defs/uuid" } }
+        }
+      ]
+    },
+    "cleanup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scope", "state", "total", "completed", "failed", "unrecorded"],
+      "properties": {
+        "scope": { "const": "live_archive" },
+        "state": { "enum": ["pending", "partial", "complete", "failed", "unknown"] },
+        "total": { "type": "integer", "minimum": 1 },
+        "completed": { "type": "integer", "minimum": 0 },
+        "failed": { "type": "integer", "minimum": 0 },
+        "unrecorded": { "type": "integer", "minimum": 0 }
+      },
+      "allOf": [
+        { "if": { "properties": { "state": { "const": "complete" } } }, "then": { "properties": { "failed": { "const": 0 }, "unrecorded": { "const": 0 } } } },
+        { "if": { "properties": { "state": { "const": "unknown" } } }, "then": { "properties": { "unrecorded": { "type": "integer", "minimum": 1 } } } },
+        { "if": { "properties": { "state": { "const": "failed" } } }, "then": { "properties": { "failed": { "type": "integer", "minimum": 1 }, "unrecorded": { "const": 0 } } } },
+        { "if": { "properties": { "state": { "enum": ["pending", "partial"] } } }, "then": { "properties": { "failed": { "const": 0 }, "unrecorded": { "const": 0 } } } },
+        { "if": { "properties": { "state": { "const": "pending" } } }, "then": { "properties": { "completed": { "const": 0 } } } }
+      ]
+    }
+  }
+}

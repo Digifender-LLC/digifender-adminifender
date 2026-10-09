@@ -65,6 +65,13 @@ export const v = {
     fn.optional = true;
     return fn;
   },
+  array<T>(inner: Validator<T>, options: { max: number; min?: number }): Validator<T[]> {
+    return (value, path) => {
+      if (!Array.isArray(value)) throw invalid(path, 'expected_array');
+      if (value.length < (options.min ?? 0) || value.length > options.max) throw invalid(path, 'length');
+      return value.map((item, index) => inner(item, `${path}[${index}]`));
+    };
+  },
   /** Rejects unknown fields (lld.md#contract-conventions). */
   object<S extends Record<string, Validator<unknown>>>(shape: S): Validator<{ [K in keyof S]: ReturnType<S[K]> }> {
     return (value, path) => {

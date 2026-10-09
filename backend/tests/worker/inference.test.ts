@@ -137,7 +137,7 @@ describe('cloud dispatch', () => {
     expect(calls).toHaveLength(1);
     expect(calls[0]!.model).toBe('@cf/test/synthetic-model');
     expect(calls[0]!.input.max_tokens).toBe(1000);
-    expect(calls[0]!.input.messages[1]!.content).toContain(`<chunk id="${id}:body-v1:0">`);
+    expect(calls[0]!.input.messages[1]!.content).toContain(`<chunk id="${id}:body-v1:0" length="${BODY.length}">`);
 
     const view = await status(id);
     expect(view).toMatchObject({ state: 'succeeded', result: { category: 'billing', importance: 'important' }, provenance: { route: 'cloud', modelId: '@cf/test/synthetic-model' } });
@@ -156,12 +156,34 @@ describe('cloud dispatch', () => {
     expect((await status(id)).result.importance).toBe('urgent');
   });
 
+  it('turns quoted evidence into offsets, and rejects a quote that is not in the chunk', async () => {
+    await setInference(CLOUD);
+    const quoted = await triaged('Quoted');
+    const first = fakeAi([valid(quoted, { evidence: [{ chunkId: `${quoted}:body-v1:0`, quote: 'Invoice 4471 for synthetic hosting' }] })]);
+    await runPending('infer', T0, { AI: first.ai });
+    expect(first.calls[0]!.input.messages[0]!.content).toContain('"evidence": [{"chunkId": string, "quote": string}]');
+    expect(await status(quoted)).toMatchObject({ state: 'succeeded', result: { evidence: [{ chunkId: `${quoted}:body-v1:0`, start: 0, end: 34 }] } });
+
+    const invented = await triaged('Invented', T0 + 1);
+    const second = fakeAi([
+      valid(invented, { evidence: [{ chunkId: `${invented}:body-v1:0`, quote: 'payment overdue since March' }] }),
+      valid(invented, { evidence: [{ chunkId: `${invented}:body-v1:0`, quote: 'due on   OCTOBER 13' }] }),
+    ]);
+    await runPending('infer', T0 + 1, { AI: second.ai });
+    expect(second.calls[1]!.input.messages.at(-1)!.content).toContain('$.evidence[0].quote:not_in_chunk');
+    const view = await status(invented);
+    expect(view).toMatchObject({ state: 'succeeded' });
+    expect(BODY.slice(view.result.evidence[0].start, view.result.evidence[0].end)).toBe('due on October 13');
+  });
+
   it('makes one separately reserved repair attempt, then fails visibly', async () => {
     await setInference(CLOUD);
     const repaired = await triaged('Repaired');
     const first = fakeAi([valid(repaired, { evidence: [{ chunkId: `${repaired}:body-v1:0`, start: 0, end: 5000 }] }), valid(repaired)]);
     await runPending('infer', T0, { AI: first.ai });
     expect(first.calls[1]!.input.messages.at(-1)!.content).toContain('$.evidence[0]:outside_chunk');
+    // The repair turn names the only citable chunk.
+    expect(first.calls[1]!.input.messages.at(-1)!.content).toContain(`Cite only these chunk ids, each with a quote copied word for word from that chunk's text: ${repaired}:body-v1:0.`);
     expect((await status(repaired)).attempts.map((a: { state: string; repair: boolean }) => [a.state, a.repair])).toEqual([
       ['invalid_output', false],
       ['succeeded', true],
@@ -237,6 +259,17 @@ describe('budgets', () => {
     expect(paid).toMatchObject({ limit: { neurons: 90_909 }, settled: { neurons: 7 } });
   });
 
+  it('charges everything to the paid ceiling when account headroom is not attested', async () => {
+    const shared = { ...CLOUD, cloud: { ...CLOUD.cloud, account: 'unattested' as const, paidMonthlyCeilingUsd: 1, usdPerThousandNeurons: 0.011 } };
+    await setInference(shared);
+    const a = await triaged('A');
+    await runPending('infer', T0, { AI: fakeAi([valid(a)]).ai });
+    expect(await status(a)).toMatchObject({ state: 'succeeded' });
+    const all = await periods();
+    expect(all.some((p) => p.id.endsWith(':included'))).toBe(false);
+    expect(all.find((p) => p.id.endsWith(':paid'))).toMatchObject({ limit: { neurons: 90_909 }, settled: { neurons: 7 } });
+  });
+
   it('lets only one of two concurrent reservations through', async () => {
     const settings = { ...CLOUD, limits: { automaticPerDay: 1, interactivePerMonth: 1000 } };
     const job = crypto.randomUUID();
@@ -293,12 +326,30 @@ describe('device work', () => {
     expect((await submit(first.attemptId, result(second.leaseToken), later)).body.data.state).toBe('succeeded');
   });
 
+  it('lets the phone decline input over its token limit, visibly and only under its lease', async () => {
+    const id = await queued('Invoice');
+    const work = (await claim()).body.data.work;
+    const decline = (leaseToken: string) => api('POST', `/device-work/${work.attemptId}/decline`, { token, key: key(), body: { leaseToken, reason: 'input_too_large' } });
+    expect((await decline(crypto.randomUUID())).body.error?.code).toBe('lease_lost');
+    expect((await decline(work.leaseToken)).body.data).toMatchObject({ state: 'cancelled', reason: 'input_too_large' });
+    expect(await status(id)).toMatchObject({ state: 'cancelled', reason: 'input_too_large', result: null });
+    // Not handed out again, and a result under the old lease is refused.
+    expect((await claim()).body.data).toEqual({ work: null, reason: 'no_work' });
+    const late = { leaseToken: work.leaseToken, inputDigest: work.inputDigest, policyRevision: work.policyRevision, outputJson: valid(id), modelManifestHash: 'a'.repeat(64) };
+    expect((await submit(work.attemptId, late)).body.error?.code).toBe('lease_lost');
+  });
+
   it('queues one repair for invalid phone output and rejects results under an old policy', async () => {
     const id = await queued('Invoice');
     const work = (await claim()).body.data.work;
     const result = (w: typeof work, outputJson: string) => ({ leaseToken: w.leaseToken, inputDigest: w.inputDigest, policyRevision: w.policyRevision, outputJson, modelManifestHash: 'a'.repeat(64) });
     expect((await submit(work.attemptId, result(work, '{"summary":"x"}'))).body.data).toMatchObject({ state: 'invalid_output', repairQueued: true });
+    expect(work.repair).toBe(false);
+    expect(work.messages[0].role).toBe('system');
+    expect(work.messages[1].content).toContain('Subject: ');
     const repair = (await claim()).body.data.work;
+    expect(repair.repair).toBe(true);
+    expect(repair.messages).toEqual(work.messages);
     expect(repair.attemptId).not.toBe(work.attemptId);
 
     await setInference({ ...DEFAULT_INFERENCE, mode: 'local_only' });

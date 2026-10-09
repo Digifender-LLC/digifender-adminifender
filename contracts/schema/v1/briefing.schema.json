@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://adminifender.invalid/schema/v1/briefing.schema.json",
+  "title": "GET /briefings/current data (lld.md#briefings)",
+  "description": "The deterministic since-last-review snapshot. Each section carries full concern projections, the same shape as sync. summary is always null until the inference slice adds cited summaries; the phone ignores it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "snapshotSeq", "throughTime", "lastReviewedAt", "newConcerns", "changedConcerns", "overdue", "unacknowledged", "newSourceIds", "hasMore", "summary"],
+  "properties": {
+    "id": { "$ref": "common.schema.json#/$defs/uuid" },
+    "snapshotSeq": { "type": "integer", "minimum": 0, "description": "The review cursor this snapshot covers through; never beyond the first item left out of a capped section." },
+    "throughTime": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "lastReviewedAt": { "anyOf": [{ "$ref": "common.schema.json#/$defs/timestamp" }, { "type": "null" }] },
+    "newConcerns": { "$ref": "#/$defs/concerns" },
+    "changedConcerns": { "$ref": "#/$defs/concerns" },
+    "overdue": { "$ref": "#/$defs/concerns" },
+    "unacknowledged": { "$ref": "#/$defs/concerns" },
+    "newSourceIds": { "type": "array", "maxItems": 100, "items": { "$ref": "common.schema.json#/$defs/uuid" } },
+    "hasMore": { "type": "boolean", "description": "True when new or changed work beyond a section cap was left out: snapshotSeq then stops before the first omitted item, and marking this briefing reviewed leaves the rest for the next one." },
+    "summary": { "type": "null" }
+  },
+  "$defs": {
+    "concerns": { "type": "array", "maxItems": 100, "items": { "$ref": "sync-changes.schema.json#/$defs/concern" } }
+  }
+}

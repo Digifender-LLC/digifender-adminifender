@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://adminifender.invalid/schema/v1/extraction-outcome.schema.json",
+  "title": "POST /device-work/extraction/{leaseId}/outcome body (lld.md#text-extraction-and-ocr)",
+  "description": "The phone gives a file back. `unavailable` returns it to the queue (the recognizer or the file could not be used now); `encrypted` and `unsupported` end it as unsupported with that detail; `failed` ends it as failed with `parser_error`. The original attachment stays downloadable in every case.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "leaseToken",
+    "outcome"
+  ],
+  "properties": {
+    "leaseToken": {
+      "$ref": "common.schema.json#/$defs/uuid"
+    },
+    "outcome": {
+      "enum": [
+        "encrypted",
+        "unsupported",
+        "failed",
+        "unavailable"
+      ]
+    }
+  }
+}

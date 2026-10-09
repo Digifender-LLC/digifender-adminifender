@@ -15,30 +15,46 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.digifender.adminifender.R
+import com.digifender.adminifender.core.data.network.ChatScope
+import com.digifender.adminifender.core.data.network.ScopeKind
+import com.digifender.adminifender.core.data.network.isRecordId
 import com.digifender.adminifender.core.data.network.SourceSummary
 import com.digifender.adminifender.core.data.repository.ConcernView
 import com.digifender.adminifender.core.data.sync.QueuedMutation
 import com.digifender.adminifender.core.model.ActionKind
 import com.digifender.adminifender.core.model.ConcernAction
+import com.digifender.adminifender.core.model.Status
+import com.digifender.adminifender.core.model.isUnconfirmed
 import java.time.ZoneId
 
 @Composable
 fun ConcernScreen(
     state: ConcernUiState,
     nowMs: Long,
-    onAct: (ConcernAction) -> Unit,
+    /** Takes the concern the action was started for, so an action from a form that outlived its concern is refused. */
+    onAct: (concernId: String, action: ConcernAction) -> Unit,
     onReapply: (String) -> Unit,
     onDiscard: (String) -> Unit,
     sources: List<SourceSummary>,
     onOpenSource: (String) -> Unit,
+    /** Starts (or returns to) a chat scoped to this concern or its service. */
+    onAsk: (ChatScope) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val view = state.view
+    // Which input form is open. Saved with the screen so a rotation keeps it, and tied to this concern: a push that
+    // opens another one must not carry an open form (or its typed values) over to it.
+    var editing by rememberSaveable(view?.shown?.id) { mutableStateOf<ActionKind?>(null) }
     Column(modifier.padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         if (view == null) {
             if (state.loaded) Text(stringResource(R.string.concern_missing))
@@ -47,10 +63,12 @@ fun ConcernScreen(
         val c = view.shown
         Text(c.title, style = MaterialTheme.typography.headlineSmall)
         Text(listOf(statusText(c.status), importanceText(c.importance)).joinToString(" · "), style = MaterialTheme.typography.labelLarge)
-        c.due?.atMs?.let { Text(stringResource(R.string.label_due, dateTime(it))) }
+        val zone = ZoneId.systemDefault()
+        dueDisplay(c.due, zone)?.let { Text(dueText(it)) }
         c.snoozeUntilMs?.let { Text(stringResource(R.string.label_snoozed_until, dateTime(it))) }
         c.waiting?.awaitedParty?.let { Text(stringResource(R.string.label_waiting_on, it)) }
         c.waiting?.note?.let { Text(it) }
+        c.waiting?.followUpAtMs?.let { Text(stringResource(R.string.label_follow_up, formatInstant(it, zone))) }
         if (c.acknowledgedAtMs != null) Text(stringResource(R.string.label_acknowledged))
         Text(pluralStringResource(R.plurals.label_sources, c.sourceIds.size, c.sourceIds.size), style = MaterialTheme.typography.bodySmall)
         if (view.pending > 0) Text(stringResource(R.string.label_pending), style = MaterialTheme.typography.bodySmall)
@@ -67,7 +85,33 @@ fun ConcernScreen(
                     ActionKind.SNOOZE -> R.string.action_snooze_tomorrow to ConcernAction.Snooze(tomorrowMorning(nowMs, ZoneId.systemDefault()))
                     else -> return@forEach
                 }
-                OutlinedButton(onClick = { onAct(action) }) { Text(stringResource(label)) }
+                OutlinedButton(onClick = { onAct(c.id, action) }) { Text(stringResource(label)) }
+            }
+            formActions(c.status).forEach { kind ->
+                when (kind) {
+                    ActionKind.WAIT -> OutlinedButton(onClick = { editing = ActionKind.WAIT }) {
+                        Text(stringResource(if (c.status == Status.WAITING) R.string.action_wait_edit else R.string.action_wait))
+                    }
+                    ActionKind.SET_DUE -> OutlinedButton(onClick = { editing = ActionKind.SET_DUE }) {
+                        Text(stringResource(if (c.due?.isUnconfirmed() == true) R.string.action_confirm_due else if (c.due?.atMs != null) R.string.action_change_due else R.string.action_set_due))
+                    }
+                    else -> Unit
+                }
+            }
+        }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = { onAsk(ChatScope(ScopeKind.CONCERN, c.id)) }) { Text(stringResource(R.string.chat_ask_concern)) }
+            // Only a service the Worker linked to this concern; the phone has no list of services to offer otherwise.
+            c.serviceId?.takeIf { isRecordId(it) }?.let { service ->
+                OutlinedButton(onClick = { onAsk(ChatScope(ScopeKind.SERVICE, service)) }) { Text(stringResource(R.string.chat_ask_service)) }
+            }
+        }
+        // The dialogs keep their typed values in remembered state; keying by concern gives each concern its own.
+        key(c.id) {
+            when (editing) {
+                ActionKind.WAIT -> WaitDialog(c.waiting, zone, nowMs, { onAct(c.id, it) }) { editing = null }
+                ActionKind.SET_DUE -> DueDialog(c.due, zone, nowMs, { onAct(c.id, it) }) { editing = null }
+                else -> Unit
             }
         }
 

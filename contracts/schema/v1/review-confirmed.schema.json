@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://adminifender.invalid/schema/v1/review-confirmed.schema.json",
+  "title": "POST /reviews/{id}/confirm data (lld.md#reviewed-actions)",
+  "description": "The operation the confirmation created. Native effects settle inside the confirming transaction, so `state` is already final. For `archive.delete` the receipt means the sources are hidden, tombstoned and recorded in the independent ledger; it does not mean cleanup finished (see `cleanup` at GET /operations/{id}) and says nothing about backups.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["operationId", "state", "receipt"],
+  "properties": {
+    "operationId": { "$ref": "common.schema.json#/$defs/uuid" },
+    "state": { "enum": ["succeeded"] },
+    "receipt": { "$ref": "operation.schema.json#/$defs/receipt" }
+  }
+}

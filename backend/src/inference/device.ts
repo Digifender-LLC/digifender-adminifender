@@ -8,7 +8,9 @@ import { v } from '../http/validate';
 import { REGISTRY_COLUMNS, REGISTRY_FROM, type RegistryRow } from '../sources/registry';
 import { INFER_TASK, MAX_DEVICE_CHUNKS, inputDigest, knownServiceIds, loadBodyChunks, queueLocalStatement, resultStatement } from './job';
 import { THERMAL_STATES, type Readiness, localReady } from './routing';
+import { type Message, triageMessages } from './cloud';
 import { loadSettings } from './settings';
+import { resolveTriageQuotes } from './quotes';
 import { normalizeTriage, parseModelJson, validateTriage } from './triage-output';
 
 /** Device leases are replay-safe: an expired lease is reclaimed with a new token and a late result is refused. */
@@ -62,11 +64,11 @@ export interface AttemptRow {
 /** What one kind of device task needs: re-verification at claim, and validation and storage of a result. */
 export interface DeviceTask {
   /** Rebuilds the input under current policy; null when the work is no longer allowed or the input changed. */
-  verify(env: Env, row: AttemptRow, policyRevision: number): Promise<{ chunkIds: string[]; digest: string; extra: Record<string, unknown> } | null>;
+  verify(env: Env, row: AttemptRow, policyRevision: number): Promise<{ chunkIds: string[]; digest: string; messages: Message[]; extra: Record<string, unknown> } | null>;
   /** Validates output; on success returns the writes that store it (the last one's effect says whether it was kept). */
   accept(env: Env, row: AttemptRow, outputJson: string, policyRevision: number, now: number): Promise<{ ok: true; store: D1PreparedStatement[] } | { ok: false; errors: string[] }>;
-  /** Writes when the output stays invalid after the repair. */
-  failed(db: D1Database, row: AttemptRow, now: number): Promise<D1PreparedStatement[]>;
+  /** Writes when the output stays invalid after the repair, or the phone declines the input; [code] names why. */
+  failed(db: D1Database, row: AttemptRow, now: number, code?: string): Promise<D1PreparedStatement[]>;
 }
 
 const triageTask: DeviceTask = {
@@ -74,7 +76,12 @@ const triageTask: DeviceTask = {
     const source = await env.CONTROL_DB.prepare(`SELECT ${REGISTRY_COLUMNS} FROM ${REGISTRY_FROM} WHERE r.id = ?`).bind(row.source_id).first<RegistryRow>();
     const loaded = source ? await loadBodyChunks(env, source, MAX_DEVICE_CHUNKS) : null;
     if (!source || !loaded || source.revision !== row.source_revision || source.state !== 'ready' || source.admission !== 'normal' || !['hybrid', 'local_only'].includes(source.privacy)) return null;
-    return { chunkIds: loaded.chunks.map((c) => c.id), digest: await inputDigest(source, row.task, loaded.chunks), extra: { sourceId: source.id, sourceRevision: source.revision } };
+    return {
+      chunkIds: loaded.chunks.map((c) => c.id),
+      digest: await inputDigest(source, row.task, loaded.chunks),
+      messages: triageMessages(loaded.subject, loaded.chunks),
+      extra: { sourceId: source.id, sourceRevision: source.revision },
+    };
   },
   async accept(env, row, outputJson, policyRevision, now) {
     const db = env.CONTROL_DB;
@@ -82,7 +89,8 @@ const triageTask: DeviceTask = {
     const loaded = source ? await loadBodyChunks(env, source, MAX_DEVICE_CHUNKS) : null;
     if (!source || !loaded) throw leaseLost();
     const parsed = parseModelJson(outputJson);
-    const checked = parsed.ok ? validateTriage(normalizeTriage(parsed.value), new Map(loaded.chunks.map((c) => [c.id, c.text.length])), await knownServiceIds(db)) : parsed;
+    const quoted = parsed.ok ? resolveTriageQuotes(normalizeTriage(parsed.value), new Map(loaded.chunks.map((c) => [c.id, c.text]))) : null;
+    const checked = !parsed.ok ? parsed : quoted!.errors.length > 0 ? { ok: false as const, errors: quoted!.errors } : validateTriage(quoted!.value, new Map(loaded.chunks.map((c) => [c.id, c.text.length])), await knownServiceIds(db));
     if (!checked.ok) return checked;
     return { ok: true, store: [await resultStatement(db, { id: row.id, jobId: row.job_id, route: 'local', modelId: row.model_id }, { id: source.id, revision: row.source_revision!, privacy: source.privacy }, policyRevision, checked.value, now)] };
   },
@@ -142,6 +150,9 @@ export async function claimWork(env: Env, now: number, body: ReturnType<typeof r
         task: row.task,
         inputDigest: row.input_digest,
         chunkIds: prepared.chunkIds,
+        // The exact messages the cloud adapter would send, so local and cloud answer the same prompt (lld.md#triage).
+        messages: prepared.messages,
+        repair: row.repair === 1,
         modelId: body.modelId,
         leaseToken: token,
         expiresAt: new Date(now + DEVICE_LEASE_MS).toISOString(),
@@ -235,4 +246,31 @@ export async function submitResult(env: Env, now: number, body: ReturnType<typeo
     if (error instanceof Error && /UNIQUE constraint failed/.test(error.message)) throw new HttpError(409, 'already_completed', 'Another result was already accepted for this task.');
     throw error;
   }
+}
+
+export const declineBody = v.object({ leaseToken, reason: v.oneOf(['input_too_large'] as const) });
+
+/**
+ * POST /device-work/{attemptId}/decline — the phone cannot run this input within its model's token limit. The task
+ * ends visibly with that reason instead of being retried by the same phone or answered with invented output.
+ */
+export async function declineWork(env: Env, now: number, body: ReturnType<typeof declineBody>, auth: AuthContext, attemptId: string) {
+  const db = env.CONTROL_DB;
+  const attempt = await db
+    .prepare('SELECT id, job_id, model_id, source_id, source_revision, policy_revision, input_digest, task, usage_kind, repair, chunk_ids_json FROM inference_attempts WHERE id = ? AND lease_token = ? AND device_id = ?')
+    .bind(attemptId, body.leaseToken, auth.deviceId)
+    .first<AttemptRow>();
+  const task = attempt ? TASKS[attempt.task] : undefined;
+  if (!attempt || !task) throw leaseLost();
+  try {
+    await db.batch([
+      assertion(db, "EXISTS (SELECT 1 FROM inference_attempts WHERE id = ? AND lease_token = ? AND state = 'leased' AND lease_until >= ?)", attempt.id, body.leaseToken, now),
+      db.prepare("UPDATE inference_attempts SET state = 'cancelled', reason = ?, error_code = ?, completed_at = ? WHERE id = ?").bind(body.reason, body.reason, now, attempt.id),
+      ...(await task.failed(db, attempt, now, body.reason)),
+    ]);
+  } catch (error) {
+    if (isAssertionFailure(error)) throw leaseLost();
+    throw error;
+  }
+  return { attemptId, state: 'cancelled', reason: body.reason };
 }

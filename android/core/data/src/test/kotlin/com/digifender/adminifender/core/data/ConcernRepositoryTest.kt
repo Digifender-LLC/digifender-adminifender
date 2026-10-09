@@ -7,6 +7,7 @@ import com.digifender.adminifender.core.data.repository.InboxFilter
 import com.digifender.adminifender.core.data.repository.SyncScheduler
 import com.digifender.adminifender.core.data.repository.freshness
 import com.digifender.adminifender.core.data.repository.inbox
+import com.digifender.adminifender.core.data.repository.localBriefing
 import com.digifender.adminifender.core.data.repository.overlay
 import com.digifender.adminifender.core.data.sync.MutationState
 import com.digifender.adminifender.core.data.sync.QueuedMutation
@@ -105,6 +106,50 @@ class ConcernViewsTest {
         assertEquals(1, f.needsOwner)
         assertEquals(true, f.held)
         assertEquals(NOW - 60_000, f.lastSyncedAtMs)
+    }
+
+    @Test
+    fun waitAndDueEditsShowOnTopOfTheServerCopyUntilConfirmed() {
+        val view = overlay(
+            listOf(concern("a")),
+            listOf(
+                queued("k1", "a", ConcernAction.Wait("Asked for terms", "Landlord", NOW + 86_400_000)),
+                queued("k2", "a", ConcernAction.SetDue(NOW + 3_600_000, "Europe/London", null), at = NOW - 400),
+            ),
+            NOW,
+        ).single()
+        assertEquals(Status.WAITING, view.shown.status)
+        assertEquals("Landlord", view.shown.waiting?.awaitedParty)
+        assertEquals(NOW + 3_600_000, view.shown.due?.atMs)
+        assertEquals(2, view.pending)
+        assertEquals(Status.OPEN, view.server.status)
+        assertNull(view.server.due)
+        assertEquals(1, view.server.revision)
+    }
+
+    @Test
+    fun theBriefingComputedOnThePhoneHasOnlyTheTwoSectionsItCanKnow() {
+        val views = overlay(
+            listOf(
+                concern("late-b", dueAt = NOW - 1_000),
+                concern("late-a", dueAt = NOW - 5_000),
+                concern("future", dueAt = NOW + 5_000),
+                concern("done-late", status = Status.RESOLVED, dueAt = NOW - 9_000),
+                concern("snoozed-late", status = Status.SNOOZED, dueAt = NOW - 2_000).copy(snoozeUntilMs = NOW + 60_000),
+                concern("waiting", status = Status.WAITING, updated = NOW - 10),
+                concern("old", updated = NOW - 9_000),
+                concern("acked", updated = NOW - 100).copy(acknowledgedAtMs = NOW - 50),
+                concern("acked-here", updated = NOW - 200),
+            ),
+            listOf(queued("k", "acked-here", ConcernAction.Acknowledge)),
+            NOW,
+        )
+        val local = localBriefing(views, NOW)
+        // Overdue: unresolved with a confirmed due time already past, oldest due first; a snoozed item is still overdue.
+        assertEquals(listOf("late-a", "snoozed-late", "late-b"), local.overdue.map { it.server.id })
+        // Unacknowledged: open or waiting only, newest update first (ties by ID, descending); the snoozed, resolved and
+        // acknowledged items drop out, and so does the one whose acknowledgement is only queued on the phone.
+        assertEquals(listOf("waiting", "late-b", "late-a", "future", "old"), local.unacknowledged.map { it.server.id })
     }
 }
 

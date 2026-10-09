@@ -10,7 +10,7 @@ let keyCount = 0;
 const key = () => `00000000-0000-4000-b000-${String((keyCount += 1)).padStart(12, '0')}`;
 const decoder = new TextDecoder();
 
-const mail = (subject: string, body: string, attachment?: string) =>
+const mail = (subject: string, body: string, attachment?: string, filename = 'note.txt') =>
   [
     'From: ops@vendor.example',
     'To: inbox@adminifender.example',
@@ -22,7 +22,7 @@ const mail = (subject: string, body: string, attachment?: string) =>
     'Content-Type: text/plain',
     '',
     body,
-    ...(attachment ? ['--b1', 'Content-Type: text/plain; name="note.txt"', 'Content-Disposition: attachment; filename="note.txt"', '', attachment] : []),
+    ...(attachment ? ['--b1', `Content-Type: text/plain; name="${filename}"`, `Content-Disposition: attachment; filename="${filename}"`, '', attachment] : []),
     '--b1--',
     '',
   ].join('\r\n');
@@ -64,7 +64,7 @@ describe('exports', () => {
     const files = await unzip(download.body.data as Uint8Array);
 
     const manifest = JSON.parse(decoder.decode(files.get('manifest.json')));
-    expect(manifest).toMatchObject({ schemaVersion: 1, exportId: id });
+    expect(manifest).toMatchObject({ schemaVersion: 2, exportId: id, scope: { kind: 'archive', admission: 'normal' }, omissions: [], sections: { rules: 'included', services: 'included', partialConcerns: 0 } });
     for (const file of manifest.files as { path: string; sha256: string; bytes: number }[]) {
       expect(await sha256Hex(files.get(file.path)!)).toBe(file.sha256);
       expect(files.get(file.path)!.length).toBe(file.bytes);
@@ -83,6 +83,19 @@ describe('exports', () => {
     // No secrets or session material.
     const all = [...files.values()].map((f) => decoder.decode(f)).join('\n');
     for (const secret of ['afa_', 'afr_', 'refresh_digest', 'test-only-']) expect(all).not.toContain(secret);
+  });
+
+  it.each(['..', '.', '...'])('never uses the dot name %s as a path segment for an attachment', async (filename) => {
+    const a = await ingest(mail('Dots', 'Body', 'attached note', filename));
+    await runPending('triage');
+    await runPending('extract');
+    const id = await createExport();
+    expect(await runPending('export', T0 + 2000)).toEqual(['complete']);
+    const files = await unzip((await api('GET', `/exports/${id}/content`, { token })).body.data as Uint8Array);
+    const attachmentPaths = [...files.keys()].filter((p) => p.startsWith(`files/${a}/`) && !p.endsWith('/message.eml'));
+    expect(attachmentPaths).toHaveLength(1);
+    // The phone refuses to vouch for an export with an empty, `.` or `..` segment, so the Worker must never write one.
+    for (const path of files.keys()) expect(path.split('/').every((segment) => segment !== '' && segment !== '.' && segment !== '..')).toBe(true);
   });
 
   it('lists sources deleted after the snapshot as omitted and never resurrects them', async () => {

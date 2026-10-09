@@ -94,3 +94,21 @@ fun freshness(lastSyncedAtMs: Long?, needsBootstrap: Boolean, mutations: List<Qu
     needsOwner = mutations.count { it.state == MutationState.CONFLICT || it.state == MutationState.FAILED },
     held = mutations.any { it.state == MutationState.HELD },
 )
+
+/** Section size the Worker uses for briefing cards; the phone's own computation keeps the same bound. */
+const val BRIEFING_SECTION_LIMIT = 100
+
+/**
+ * The two briefing sections the phone can compute from its own cache: unresolved items past a confirmed due date, and
+ * open or waiting items nobody acknowledged. It cannot know what is new or changed since the last review, and it uses
+ * the phone's clock rather than the server's, so the screen labels it as a partial, cached view.
+ */
+data class LocalBriefing(val overdue: List<ConcernView>, val unacknowledged: List<ConcernView>)
+
+fun localBriefing(views: List<ConcernView>, nowMs: Long): LocalBriefing {
+    val overdue = views.filter { v -> v.shown.status != Status.RESOLVED && (v.shown.due?.atMs ?: Long.MAX_VALUE) < nowMs }
+        .sortedWith(compareBy<ConcernView> { it.shown.due?.atMs }.thenBy { it.shown.id })
+    val unacknowledged = views.filter { v -> (v.shown.status == Status.OPEN || v.shown.status == Status.WAITING) && v.shown.acknowledgedAtMs == null }
+        .sortedWith(compareByDescending<ConcernView> { it.shown.updatedAtMs }.thenByDescending { it.shown.id })
+    return LocalBriefing(overdue.take(BRIEFING_SECTION_LIMIT), unacknowledged.take(BRIEFING_SECTION_LIMIT))
+}

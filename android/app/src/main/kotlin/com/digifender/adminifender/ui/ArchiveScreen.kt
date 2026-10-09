@@ -1,6 +1,7 @@
 package com.digifender.adminifender.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -14,6 +15,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Card
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -32,6 +34,8 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.digifender.adminifender.R
 import com.digifender.adminifender.core.data.network.ArchiveView
+import com.digifender.adminifender.core.data.network.MAX_DELETE_SOURCES
+import com.digifender.adminifender.core.data.network.MAX_EXPORT_SOURCES
 import com.digifender.adminifender.core.data.network.SourceSummary
 import com.digifender.adminifender.core.data.repository.CachedReason
 import com.digifender.adminifender.core.data.repository.InvalidQuery
@@ -53,6 +57,7 @@ fun ArchiveScreen(
     onMoreResults: () -> Unit,
     onMoreList: () -> Unit,
     onOpen: (String) -> Unit,
+    selection: SelectionActions,
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -64,6 +69,7 @@ fun ArchiveScreen(
             }
             if (state.view == ArchiveView.QUARANTINE) Text(stringResource(R.string.quarantine_note), style = MaterialTheme.typography.bodySmall)
         }
+        item { SelectionBar(state, selection) }
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
@@ -97,7 +103,7 @@ fun ArchiveScreen(
         if (search != null) {
             item { SearchStatus(search) }
             // No item keys: one message can match in several chunks with the same snippet.
-            items(search.hits) { HitCard(it, onOpen) }
+            items(search.hits) { HitCard(it, state.selecting, it.sourceId in state.selection, { id -> if (state.selecting) selection.onToggle(id) else onOpen(id) }) }
             if (search.nextCursor != null && !search.running) item { TextButton(onClick = onMoreResults) { Text(stringResource(R.string.search_more)) } }
             if (search.moreFailed) item { Text(stringResource(R.string.search_more_failed), color = MaterialTheme.colorScheme.error) }
         } else {
@@ -107,7 +113,7 @@ fun ArchiveScreen(
                 list.isEmpty() -> item { Text(stringResource(R.string.archive_empty), Modifier.padding(vertical = 24.dp)) }
                 else -> {
                     item { Text(pluralStringResource(R.plurals.archive_count, state.total, state.total), style = MaterialTheme.typography.labelLarge) }
-                    items(list, key = { it.id }) { SourceCard(it, onOpen) }
+                    items(list, key = { it.id }) { SourceCard(it, { id -> if (state.selecting) selection.onToggle(id) else onOpen(id) }, state.selecting, it.id in state.selection) }
                     if (list.size < state.total) item { TextButton(onClick = onMoreList) { Text(stringResource(R.string.archive_more)) } }
                 }
             }
@@ -173,9 +179,10 @@ fun highlighted(snippet: String): AnnotatedString = buildAnnotatedString {
 }
 
 @Composable
-private fun HitCard(hit: SearchHit, onOpen: (String) -> Unit) {
-    Card(Modifier.fillMaxWidth().clickable(role = Role.Button) { onOpen(hit.sourceId) }) {
+private fun HitCard(hit: SearchHit, selecting: Boolean, selected: Boolean, onOpen: (String) -> Unit) {
+    Card(Modifier.fillMaxWidth().cardAction(selecting, selected) { onOpen(hit.sourceId) }) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            if (selecting) SelectedMark(selected)
             Text(hit.subject?.ifBlank { null } ?: stringResource(R.string.no_subject), style = MaterialTheme.typography.titleMedium)
             Text(dateTime(hit.receivedAtMs), style = MaterialTheme.typography.labelMedium)
             hit.snippet?.let { Text(highlighted(it), style = MaterialTheme.typography.bodyMedium) }
@@ -196,12 +203,58 @@ fun sourceLabels(source: SourceSummary): String = buildList {
 }.joinToString(" · ")
 
 @Composable
-fun SourceCard(source: SourceSummary, onOpen: (String) -> Unit) {
-    Card(Modifier.fillMaxWidth().clickable(role = Role.Button) { onOpen(source.id) }) {
+fun SourceCard(source: SourceSummary, onOpen: (String) -> Unit, selecting: Boolean = false, selected: Boolean = false) {
+    Card(Modifier.fillMaxWidth().cardAction(selecting, selected) { onOpen(source.id) }) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            if (selecting) SelectedMark(selected)
             Text(source.subject?.ifBlank { null } ?: stringResource(R.string.no_subject), style = MaterialTheme.typography.titleMedium)
             if (source.from.isNotEmpty()) Text(source.from.joinToString(", "), style = MaterialTheme.typography.bodyMedium)
             Text(sourceLabels(source), style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+/** A card that opens its email, or in selection mode toggles it; TalkBack hears it as a checkbox with its state. */
+private fun Modifier.cardAction(selecting: Boolean, selected: Boolean, onClick: () -> Unit): Modifier =
+    if (selecting) {
+        toggleable(value = selected, role = Role.Checkbox, onValueChange = { onClick() })
+    } else {
+        clickable(role = Role.Button, onClick = onClick)
+    }
+
+@Composable
+private fun SelectedMark(selected: Boolean) {
+    Text(stringResource(if (selected) R.string.archive_item_selected else R.string.archive_item_not_selected), style = MaterialTheme.typography.labelMedium)
+}
+
+class SelectionActions(
+    val onStart: () -> Unit,
+    val onStop: () -> Unit,
+    val onToggle: (String) -> Unit,
+    val onReviewDeletion: (List<String>) -> Unit,
+    val onExportSelected: (List<String>) -> Unit,
+    val onNewExport: () -> Unit,
+)
+
+/** Selection mode: how many are chosen, the limits spelled out, and the two things a selection is for. */
+@Composable
+private fun SelectionBar(state: ArchiveUiState, actions: SelectionActions) {
+    Column(Modifier.padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        if (!state.selecting) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = actions.onStart) { Text(stringResource(R.string.archive_select)) }
+                TextButton(onClick = actions.onNewExport) { Text(stringResource(R.string.archive_export_all)) }
+            }
+            return@Column
+        }
+        Text(pluralStringResource(R.plurals.archive_selected_count, state.selection.size, state.selection.size), style = MaterialTheme.typography.titleSmall)
+        if (state.selectionAtLimit) Text(stringResource(R.string.archive_select_limit, MAX_EXPORT_SOURCES), color = MaterialTheme.colorScheme.error)
+        if (state.selection.size > MAX_DELETE_SOURCES) Text(pluralStringResource(R.plurals.archive_delete_too_many, MAX_DELETE_SOURCES, MAX_DELETE_SOURCES), color = MaterialTheme.colorScheme.error)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            val picked = state.selection.toList()
+            OutlinedButton(onClick = { actions.onReviewDeletion(picked) }, enabled = picked.isNotEmpty() && picked.size <= MAX_DELETE_SOURCES) { Text(stringResource(R.string.archive_review_delete)) }
+            OutlinedButton(onClick = { actions.onExportSelected(picked) }, enabled = picked.isNotEmpty()) { Text(stringResource(R.string.archive_export_selected)) }
+            TextButton(onClick = actions.onStop) { Text(stringResource(R.string.archive_select_done)) }
         }
     }
 }

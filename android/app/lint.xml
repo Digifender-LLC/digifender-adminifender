@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Version-freshness findings are ignored only in the files that pin versions on purpose (tdd.md "Version freeze
+  and model manifest"). Bumps arrive as tested, reviewed changes; .github/dependabot.yml proposes Gradle
+  version updates for /android. Paths are relative to this file. All other checks stay on.
+-->
+<lint>
+    <issue id="GradleDependency">
+        <ignore path="../gradle/libs.versions.toml" />
+    </issue>
+    <issue id="NewerVersionAvailable">
+        <ignore path="../gradle/libs.versions.toml" />
+    </issue>
+    <issue id="AndroidGradlePluginVersion">
+        <ignore path="../gradle/wrapper/gradle-wrapper.properties" />
+    </issue>
+</lint>

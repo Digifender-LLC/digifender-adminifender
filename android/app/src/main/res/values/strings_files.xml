@@ -1,0 +1,330 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Attachments, deletion review, exports and storage (slice 14i). Plain words, no implementation detail. -->
+<resources>
+    <string name="close">Close</string>
+    <string name="dismiss">Dismiss</string>
+
+    <!-- Archive selection -->
+    <string name="archive_select">Select emails</string>
+    <string name="archive_select_done">Done</string>
+    <string name="archive_item_selected">Selected</string>
+    <string name="archive_item_not_selected">Not selected</string>
+    <string name="archive_select_limit">Selection limit reached (%1$d). Nothing more was added.</string>
+    <plurals name="archive_delete_too_many">
+        <item quantity="one">A deletion review takes at most %1$d email. Select fewer to review a deletion; nothing is cut for you.</item>
+        <item quantity="other">A deletion review takes at most %1$d emails. Select fewer to review a deletion; nothing is cut for you.</item>
+    </plurals>
+    <string name="archive_review_delete">Review deletion…</string>
+    <string name="archive_export_all">Export…</string>
+    <string name="archive_export_selected">Export selected…</string>
+    <plurals name="archive_selected_count">
+        <item quantity="one">%d email selected</item>
+        <item quantity="other">%d emails selected</item>
+    </plurals>
+
+    <!-- Attachments -->
+    <string name="attachment_storage_note">Downloaded files stay on this phone in app-private storage, sealed with a key held by Android. At most 500 MiB are kept; the least recently opened go first. Nothing is opened by another app.</string>
+    <string name="attachment_download">Download</string>
+    <string name="attachment_download_again">Try the download again</string>
+    <string name="attachment_cancel">Cancel download</string>
+    <string name="attachment_remove">Remove from this phone</string>
+    <string name="attachment_view_text">View text</string>
+    <string name="attachment_save_copy">Save a copy…</string>
+    <string name="attachment_state_none">Not downloaded. The original stays on the server.</string>
+    <string name="attachment_state_too_large">Too large to download to this phone. The original stays on the server.</string>
+    <string name="attachment_state_needs_refresh">Open this message again while online to check this file before downloading.</string>
+    <string name="attachment_state_queued">Waiting to download</string>
+    <string name="attachment_state_retrying">Interrupted. It will try again.</string>
+    <string name="attachment_state_downloading">Downloading…</string>
+    <string name="attachment_state_held">Sign in again to continue the download.</string>
+    <string name="attachment_state_ready">On this phone. Size and SHA-256 were checked.</string>
+    <string name="attachment_state_failed">Download failed: %1$s</string>
+    <string name="attachment_error_too_large">larger than this phone downloads</string>
+    <string name="attachment_error_size">the size didn\'t match what the server listed</string>
+    <string name="attachment_error_hash">the SHA-256 didn\'t match what the server listed</string>
+    <string name="attachment_error_gone">the server no longer has this file</string>
+    <string name="attachment_error_space">not enough free space on this phone</string>
+    <string name="attachment_error_storage">the file couldn\'t be stored securely</string>
+    <string name="attachment_error_network">the connection kept failing</string>
+    <string name="attachment_error_other">the server refused it</string>
+    <string name="attachment_notice_too_large">%1$s is larger than the 25 MiB this app downloads. It stays on the server.</string>
+    <string name="attachment_notice_needs_refresh">%1$s can\'t be checked yet. Open this message again while online.</string>
+    <string name="attachment_notice_source_gone">The message for %1$s is no longer on this phone.</string>
+    <string name="attachment_notice_saved">Saved a copy as %1$s. That copy is outside Adminifender: signing out or deleting the email does not remove it, and the app can\'t take it back.</string>
+    <string name="attachment_notice_save_failed">Couldn\'t save %1$s. The partial file was removed.</string>
+    <string name="attachment_notice_save_leftover">Couldn\'t save %1$s, and a partial file may still be there. Delete it yourself.</string>
+    <string name="attachment_notice_damaged">%1$s failed its checks on this phone and was removed. Download it again.</string>
+    <string name="attachment_notice_not_available">%1$s isn\'t on this phone any more. Download it again.</string>
+    <string name="attachment_notice_not_shown">Adminifender only shows plain text. Save a copy to open %1$s with another app yourself.</string>
+    <string name="attachment_preview_title">Text of %1$s</string>
+    <string name="attachment_preview_truncated">Only the first part is shown.</string>
+    <string name="source_delete">Delete this email…</string>
+
+    <!-- Deletion review -->
+    <string name="deletion_title">Review deletion</string>
+    <string name="deletion_preparing">Asking the server what this would delete…</string>
+    <string name="deletion_not_sent_yet">Nothing has been deleted. The server\'s answer hasn\'t arrived yet.</string>
+    <string name="deletion_retry">Ask again</string>
+    <string name="deletion_drop">Drop this review</string>
+    <string name="deletion_cancel">Don\'t delete</string>
+    <string name="deletion_exact_intro">The server read exactly these emails just now:</string>
+    <string name="deletion_item_not_on_phone">An email that isn\'t on this phone</string>
+    <plurals name="deletion_selected">
+        <item quantity="one">%d email</item>
+        <item quantity="other">%d emails</item>
+    </plurals>
+    <plurals name="deletion_files">
+        <item quantity="one">%d attached file will be deleted with them.</item>
+        <item quantity="other">%d attached files will be deleted with them.</item>
+    </plurals>
+    <plurals name="deletion_concerns_erased">
+        <item quantity="one">%d item that comes only from these emails will be erased.</item>
+        <item quantity="other">%d items that come only from these emails will be erased.</item>
+    </plurals>
+    <plurals name="deletion_concerns_detached">
+        <item quantity="one">%d item also rests on other emails; it will lose these emails as evidence.</item>
+        <item quantity="other">%d items also rest on other emails; they will lose these emails as evidence.</item>
+    </plurals>
+    <string name="deletion_derived">Also removed: %1$s</string>
+    <string name="deletion_loss">Search results, answers and citations that rest on these emails will stop working, and copies on this phone are removed.</string>
+    <string name="deletion_irreversible">Deleting hides these emails at once and can\'t be undone. Your passkey is asked for to confirm exactly this.</string>
+    <string name="deletion_digest">Review fingerprint (start of its SHA-256): %1$s</string>
+    <string name="deletion_expires">This review expires %1$s.</string>
+    <string name="deletion_expired">This review ran out. Review again to get a new one.</string>
+    <string name="deletion_confirm">Confirm with passkey and delete</string>
+    <string name="deletion_confirm_again">Confirm again with passkey</string>
+    <string name="deletion_review_again">Review again</string>
+    <string name="deletion_unknown_title">Outcome unknown</string>
+    <string name="deletion_unknown_body">The confirmation was sent and no answer came back. It may or may not have been deleted. Nothing is sent again by itself. Checking only reads.</string>
+    <string name="deletion_check_status">Check status</string>
+    <string name="deletion_readback_open">Last checked %1$s: the review hadn\'t been used yet. That is only a moment in time; it could still be confirmed.</string>
+    <string name="deletion_readback_expired">Last checked %1$s: the review had expired.</string>
+    <string name="deletion_readback_consumed">Last checked %1$s: the review was used.</string>
+    <string name="deletion_stop_tracking_body">If you stop tracking, this phone forgets the question. The emails may still have been deleted; the next sync will show it.</string>
+    <string name="deletion_stop_tracking">Stop tracking</string>
+    <string name="deletion_done_title">Deleted</string>
+    <string name="deletion_done_body">The server hid these emails, recorded the deletion in its independent ledger (entry %1$d) and this phone removed its own copies. That does not yet mean every stored byte is gone.</string>
+    <string name="deletion_cleanup_heading">Cleanup of the live archive</string>
+    <string name="deletion_cleanup_not_read">Cleanup hasn\'t been checked yet.</string>
+    <string name="deletion_cleanup_pending">Waiting to start.</string>
+    <string name="deletion_cleanup_partial">Emails cleaned so far: %1$d of %2$d.</string>
+    <string name="deletion_cleanup_complete">The live archive no longer holds these emails.</string>
+    <string name="deletion_cleanup_failed">Emails whose cleanup failed and needs attention: %1$d.</string>
+    <string name="deletion_cleanup_unknown">Emails the server can\'t account for, so nothing is claimed about them: %1$d.</string>
+    <string name="deletion_cleanup_checked">Checked %1$s</string>
+    <string name="deletion_cleanup_scope">This covers the live archive only. Backups keep deleted data until their retention ends, and export files expire on their own schedule. A copy you saved elsewhere stays where it is.</string>
+    <string name="deletion_cleanup_check">Check cleanup</string>
+    <string name="deletion_done_close">Close</string>
+    <string name="deletion_rejected_title">Nothing was deleted</string>
+    <string name="deletion_rejected_body">The server did not delete these emails with this review (%1$s).</string>
+    <string name="deletion_stopped_title">No longer tracked</string>
+    <string name="deletion_stopped_body">The outcome of this confirmation was never learned and you stopped tracking it.</string>
+    <string name="deletion_note_not_on_phone">Some of these emails aren\'t on this phone, so they can\'t be reviewed here.</string>
+    <string name="deletion_note_too_many">A review takes at most %1$s emails.</string>
+    <string name="deletion_note_sign_in">Sign in again first.</string>
+    <string name="deletion_note_waiting">No answer from the server yet. Nothing has been deleted. You can ask again.</string>
+    <string name="deletion_note_refused">The server refused this review (%1$s).</string>
+    <string name="deletion_note_mismatch">The server\'s review didn\'t match your selection, so it was not offered.</string>
+    <string name="deletion_note_superseded">This review was replaced or dropped. Nothing was sent.</string>
+    <string name="deletion_note_auth_cancelled">Passkey cancelled. Nothing was sent.</string>
+    <string name="deletion_note_auth_failed">The passkey wasn\'t accepted (%1$s). Nothing was sent.</string>
+    <string name="deletion_note_expired">The review ran out before it was confirmed. Nothing was sent.</string>
+    <string name="deletion_note_changed">An email in this review changed on this phone. Nothing was sent. Review again.</string>
+    <string name="deletion_note_rejected">The server did not delete anything (%1$s).</string>
+    <string name="deletion_note_not_completed">The server says this wasn\'t completed. Nothing was deleted yet; you can confirm again.</string>
+    <string name="deletion_note_unknown">No answer came back. It may or may not have been deleted. Check the status.</string>
+    <string name="deletion_note_read_open">The server hadn\'t seen the confirmation when asked. That is only a moment in time.</string>
+    <string name="deletion_note_read_expired_recently">The review has just expired. A confirmation in flight can\'t be ruled out yet; check again in a minute.</string>
+    <string name="deletion_note_read_unsettled">The server\'s operation hasn\'t settled (%1$s).</string>
+    <string name="deletion_note_read_not_known">The server has no record of this review. That is not proof nothing was deleted.</string>
+    <string name="deletion_note_read_unavailable">The server couldn\'t be reached. Nothing changed.</string>
+    <string name="deletion_note_read_mismatch">The server described a different review. Nothing was settled.</string>
+    <string name="deletion_note_deleted">Deleted.</string>
+    <string name="deletion_note_unused">The review expired without being used. Nothing was deleted by it.</string>
+
+    <!-- Exports -->
+    <string name="export_title">Export</string>
+    <string name="export_new_title">New export</string>
+    <string name="export_new_intro">An export is a ZIP file with the emails as text records, the original attachment files and a checksum list. You choose where it is saved. It contains no AI output and no credentials.</string>
+    <string name="export_what">What to export</string>
+    <string name="export_kind_archive">Everything</string>
+    <string name="export_kind_filter">By date or address</string>
+    <plurals name="export_kind_selected">
+        <item quantity="one">The %d email I selected</item>
+        <item quantity="other">The %d emails I selected</item>
+    </plurals>
+    <string name="export_which_mail">Which mail</string>
+    <string name="export_admission_normal">Ordinary archive</string>
+    <string name="export_admission_quarantine">Quarantine only</string>
+    <string name="export_admission_all">Both</string>
+    <string name="export_admission_normal_long">Ordinary archive mail. Quarantined mail is not included.</string>
+    <string name="export_admission_quarantine_long">Quarantined mail only.</string>
+    <string name="export_admission_all_long">Ordinary archive mail and quarantined mail.</string>
+    <string name="export_field_from">Received from (inclusive, YYYY-MM-DD)</string>
+    <string name="export_field_to">Received before (exclusive, YYYY-MM-DD)</string>
+    <string name="export_field_sender">Sender address (exact)</string>
+    <string name="export_field_recipient">Recipient address (exact)</string>
+    <string name="export_filter_help">Dates start at midnight in this phone\'s time zone. Addresses are matched exactly, in lower case. Fill in at least one.</string>
+    <plurals name="export_selected_all">
+        <item quantity="one">This one email is sent as selected.</item>
+        <item quantity="other">All %d selected emails are sent as selected (up to 1,000).</item>
+    </plurals>
+    <string name="export_archive_rules_note">Only an export of everything also includes your rules and services.</string>
+    <string name="export_problem_no_sources">Select at least one email.</string>
+    <string name="export_problem_too_many">An export takes at most 1,000 selected emails. Nothing is cut for you; select fewer or export by date or address.</string>
+    <string name="export_problem_empty_filter">Fill in at least one date or address.</string>
+    <string name="export_problem_address">Use one exact address without spaces.</string>
+    <string name="export_problem_range">The start must be before the end.</string>
+    <string name="export_problem_from_date">The start date isn\'t a valid date (YYYY-MM-DD).</string>
+    <string name="export_problem_to_date">The end date isn\'t a valid date (YYYY-MM-DD).</string>
+    <string name="export_create">Create export</string>
+    <string name="export_create_waiting">No answer yet. The request is saved and you can send it again safely.</string>
+    <string name="export_create_refused">The server refused this export (%1$s).</string>
+    <string name="export_create_sign_in">Sign in again first. The request is saved.</string>
+    <string name="export_create_invalid">This export can\'t be requested as entered.</string>
+    <string name="export_scope_archive">Everything. %1$s</string>
+    <plurals name="export_scope_sources">
+        <item quantity="one">%1$d selected email. %2$s</item>
+        <item quantity="other">%1$d selected emails. %2$s</item>
+    </plurals>
+    <string name="export_scope_filter">%1$s Only mail matching: %2$s</string>
+    <string name="export_scope_from">received from %1$s</string>
+    <string name="export_scope_to">received before %1$s</string>
+    <string name="export_scope_sender">sender %1$s</string>
+    <string name="export_scope_recipient">recipient %1$s</string>
+    <string name="export_missing">This export isn\'t on this phone any more.</string>
+    <string name="export_creating_title">Not confirmed by the server</string>
+    <string name="export_creating_body">The request was saved here, but no answer came back, so the export may or may not exist. Sending it again uses the same request and can only repeat the same export.</string>
+    <string name="export_resend">Send the same request again</string>
+    <string name="export_stop_tracking">Stop tracking</string>
+    <string name="export_refused_title">No export was made</string>
+    <string name="export_refused_body">The server refused this export (%1$s).</string>
+    <string name="export_refused_scope">The server answered with a different scope than you asked for, so this export is not offered.</string>
+    <string name="export_stopped_body">You stopped tracking this request. An export may still exist on the server until it expires.</string>
+    <string name="export_make_new">Make a new export</string>
+    <string name="export_state_unread">Not read from the server yet</string>
+    <string name="export_state_pending">Waiting to be prepared</string>
+    <string name="export_state_running">Being prepared…</string>
+    <string name="export_state_ready">Ready to download</string>
+    <string name="export_state_failed">Preparation failed</string>
+    <string name="export_state_expired">Expired</string>
+    <string name="export_state_invalidated">No longer valid</string>
+    <string name="export_checked">Checked: %1$s</string>
+    <string name="export_expires">Available on the server until %1$s</string>
+    <string name="export_counts">Emails: %1$d. Attachment files: %2$d. Linked items: %3$d.</string>
+    <string name="export_no_omissions">No emails were left out.</string>
+    <plurals name="export_omissions">
+        <item quantity="one">%d email was left out of this export:</item>
+        <item quantity="other">%d emails were left out of this export:</item>
+    </plurals>
+    <plurals name="export_omitted_deleted">
+        <item quantity="one">%d was deleted.</item>
+        <item quantity="other">%d were deleted.</item>
+    </plurals>
+    <plurals name="export_omitted_quarantined">
+        <item quantity="one">%d was quarantined since.</item>
+        <item quantity="other">%d were quarantined since.</item>
+    </plurals>
+    <plurals name="export_omitted_admission">
+        <item quantity="one">%d was released from quarantine since.</item>
+        <item quantity="other">%d were released from quarantine since.</item>
+    </plurals>
+    <plurals name="export_omitted_excluded">
+        <item quantity="one">%d belongs to the other kind of mail than chosen.</item>
+        <item quantity="other">%d belong to the other kind of mail than chosen.</item>
+    </plurals>
+    <plurals name="export_omitted_snapshot">
+        <item quantity="one">%d wasn\'t ready when the export was taken.</item>
+        <item quantity="other">%d weren\'t ready when the export was taken.</item>
+    </plurals>
+    <string name="export_original_note">An original message file is included only while the server still holds it; the export marks the others as expired.</string>
+    <string name="export_failed_body">The server couldn\'t prepare this export (%1$s).</string>
+    <string name="export_failed_no_partial">No file was produced, so there is nothing partial to download. Large archives may be too big for one export; that limit is the server\'s.</string>
+    <string name="export_expired_body">This export expired. Make a new one.</string>
+    <string name="export_invalidated_deleted">An email in this export was deleted, so it is no longer valid. Make a new export.</string>
+    <string name="export_invalidated_quarantined">An email in this export was quarantined since, so it is no longer valid. Make a new export.</string>
+    <string name="export_invalidated_admission">An email in this quarantine-only export was released since, so it is no longer valid. Make a new export.</string>
+    <string name="export_invalidated_scope_unknown">This export was made before scopes existed and can\'t be downloaded. Make a new export.</string>
+    <string name="export_status_error">The last check didn\'t work: %1$s</string>
+    <string name="export_save">Choose where to save the ZIP…</string>
+    <string name="export_retry_download">Download again to a new file…</string>
+    <string name="export_save_note">You pick the file. The ZIP is streamed from the server to it and checked as it arrives; it is not kept inside Adminifender.</string>
+    <string name="export_downloading">Downloading to %1$s…</string>
+    <string name="export_downloading_note">Keep Adminifender open. If it is stopped, the partial file is removed and you can download again.</string>
+    <string name="export_verified_title">Saved and checked: %1$s</string>
+    <string name="export_verified_body">Entries: %1$d, size %2$s. Every entry matched its size, CRC and the SHA-256 listed in the manifest, and the manifest matches this export.</string>
+    <string name="export_verified_hashes">Files checked against the manifest: %1$d.</string>
+    <string name="export_zip_hash">SHA-256 of the whole ZIP file as received (not the manifest\'s per-file hashes): %1$s</string>
+    <plurals name="export_partial_concerns">
+        <item quantity="one">%d linked item keeps only what is tied to the exported emails; it is a pointer, not the original item.</item>
+        <item quantity="other">%d linked items keep only what is tied to the exported emails; they are pointers, not the original items.</item>
+    </plurals>
+    <string name="export_rules_omitted">Your rules and services are not part of this export.</string>
+    <string name="export_outside_note">This file is outside Adminifender. Signing out, deleting emails or this export\'s expiry does not remove it, and the app can\'t take it back.</string>
+    <string name="export_verified_but_invalidated">While this downloaded, the export became invalid (for example an email in it was deleted). The saved file may still contain that mail. Delete it if that matters.</string>
+    <string name="export_interrupted_title">Download interrupted</string>
+    <string name="export_download_failed_title">Download failed</string>
+    <string name="export_download_error">Reason: %1$s</string>
+    <string name="export_error_network">the connection was lost</string>
+    <string name="export_error_cancelled">the download was stopped</string>
+    <string name="export_error_process">Adminifender was closed while it was downloading</string>
+    <string name="export_error_destination">the file you chose couldn\'t be written completely</string>
+    <string name="export_error_sign_in">you need to sign in again</string>
+    <string name="export_error_verification">the file didn\'t pass its checks and is not a complete export</string>
+    <string name="export_error_gone">the export is no longer available</string>
+    <string name="export_partial_removed">The partial file %1$s was removed.</string>
+    <string name="export_partial_may_remain">A partial file %1$s may still be there. Delete it yourself.</string>
+    <string name="export_partial_unknown">A partial file %1$s may exist. It can\'t be checked from here. Delete it yourself.</string>
+    <string name="export_not_verified">Nothing was saved as a verified export.</string>
+    <string name="export_remove_from_list">Remove from this list</string>
+    <string name="export_note_sign_in">Sign in again to keep checking this export.</string>
+    <string name="export_note_waiting">No answer yet. The request is still saved.</string>
+    <string name="export_note_unreachable">The server couldn\'t be reached. What is shown is the last thing read.</string>
+
+    <!-- Storage -->
+    <string name="settings_storage">Storage and exports</string>
+    <string name="settings_storage_body">Downloaded files, exports and deletions in progress.</string>
+    <string name="settings_storage_open">Open</string>
+    <string name="sign_out_files">Downloaded attachment files on this phone are removed too.</string>
+    <plurals name="sign_out_deletion_unknown">
+        <item quantity="one">%d deletion whose outcome is unknown stops being tracked.</item>
+        <item quantity="other">%d deletions whose outcome is unknown stop being tracked.</item>
+    </plurals>
+    <plurals name="sign_out_deletion_open">
+        <item quantity="one">%d deletion review that wasn\'t confirmed is dropped.</item>
+        <item quantity="other">%d deletion reviews that weren\'t confirmed are dropped.</item>
+    </plurals>
+    <string name="storage_title">Storage and exports</string>
+    <string name="storage_files_heading">Downloaded files</string>
+    <string name="storage_files_used">%1$s of %2$s used</string>
+    <string name="storage_files_note">These files are encrypted and private to Adminifender. The least recently opened are removed first when the limit is reached. Emails and originals on the server are not touched.</string>
+    <string name="storage_files_none">No files are downloaded.</string>
+    <string name="storage_file_ready">On this phone, %1$s</string>
+    <string name="storage_file_failed">Download failed: %1$s</string>
+    <string name="storage_clear_files">Remove all downloaded files</string>
+    <string name="storage_clear_title">Remove all downloaded files?</string>
+    <string name="storage_clear_body">This removes the files from this phone only. You can download them again. Copies you saved elsewhere are not touched.</string>
+    <string name="storage_clear_confirm">Remove all</string>
+    <string name="storage_exports_heading">Exports</string>
+    <string name="storage_new_export">New export</string>
+    <string name="storage_exports_none">No exports yet.</string>
+    <string name="storage_export_verified">Saved and checked</string>
+    <string name="storage_export_downloading">Downloading</string>
+    <string name="storage_export_interrupted">Download interrupted</string>
+    <string name="storage_export_download_failed">Download failed</string>
+    <string name="storage_export_unconfirmed">Request not confirmed by the server</string>
+    <string name="storage_export_refused">No export was made</string>
+    <string name="storage_export_stopped">No longer tracked</string>
+    <string name="storage_export_ready">Ready to download</string>
+    <string name="storage_export_failed">Preparation failed</string>
+    <string name="storage_export_expired">Expired</string>
+    <string name="storage_export_invalidated">No longer valid</string>
+    <string name="storage_export_preparing">Being prepared</string>
+    <string name="storage_deletions_heading">Deletions</string>
+    <string name="storage_deletion_preparing">Waiting for the server\'s review</string>
+    <string name="storage_deletion_open">Review not confirmed. Nothing deleted.</string>
+    <string name="storage_deletion_unknown">Outcome unknown</string>
+    <string name="storage_deletion_done">Deleted</string>
+    <string name="storage_deletion_rejected">Nothing was deleted</string>
+    <string name="storage_deletion_stopped">No longer tracked</string>
+</resources>

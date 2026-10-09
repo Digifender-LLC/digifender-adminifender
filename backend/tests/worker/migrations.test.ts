@@ -45,6 +45,31 @@ describe('control migration', () => {
     ).rejects.toThrow(/FOREIGN KEY/);
   });
 
+  it('adds the export scope without giving older exports one', async () => {
+    const insert = env.CONTROL_DB.prepare("INSERT INTO exports(id, snapshot_seq, state, created_at, expires_at) VALUES ('old', 0, 'ready', ?, ?)");
+    await insert.bind(now, now + 1).run();
+    // An export written before the scope existed stays unscoped; nothing fills in a default.
+    expect(await env.CONTROL_DB.prepare("SELECT scope_json, invalidated_reason, attempt, settled_at, cleanup_next_at FROM exports WHERE id = 'old'").first()).toEqual({
+      scope_json: null,
+      invalidated_reason: null,
+      attempt: null,
+      settled_at: null,
+      cleanup_next_at: null,
+    });
+    await expect(env.CONTROL_DB.prepare("INSERT INTO export_sources(export_id, attempt, source_id) VALUES ('missing', 'a', 'missing')").run()).rejects.toThrow(/FOREIGN KEY/);
+    // Cleanup bookkeeping that nothing reads is not stored, and unfinished multipart uploads have a record of their own.
+    const columns = (await env.CONTROL_DB.prepare('PRAGMA table_info(exports)').all<{ name: string }>()).results.map((c) => c.name);
+    expect(columns).not.toContain('swept_at');
+    expect(columns).not.toContain('swept_full');
+    await expect(env.CONTROL_DB.prepare("INSERT INTO export_uploads(export_id, attempt, upload_id, object_key, created_at) VALUES ('missing', 'a', 'u', 'k', 1)").run()).rejects.toThrow(/FOREIGN KEY/);
+    await env.CONTROL_DB.prepare("INSERT INTO export_uploads(export_id, attempt, upload_id, object_key, created_at) VALUES ('old', 'a', 'u', 'k', 1)").run();
+  });
+
+  it('looks up cleanup progress by operation through an index', async () => {
+    const { results } = await env.CONTROL_DB.prepare("EXPLAIN QUERY PLAN SELECT source_id FROM deletion_ledger WHERE json_extract(targets_json, '$.operationId') = ?").bind('op').all<{ detail: string }>();
+    expect(results.map((r) => r.detail).join(' ')).toContain('deletion_ledger_operation');
+  });
+
   it('keeps job dedupe keys unique', async () => {
     const insert = env.CONTROL_DB.prepare("INSERT INTO jobs(id, dedupe_key, kind, state, next_at, input_json, created_at) VALUES (?, ?, 'parse', 'pending', ?, '{}', ?)");
     await insert.bind('j1', 'parse:h:v1', now, now).run();

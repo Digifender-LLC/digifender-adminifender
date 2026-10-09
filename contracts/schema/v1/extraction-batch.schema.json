@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://adminifender.invalid/schema/v1/extraction-batch.schema.json",
+  "title": "POST /device-work/extraction/{leaseId}/batch body (lld.md#text-extraction-and-ocr)",
+  "description": "One immutable batch of page text. `batchOrdinal` is the next unused number for the generation (or an earlier one, to repeat it: the same content is answered `replayed`, different content is a 409). Every batch advances at least one page and at most ten (`lastPage`, counting pages with no text); pages ascend, and the parts of one page are numbered from 0, travel together and are joined by one newline. At most 128 KiB of UTF-8 text per batch. Only the final batch sets `complete`; it also carries `manifestHash`, the SHA-256 of the server's hashes of all earlier batches (as returned in `batchHash` or the claim's `batchHashes`) joined by newlines, and `totalPages` when the document has more pages than the phone read. `pdf_text` is a native text layer; `ocr` needs `ocrAllowed`. Nothing is readable until the final batch is accepted.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "leaseToken",
+    "contentHash",
+    "extractorVersion",
+    "policyRevision",
+    "generationId",
+    "batchOrdinal",
+    "pages",
+    "lastPage",
+    "complete"
+  ],
+  "properties": {
+    "leaseToken": {
+      "$ref": "common.schema.json#/$defs/uuid"
+    },
+    "contentHash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "extractorVersion": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 64,
+      "pattern": "^[a-z0-9][a-z0-9._-]*$"
+    },
+    "policyRevision": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "generationId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "batchOrdinal": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "pages": {
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "page",
+          "part",
+          "method",
+          "text"
+        ],
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "part": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 999
+          },
+          "method": {
+            "enum": [
+              "pdf_text",
+              "ocr"
+            ]
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 131072
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Recognizer evidence, not a probability. Accepted and covered by the batch hash; the Worker does not store it."
+          }
+        }
+      }
+    },
+    "lastPage": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100
+    },
+    "totalPages": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100000
+    },
+    "complete": {
+      "type": "boolean"
+    },
+    "manifestHash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "if": {
+    "properties": {
+      "complete": {
+        "const": true
+      }
+    }
+  },
+  "then": {
+    "required": [
+      "manifestHash"
+    ],
+    "properties": {
+      "manifestHash": true
+    }
+  },
+  "else": {
+    "properties": {
+      "manifestHash": false,
+      "totalPages": false
+    }
+  }
+}

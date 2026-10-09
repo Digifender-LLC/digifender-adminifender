@@ -9,7 +9,8 @@ import { sha256Hex } from '../ids';
 import { visibleSource } from '../sources/registry';
 import type { ChatAnswer } from './answer';
 import { CHAT_TASK } from './job';
-import { type Scope, loadEvidence } from './retrieval';
+import { type CitedRef, type ContextSource, type RegistryState, answerFitsContext, contextHolds, parseStoredCitations, registryStates } from './provenance';
+import { type Evidence, type Scope, loadEvidence } from './retrieval';
 
 export const MAX_QUESTION_CHARS = 4000;
 const TURNS_PER_PAGE = 50;
@@ -92,16 +93,28 @@ export async function postTurn(env: Env, now: number, body: ReturnType<typeof tu
   return new WithStatus(202, { turnId: body.turnId, state: 'pending' });
 }
 
+/** A stored turn with what its answer rests on, read once. */
+interface Parsed {
+  row: TurnRow;
+  cited: CitedRef[];
+  context: ContextSource[] | null;
+}
+
 /**
- * A turn as the owner sees it. Citations are rechecked now: if any cited source is no longer readable the
- * answer is withheld rather than shown without its evidence, and a deletion removes the stored answer.
+ * A turn as the owner sees it. The answer is shown only while everything it rests on still holds, judged now:
+ * every cited passage is readable, and every email the model was given (not only the cited ones) is still ready,
+ * admitted, model-eligible and no stricter than when it was used. Otherwise it is withheld rather than shown without
+ * its evidence. A row whose provenance is unknown (stored before it was recorded) fails closed the same way; a
+ * no-evidence answer has a known empty context and is unaffected. A deletion removes the stored answer.
+ * `context` is present exactly when an answer is: the emails the phone must be able to check it against.
+ * [current] and [live] were read for the whole page at once; each turn is still judged only against its own
+ * context and its own cited passages.
  */
-async function turnView(env: Env, row: TurnRow, scope: Scope) {
+function turnView(parsed: Parsed, scope: Scope, current: ReadonlyMap<string, RegistryState>, live: ReadonlyMap<string, Evidence>) {
+  const { row, cited: refs, context } = parsed;
   const output = row.output_json ? (JSON.parse(row.output_json) as ChatAnswer) : null;
-  const refs = row.citations_json ? (JSON.parse(row.citations_json) as { cited: { chunkId: string; sourceId: string; attachmentId: string | null; page: number | null }[] }).cited : [];
-  const live = new Map((await loadEvidence(env, refs.map((r) => r.chunkId), { modelOnly: false })).map((e) => [e.chunkId, e]));
-  const withheld = refs.some((r) => !live.has(r.chunkId));
-  const show = output !== null && row.invalidated_at === null && !withheld;
+  const intact = output !== null && context !== null && answerFitsContext(output, refs, context) && contextHolds(context, current) && refs.every((r) => live.has(r.chunkId));
+  const show = output !== null && row.invalidated_at === null && intact;
   return {
     turnId: row.id,
     threadId: row.thread_id,
@@ -125,11 +138,25 @@ async function turnView(env: Env, row: TurnRow, scope: Scope) {
     gaps: show ? output.gaps : [],
     // Proposals have no dispatch authority; acting on one needs its own exact review.
     proposals: show ? output.proposals : [],
+    context: show ? context : null,
     invalidated: row.invalidated_at !== null,
-    withheld: output !== null && row.invalidated_at === null && withheld,
+    withheld: output !== null && row.invalidated_at === null && !intact,
     createdAt: new Date(row.created_at).toISOString(),
     completedAt: row.completed_at === null ? null : new Date(row.completed_at).toISOString(),
   };
+}
+
+/**
+ * The turn views for these rows. The current state of every email any of them rests on is read once, and so are all
+ * the cited passages, so a page costs a bounded number of reads (each list is cut into slices of at most 90 values)
+ * instead of several per turn. Turns with no answer, or whose answer was removed, need neither.
+ */
+async function turnViews(env: Env, rows: TurnRow[], scope: Scope) {
+  const parsed: Parsed[] = rows.map((row) => ({ row, ...parseStoredCitations(row.citations_json) }));
+  const answered = parsed.filter((p) => p.row.output_json !== null && p.row.invalidated_at === null);
+  const current = await registryStates(env.CONTROL_DB, answered.flatMap((p) => p.context?.map((c) => c.sourceId) ?? []));
+  const live = new Map((await loadEvidence(env, answered.flatMap((p) => p.cited.map((r) => r.chunkId)), { modelOnly: false })).map((e) => [e.chunkId, e]));
+  return parsed.map((p) => turnView(p, scope, current, live));
 }
 
 const TURN_COLUMNS = 'id, thread_id, request_hash, content, state, reason, error_code, answer, output_json, citations_json, created_at, completed_at, invalidated_at';
@@ -140,10 +167,12 @@ export async function getTurn(request: Request, env: Env, now: number, params: s
   const row = await env.CONTROL_DB.prepare(`SELECT ${TURN_COLUMNS} FROM chat_turns WHERE id = ?`).bind(params[0]).first<TurnRow>();
   if (!row) throw notFound();
   const thread = await env.CONTROL_DB.prepare('SELECT scope_json FROM chat_threads WHERE id = ?').bind(row.thread_id).first<{ scope_json: string }>();
-  return turnView(env, row, JSON.parse(thread!.scope_json) as Scope);
+  return (await turnViews(env, [row], JSON.parse(thread!.scope_json) as Scope))[0]!;
 }
 
-// GET /chat/threads/{id}/turns — saved history, oldest first, `before` pages back from a turn ID.
+// GET /chat/threads/{id}/turns — saved history, oldest first. `before` pages back from a turn ID in the Worker's own
+// order (insertion order, not any clock). `nextBefore` is the ID to send next: the oldest turn of this page while earlier
+// turns exist, otherwise null, so the phone never has to work out an anchor from its own record.
 export async function listTurns(request: Request, env: Env, now: number, params: string[]) {
   await authenticate(request, env, now);
   const db = env.CONTROL_DB;
@@ -158,10 +187,12 @@ export async function listTurns(request: Request, env: Env, now: number, params:
     .all<TurnRow>();
   const page = results.slice(0, TURNS_PER_PAGE).reverse();
   const scope = JSON.parse(thread.scope_json) as Scope;
+  const hasMore = results.length > TURNS_PER_PAGE;
   return {
     thread: { id: thread.id, scope, createdAt: new Date(thread.created_at).toISOString() },
-    turns: await Promise.all(page.map((row) => turnView(env, row, scope))),
-    hasMore: results.length > TURNS_PER_PAGE,
+    turns: await turnViews(env, page, scope),
+    hasMore,
+    nextBefore: hasMore ? page[0]!.id : null,
   };
 }
 

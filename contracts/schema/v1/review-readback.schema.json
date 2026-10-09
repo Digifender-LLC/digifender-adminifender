@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://adminifender.invalid/schema/v1/review-readback.schema.json",
+  "title": "GET /reviews/{id} data (lld.md#reviewed-actions)",
+  "description": "Content-free recovery state of one review, readable with any valid session (no recent passkey). It carries no parameters, preview, subjects or excerpts, so it stays safe after the targets are deleted. It never creates or confirms anything: confirming still needs a recent passkey session, this review unexpired and unconsumed, and its exact digest. `consumed` means the confirmation committed: `consumedOperationId` names the operation to read at GET /operations/{id}, and `operationState` is that operation's state now. `open` and `expired` mean this review had not been consumed when the Worker read it; an `open` review can still be confirmed (or be mid-confirmation), so it is a point-in-time answer, not a failure. A 404 or 410 on this endpoint is not evidence that the effect never happened.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["reviewId", "effect", "paramsDigest", "state", "createdAt", "expiresAt", "requiresRecentAuth", "consumedOperationId", "operationState"],
+  "properties": {
+    "reviewId": { "$ref": "common.schema.json#/$defs/uuid" },
+    "effect": { "enum": ["archive.delete", "device.revoke"] },
+    "paramsDigest": { "$ref": "review-prepared.schema.json#/$defs/digest" },
+    "state": { "enum": ["open", "expired", "consumed"] },
+    "createdAt": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "expiresAt": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "requiresRecentAuth": { "const": true },
+    "consumedOperationId": { "oneOf": [{ "$ref": "common.schema.json#/$defs/uuid" }, { "type": "null" }] },
+    "operationState": { "oneOf": [{ "$ref": "operation.schema.json#/$defs/state" }, { "type": "null" }] }
+  },
+  "if": { "properties": { "state": { "const": "consumed" } } },
+  "then": { "properties": { "consumedOperationId": { "type": "string" }, "operationState": { "type": "string" } } },
+  "else": { "properties": { "consumedOperationId": { "type": "null" }, "operationState": { "type": "null" } } }
+}

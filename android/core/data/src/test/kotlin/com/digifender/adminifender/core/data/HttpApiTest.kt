@@ -5,6 +5,7 @@ import com.digifender.adminifender.core.data.network.ArchiveView
 import com.digifender.adminifender.core.data.network.SearchRequest
 import com.digifender.adminifender.core.data.network.HttpApi
 import com.digifender.adminifender.core.data.network.ReadResult
+import com.digifender.adminifender.core.data.network.ReviewResult
 import com.digifender.adminifender.core.model.ConcernAction
 import com.digifender.adminifender.core.model.SendResult
 import java.util.concurrent.TimeUnit
@@ -128,5 +129,102 @@ class HttpApiTest {
     fun aSourceIdThatIsNotAnIdIsNeverPutInAPath() = runTest {
         assertEquals(ReadResult.Unavailable("not_found"), api.source("../sync/changes"))
         assertEquals(0, server.requestCount)
+    }
+
+    private val briefingId = "4f8c0d2e-6a71-4c93-8e3f-5a6b7c8d9e0f"
+
+    @Test
+    fun readsTheCurrentBriefingFromTheSharedFixture() = runTest {
+        server.enqueue(json(200, """{"data":${contractFile("fixtures/v1/briefing/valid/four-sections.json")},"requestId":"r"}"""))
+        val dto = (api.currentBriefing() as ReadResult.Ok).value
+        assertEquals(briefingId, dto.id)
+        assertEquals(57L, dto.snapshotSeq)
+        assertEquals(2, dto.unacknowledged.size)
+        val request = server.takeRequest()
+        assertEquals("/api/v1/briefings/current", request.target)
+        assertEquals("GET", request.method)
+        assertEquals("Bearer access-token", request.headers["authorization"])
+    }
+
+    @Test
+    fun aBriefingMissingASectionIsMalformedNotEmpty() = runTest {
+        server.enqueue(json(200, """{"data":${contractFile("fixtures/v1/briefing/invalid/missing-new-sources.json")}}"""))
+        assertEquals(ReadResult.Unavailable("malformed_response"), api.currentBriefing())
+    }
+
+    @Test
+    fun aSuccessWithoutTheDataEnvelopeIsMalformedNotACrash() = runTest {
+        server.enqueue(json(200, """{"requestId":"r"}"""))
+        server.enqueue(json(200, """{"data":null,"requestId":"r"}"""))
+        server.enqueue(json(200, "[]"))
+        server.enqueue(json(200, """{"data":{"changes":[]}}"""))
+        assertEquals(ReadResult.Unavailable("malformed_response"), api.currentBriefing())
+        assertEquals(ReadResult.Unavailable("malformed_response"), api.changes(1, 10))
+        assertEquals(ReadResult.Unavailable("malformed_response"), api.source(id))
+        assertEquals(ReadResult.Unavailable("malformed_response"), api.currentBriefing())
+    }
+
+    @Test
+    fun sendsTheReviewWithItsKeyAndAnEmptyBodyAndChecksTheAnswer() = runTest {
+        server.enqueue(json(200, """{"data":{"id":"$briefingId","reviewedThroughSeq":57,"reviewedAt":"2026-10-08T08:00:00.000Z"},"requestId":"r"}"""))
+        val result = api.reviewBriefing(briefingId, "00000000-0000-4000-8000-000000000002")
+        assertEquals(ReviewResult.Reviewed(briefingId, 57, java.time.Instant.parse("2026-10-08T08:00:00Z").toEpochMilli()), result)
+        val request = server.takeRequest()
+        assertEquals("POST", request.method)
+        assertEquals("/api/v1/briefings/$briefingId/review", request.target)
+        assertEquals("00000000-0000-4000-8000-000000000002", request.headers["idempotency-key"])
+        assertEquals("{}", request.body?.utf8())
+    }
+
+    @Test
+    fun distinguishesEveryReviewAnswer() = runTest {
+        server.enqueue(json(409, """{"error":{"code":"already_reviewed","message":"m"}}"""))
+        server.enqueue(json(404, """{"error":{"code":"not_found","message":"m"}}"""))
+        server.enqueue(json(401, """{"error":{"code":"unauthenticated","message":"m"}}"""))
+        server.enqueue(json(409, """{"error":{"code":"request_in_progress","message":"m"}}"""))
+        server.enqueue(json(409, """{"error":{"code":"idempotency_conflict","message":"m"}}"""))
+        server.enqueue(json(429, """{"error":{"code":"rate_limited","message":"m"}}"""))
+        server.enqueue(json(503, """{"error":{"code":"unavailable","message":"m"}}"""))
+        server.enqueue(json(200, """{"data":{"unexpected":true}}"""))
+        assertEquals(ReviewResult.AlreadyReviewed, api.reviewBriefing(briefingId, "k"))
+        assertEquals(ReviewResult.NotFound, api.reviewBriefing(briefingId, "k"))
+        assertEquals(ReviewResult.SessionExpired, api.reviewBriefing(briefingId, "k"))
+        assertEquals(ReviewResult.NoAnswer, api.reviewBriefing(briefingId, "k"))
+        assertEquals(ReviewResult.Rejected("idempotency_conflict"), api.reviewBriefing(briefingId, "k"))
+        assertEquals(ReviewResult.NoAnswer, api.reviewBriefing(briefingId, "k"))
+        assertEquals(ReviewResult.NoAnswer, api.reviewBriefing(briefingId, "k"))
+        // A success the phone cannot read may still have been applied, so it is unconfirmed rather than failed.
+        assertEquals(ReviewResult.NoAnswer, api.reviewBriefing(briefingId, "k"))
+        server.close()
+        assertEquals(ReviewResult.NoAnswer, api.reviewBriefing(briefingId, "k"))
+    }
+
+    @Test
+    fun aBriefingIdThatIsNotAnIdIsNeverPutInAPathAndSignedOutSendsNothing() = runTest {
+        assertEquals(ReviewResult.NotFound, api.reviewBriefing("../concerns", "k"))
+        val signedOut = HttpApi(OkHttpClient(), server.url("/")) { null }
+        assertEquals(ReadResult.SessionExpired, signedOut.currentBriefing())
+        assertEquals(ReviewResult.SessionExpired, signedOut.reviewBriefing(briefingId, "k"))
+        assertEquals(0, server.requestCount)
+    }
+
+    @Test
+    fun waitAndDueDateBodiesMatchTheWorkersValidator() = runTest {
+        server.enqueue(json(200, """{"data":{"concern":{"id":"$id","revision":6}}}"""))
+        server.enqueue(json(200, """{"data":{"concern":{"id":"$id","revision":7}}}"""))
+        server.enqueue(json(200, """{"data":{"concern":{"id":"$id","revision":8}}}"""))
+        api.concernAction(id, "k1", 5, ConcernAction.Wait("Asked for terms", "Landlord", 1_791_028_800_000))
+        api.concernAction(id, "k2", 6, ConcernAction.Wait(null, null, null))
+        api.concernAction(id, "k3", 7, ConcernAction.SetDue(1_791_028_800_000, "Europe/London", null))
+        assertEquals("""{"expectedRevision":5,"kind":"wait","args":{"note":"Asked for terms","awaitedParty":"Landlord","followUpAt":"2026-10-03T12:00:00Z"}}""", server.takeRequest().body?.utf8())
+        assertEquals("""{"expectedRevision":6,"kind":"wait","args":{"note":null,"awaitedParty":null,"followUpAt":null}}""", server.takeRequest().body?.utf8())
+        assertEquals("""{"expectedRevision":7,"kind":"set_due","args":{"at":"2026-10-03T12:00:00Z","zone":"Europe/London"}}""", server.takeRequest().body?.utf8())
+    }
+
+    @Test
+    fun clearingTheDueDateSendsNullsAndNoWording() = runTest {
+        server.enqueue(json(200, """{"data":{"concern":{"id":"$id","revision":9}}}"""))
+        api.concernAction(id, "k", 8, com.digifender.adminifender.core.model.clearDue())
+        assertEquals("""{"expectedRevision":8,"kind":"set_due","args":{"at":null,"zone":null}}""", server.takeRequest().body?.utf8())
     }
 }

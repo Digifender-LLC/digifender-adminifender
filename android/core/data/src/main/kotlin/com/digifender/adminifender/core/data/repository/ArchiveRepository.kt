@@ -14,8 +14,20 @@ import java.time.Instant
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
-/** Attachment inventory entry; the bytes are downloaded separately and only on request. */
-data class AttachmentInfo(val id: String, val name: String, val declaredType: String?, val sizeBytes: Long, val extraction: String, val extractionDetail: String?)
+/**
+ * Attachment inventory entry; the bytes are downloaded separately and only on request. [sha256] is the checksum the
+ * downloaded bytes must match (blank for an inventory cached before the phone kept it: opening the email again refreshes it).
+ */
+data class AttachmentInfo(
+    val id: String,
+    val name: String,
+    val declaredType: String?,
+    val sizeBytes: Long,
+    val extraction: String,
+    val extractionDetail: String?,
+    val sha256: String = "",
+    val disposition: String = "",
+)
 
 /**
  * A source's body text and attachment inventory. [complete] is false when the body was longer than the phone keeps,
@@ -186,7 +198,7 @@ class ArchiveRepository(private val api: ArchiveApi, private val cache: ArchiveC
     }
 }
 
-fun AttachmentDto.toInfo() = AttachmentInfo(id, name, declaredType, sizeBytes, extraction, extractionDetail)
+fun AttachmentDto.toInfo() = AttachmentInfo(id, name, declaredType, sizeBytes, extraction, extractionDetail, sha256, disposition)
 
 /**
  * A short excerpt of [text] around the first matching term, marked with brackets like the server's snippets.

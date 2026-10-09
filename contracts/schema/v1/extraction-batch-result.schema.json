@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://adminifender.invalid/schema/v1/extraction-batch-result.schema.json",
+  "title": "POST /device-work/extraction/{leaseId}/batch data (lld.md#text-extraction-and-ocr)",
+  "description": "`accepted` stored the batch; `replayed` answered a repeat of a batch already stored with the same content. `batchHash` is the server's hash of that batch: keep it for the final batch's `manifestHash`. `nextBatchOrdinal` and `nextPage` are where to continue. `published` is true only when the final batch committed the generation; then `attachment` states the attachment's new state (`ready`, with detail `limit` when the document had more pages than were read). A repeated final batch is `replayed` with `published` true and no `attachment`.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "leaseId",
+    "batchOrdinal",
+    "status",
+    "batchHash",
+    "nextBatchOrdinal",
+    "nextPage",
+    "published"
+  ],
+  "properties": {
+    "leaseId": {
+      "$ref": "common.schema.json#/$defs/uuid"
+    },
+    "batchOrdinal": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "status": {
+      "enum": [
+        "accepted",
+        "replayed"
+      ]
+    },
+    "batchHash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "nextBatchOrdinal": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 101
+    },
+    "nextPage": {
+      "type": "integer",
+      "minimum": 2,
+      "maximum": 101
+    },
+    "published": {
+      "type": "boolean"
+    },
+    "attachment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "detail"
+      ],
+      "properties": {
+        "state": {
+          "const": "ready"
+        },
+        "detail": {
+          "oneOf": [
+            {
+              "const": "limit"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "if": {
+    "properties": {
+      "status": {
+        "const": "accepted"
+      },
+      "published": {
+        "const": true
+      }
+    },
+    "required": [
+      "status",
+      "published"
+    ]
+  },
+  "then": {
+    "required": [
+      "attachment"
+    ],
+    "properties": {
+      "attachment": true
+    }
+  },
+  "else": {
+    "properties": {
+      "attachment": false
+    }
+  }
+}

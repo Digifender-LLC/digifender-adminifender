@@ -77,6 +77,8 @@ def check_workflows() -> None:
 def main() -> int:
     paths = [ROOT / "README.md", ROOT / "AGENTS.md", ROOT / "CLAUDE.md"]
     paths.extend((ROOT / "docs").rglob("*.md"))
+    for folder in ("ops", "models", "android", "backend", "contracts"):
+        paths.extend(p for p in (ROOT / folder).glob("*.md"))
     for suffix in WORKFLOWS:
         name = f"adminifender-{suffix}"
         paths.append(ROOT / ".agents/skills" / name / "SKILL.md")

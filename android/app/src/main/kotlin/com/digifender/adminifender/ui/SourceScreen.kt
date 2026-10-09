@@ -1,6 +1,5 @@
 package com.digifender.adminifender.ui
 
-import android.text.format.Formatter
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -11,19 +10,30 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.digifender.adminifender.R
-import com.digifender.adminifender.core.data.repository.AttachmentInfo
+import com.digifender.adminifender.core.data.network.ChatScope
+import com.digifender.adminifender.core.data.network.ScopeKind
 
 @Composable
-fun SourceScreen(state: SourceUiState, busy: Boolean, onRetry: () -> Unit, onOpenConcern: (String) -> Unit, modifier: Modifier = Modifier) {
+fun SourceScreen(
+    state: SourceUiState,
+    busy: Boolean,
+    files: AttachmentsUiState,
+    actions: AttachmentActions,
+    onRetry: () -> Unit,
+    onOpenConcern: (String) -> Unit,
+    onAsk: (ChatScope) -> Unit,
+    onDelete: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Column(modifier.padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         val summary = state.summary
         if (state.status == TextStatus.GONE) {
@@ -42,6 +52,10 @@ fun SourceScreen(state: SourceUiState, busy: Boolean, onRetry: () -> Unit, onOpe
             if (summary.from.isNotEmpty()) Text(stringResource(R.string.source_from, summary.from.joinToString(", ")))
             Text(stringResource(R.string.source_received, dateTime(summary.receivedAtMs)), style = MaterialTheme.typography.labelLarge)
             Text(sourceLabels(summary), style = MaterialTheme.typography.bodySmall)
+            // Quarantined, unfinished and AI-restricted emails are never offered as a chat scope.
+            if (askable(summary)) OutlinedButton(onClick = { onAsk(ChatScope(ScopeKind.SOURCE, summary.id)) }) { Text(stringResource(R.string.chat_ask_email)) }
+            // Deleting is an exact review of this one email first; nothing is deleted by this button.
+            OutlinedButton(onClick = { onDelete(summary.id) }) { Text(stringResource(R.string.source_delete)) }
         }
 
         Text(stringResource(R.string.source_text), style = MaterialTheme.typography.titleMedium)
@@ -68,7 +82,9 @@ fun SourceScreen(state: SourceUiState, busy: Boolean, onRetry: () -> Unit, onOpe
 
             Text(stringResource(R.string.source_attachments), style = MaterialTheme.typography.titleMedium)
             if (text.attachments.isEmpty()) Text(stringResource(R.string.source_no_attachments))
-            text.attachments.forEach { AttachmentRow(it) }
+            if (text.attachments.isNotEmpty()) Text(stringResource(R.string.attachment_storage_note), style = MaterialTheme.typography.bodySmall)
+            text.attachments.forEach { AttachmentRow(it, files.files[it.id], files.busyId != null, actions) }
+            AttachmentNoticeAndPreview(files, actions)
         }
 
         Text(stringResource(R.string.source_concerns), style = MaterialTheme.typography.titleMedium)
@@ -85,22 +101,17 @@ fun SourceScreen(state: SourceUiState, busy: Boolean, onRetry: () -> Unit, onOpe
 }
 
 @Composable
-private fun AttachmentRow(a: AttachmentInfo) {
-    val context = LocalContext.current
-    val size = Formatter.formatShortFileSize(context, a.sizeBytes)
-    Column {
-        Text(a.name, style = MaterialTheme.typography.bodyMedium)
-        Text(listOfNotNull(a.declaredType, size, extractionText(a.extraction)).joinToString(" · "), style = MaterialTheme.typography.bodySmall)
-    }
-}
-
-@Composable
-private fun extractionText(state: String) = stringResource(
-    when (state) {
-        "ready" -> R.string.extraction_ready
-        "queued", "extracting", "deferred" -> R.string.extraction_pending
-        "unsupported" -> R.string.extraction_unsupported
-        "failed" -> R.string.extraction_failed
+fun extractionText(state: String, detail: String? = null) = stringResource(
+    when {
+        state == "ready" && detail == "limit" -> R.string.extraction_ready_limited
+        state == "ready" -> R.string.extraction_ready
+        state == "extracting" -> R.string.extraction_reading
+        state == "deferred" && detail == "device_unavailable" -> R.string.extraction_waiting_for_phone
+        state == "queued" || state == "deferred" -> R.string.extraction_pending
+        state == "unsupported" && detail == "encrypted" -> R.string.extraction_encrypted
+        state == "unsupported" && detail == "policy_blocked" -> R.string.extraction_policy_blocked
+        state == "unsupported" -> R.string.extraction_unsupported
+        state == "failed" -> R.string.extraction_failed
         else -> R.string.extraction_stored
     },
 )

@@ -1,0 +1,18 @@
+{
+  "leaseToken": "9d8c7b6a-5f4e-4d3c-b2a1-0f9e8d7c6b5a",
+  "contentHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "extractorVersion": "android-extract-v1",
+  "policyRevision": 3,
+  "generationId": "dev:5a6b7c8d-1e2f-4a3b-8c4d-5e6f7a8b9c0d:aaaaaaaaaaaaaaaa:android-extract-v1:p3",
+  "batchOrdinal": 0,
+  "pages": [
+    {
+      "page": 1,
+      "part": 0,
+      "method": "vision",
+      "text": "x"
+    }
+  ],
+  "lastPage": 1,
+  "complete": false
+}

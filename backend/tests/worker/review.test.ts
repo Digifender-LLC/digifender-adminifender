@@ -1,5 +1,7 @@
 import { env } from 'cloudflare:workers';
 import { beforeEach, describe, expect, it } from 'vitest';
+import fixture from '../../../contracts/fixtures/v1/briefing/valid/four-sections.json';
+import type { Env } from '../../src/env';
 import { T0, api, enrollOwner, ingest, runPending } from './support';
 
 const MIN = 60_000;
@@ -129,6 +131,31 @@ describe('briefings', () => {
     expect(third.newSourceIds).toHaveLength(2);
   });
 
+  it('matches the shared briefing fixture the phone parses', async () => {
+    const a = await triaged(mail({}));
+    const live = (await api('GET', '/briefings/current', { token, now: T0 + MIN })).body.data;
+    expect(Object.keys(live).sort()).toEqual(Object.keys(fixture).sort());
+    expect(live.summary).toBeNull();
+    for (const section of ['newConcerns', 'unacknowledged'] as const) {
+      expect(ids(live[section])).toEqual([a.concernId]);
+      expect(Object.keys(live[section][0]).sort()).toEqual(Object.keys(fixture[section][0]!).sort());
+    }
+  });
+
+  it('replays a resent review with the same key and reports already_reviewed for a new key', async () => {
+    await triaged(mail({}));
+    const briefing = (await api('GET', '/briefings/current', { token, now: T0 + MIN })).body.data;
+    const resendKey = key();
+    const first = await api('POST', `/briefings/${briefing.id}/review`, { token, key: resendKey, body: {}, now: T0 + 2 * MIN });
+    const resent = await api('POST', `/briefings/${briefing.id}/review`, { token, key: resendKey, body: {}, now: T0 + 3 * MIN });
+    expect(resent.status).toBe(200);
+    expect(resent.body.data).toEqual(first.body.data);
+    const fresh = await post(`/briefings/${briefing.id}/review`, {}, T0 + 4 * MIN);
+    expect(fresh.status).toBe(409);
+    expect(fresh.body.error?.code).toBe('already_reviewed');
+    expect((await post('/briefings/4f8c0d2e-6a71-4c93-8e3f-5a6b7c8d9e0f/review', {}, T0 + 5 * MIN)).status).toBe(404);
+  });
+
   it('reviewing an older snapshot never covers later changes', async () => {
     await triaged(mail({ body: 'one' }));
     const older = (await api('GET', '/briefings/current', { token, now: T0 + MIN })).body.data;
@@ -145,5 +172,192 @@ describe('briefings', () => {
     const late = (await api('GET', '/briefings/current', { token, now: T0 + 6 * MIN })).body.data;
     expect(ids(late.overdue)).toEqual([concernId]);
     expect(late.overdue[0].due).toMatchObject({ zone: 'America/New_York' });
+  });
+});
+
+describe('briefings over the section caps', () => {
+  const db = () => env.CONTROL_DB;
+  const SEED_TIME = T0 - 60 * MIN;
+  const uuid = () => crypto.randomUUID();
+  const run = async (statements: D1PreparedStatement[]) => {
+    for (let i = 0; i < statements.length; i += 100) await db().batch(statements.slice(i, i + 100));
+  };
+  /** A concern row with its events and one change row per revision, as the triage job would leave it. */
+  const concernRevisions = (id: string, kinds: string[]): D1PreparedStatement[] => [
+    db().prepare("INSERT INTO concerns(id, revision, title, status, importance, due_revision, acknowledged_at, updated_at) VALUES (?, ?, ?, 'open', 'routine', 0, ?, ?)").bind(id, kinds.length, `Concern ${id}`, SEED_TIME, SEED_TIME),
+    ...kinds.flatMap((kind, i) => [
+      db().prepare("INSERT INTO concern_events(id, concern_id, from_revision, to_revision, kind, before_json, after_json, created_at) VALUES (?, ?, ?, ?, ?, '{}', '{}', ?)").bind(uuid(), id, i, i + 1, kind, SEED_TIME),
+      db().prepare("INSERT INTO changes(entity_type, entity_id, revision, deleted, projection_json, created_at) VALUES ('concern', ?, ?, 0, '{}', ?)").bind(id, i + 1, SEED_TIME),
+    ]),
+  ];
+  const readySource = (id: string, state = 'ready'): D1PreparedStatement[] => [
+    db().prepare("INSERT INTO changes(entity_type, entity_id, revision, deleted, projection_json, created_at) VALUES ('source', ?, 1, 0, '{}', ?)").bind(id, SEED_TIME),
+    db().prepare("INSERT INTO source_registry(id, kind, external_key, content_hash, admission, privacy, state, revision, received_at, ready_seq) VALUES (?, 'email', ?, 'h', 'normal', 'hybrid', ?, 1, ?, (SELECT MAX(seq) FROM changes))").bind(id, id, state, SEED_TIME),
+  ];
+  const setCursor = (seq: number) =>
+    db().prepare("INSERT INTO review_state(id, last_meaningful_at, last_reviewed_seq, review_epoch) VALUES ('owner', ?, ?, 'v1') ON CONFLICT(id) DO UPDATE SET last_reviewed_seq = excluded.last_reviewed_seq").bind(SEED_TIME, seq).run();
+  const maxSeq = async () => (await db().prepare('SELECT MAX(seq) AS seq FROM changes').first<{ seq: number }>())!.seq;
+
+  /** Opens and reviews briefings until one is complete, returning every briefing it showed. */
+  async function drain(limit = 10) {
+    const shown: any[] = [];
+    for (let round = 0; round < limit; round += 1) {
+      const briefing = (await api('GET', '/briefings/current', { token, now: T0 + round * 2_000 })).body.data;
+      shown.push(briefing);
+      const review = await post(`/briefings/${briefing.id}/review`, {}, T0 + round * 2_000 + 1_000);
+      expect(review.body.data).toMatchObject({ reviewedThroughSeq: briefing.snapshotSeq });
+      if (!briefing.hasMore) return shown;
+    }
+    throw new Error('briefing never completed');
+  }
+  const includedFor = async (briefingId: string) =>
+    Object.keys(JSON.parse((await db().prepare('SELECT included_revisions_json AS j FROM briefings WHERE id = ?').bind(briefingId).first<{ j: string }>())!.j));
+
+  it('shows more than 100 new sources over successive reviews without skipping any', async () => {
+    const sources = Array.from({ length: 230 }, uuid);
+    await run(sources.flatMap((id, i) => readySource(id, i === 7 ? 'deleted' : 'ready')));
+    const eligible = sources.filter((_, i) => i !== 7);
+    const sequence = new Map(
+      (await db().prepare('SELECT id, ready_seq FROM source_registry').all<{ id: string; ready_seq: number }>()).results.map((r) => [r.id, r.ready_seq]),
+    );
+
+    const first = (await api('GET', '/briefings/current', { token, now: T0 })).body.data;
+    expect(first.newSourceIds).toHaveLength(100);
+    expect(first.hasMore).toBe(true);
+    // The cursor stops before the oldest source left out, so reviewing this snapshot cannot cover it.
+    const omitted = eligible.filter((id) => !first.newSourceIds.includes(id));
+    expect(first.snapshotSeq).toBe(Math.min(...omitted.map((id) => sequence.get(id)!)) - 1);
+    expect(first.snapshotSeq).toBeLessThan(await maxSeq());
+    expect(new Date(first.throughTime).getTime()).toBeLessThanOrEqual(SEED_TIME);
+
+    await post(`/briefings/${first.id}/review`, {}, T0 + 1_000);
+    const rest = await drain();
+    const seen = [first, ...rest].flatMap((b) => b.newSourceIds);
+    expect(new Set(seen).size).toBe(seen.length);
+    expect([...seen].sort()).toEqual([...eligible].sort());
+    expect(rest.map((b) => b.newSourceIds.length)).toEqual([100, 29]);
+    expect(rest.at(-1).hasMore).toBe(false);
+    expect(rest.at(-1).snapshotSeq).toBe(await maxSeq());
+    // Nothing is left once everything was reviewed.
+    expect((await api('GET', '/briefings/current', { token, now: T0 + 60_000 })).body.data).toMatchObject({ newSourceIds: [], hasMore: false });
+  });
+
+  it('shows more than 200 material concerns over successive reviews, each card listed as included', async () => {
+    const created = Array.from({ length: 250 }, uuid);
+    await run(created.flatMap((id) => concernRevisions(id, ['created'])));
+
+    const first = (await api('GET', '/briefings/current', { token, now: T0 })).body.data;
+    expect(first.newConcerns).toHaveLength(100);
+    expect(first.hasMore).toBe(true);
+    expect(first.snapshotSeq).toBeLessThan(await maxSeq());
+    expect([...(await includedFor(first.id))].sort()).toEqual(ids(first.newConcerns).sort());
+    // Newest first inside the covered interval, and nothing newer than the cursor is shown.
+    const changeSeq = new Map((await db().prepare("SELECT entity_id AS id, seq FROM changes WHERE entity_type = 'concern'").all<{ id: string; seq: number }>()).results.map((r) => [r.id, r.seq]));
+    expect(ids(first.newConcerns).map((id) => changeSeq.get(id)!)).toEqual(created.slice(0, 100).map((id) => changeSeq.get(id)!).reverse());
+    expect(Math.max(...ids(first.newConcerns).map((id) => changeSeq.get(id)!))).toBeLessThanOrEqual(first.snapshotSeq);
+
+    await post(`/briefings/${first.id}/review`, {}, T0 + 1_000);
+    const second = (await api('GET', '/briefings/current', { token, now: T0 + 2_000 })).body.data;
+    expect(ids(second.newConcerns)).toEqual(created.slice(100, 200).reverse());
+    expect(second.hasMore).toBe(true);
+    await post(`/briefings/${second.id}/review`, {}, T0 + 3_000);
+    const third = (await api('GET', '/briefings/current', { token, now: T0 + 4_000 })).body.data;
+    expect(ids(third.newConcerns)).toEqual(created.slice(200).reverse());
+    expect(third.hasMore).toBe(false);
+    expect(third.snapshotSeq).toBe(await maxSeq());
+  });
+
+  it('caps changed concerns separately from new ones', async () => {
+    const changed = Array.from({ length: 140 }, uuid);
+    const fresh = Array.from({ length: 3 }, uuid);
+    await run(changed.flatMap((id) => concernRevisions(id, ['created'])));
+    await setCursor(await maxSeq());
+    // The new concerns arrive between the changes.
+    await run([
+      ...changed.slice(0, 70).flatMap((id) => [
+        db().prepare("UPDATE concerns SET revision = 2 WHERE id = ?").bind(id),
+        db().prepare("INSERT INTO concern_events(id, concern_id, from_revision, to_revision, kind, before_json, after_json, created_at) VALUES (?, ?, 1, 2, 'evidence_added', '{}', '{}', ?)").bind(uuid(), id, SEED_TIME),
+        db().prepare("INSERT INTO changes(entity_type, entity_id, revision, deleted, projection_json, created_at) VALUES ('concern', ?, 2, 0, '{}', ?)").bind(id, SEED_TIME),
+      ]),
+      ...fresh.flatMap((id) => concernRevisions(id, ['created'])),
+      ...changed.slice(70).flatMap((id) => [
+        db().prepare("UPDATE concerns SET revision = 2 WHERE id = ?").bind(id),
+        db().prepare("INSERT INTO concern_events(id, concern_id, from_revision, to_revision, kind, before_json, after_json, created_at) VALUES (?, ?, 1, 2, 'evidence_added', '{}', '{}', ?)").bind(uuid(), id, SEED_TIME),
+        db().prepare("INSERT INTO changes(entity_type, entity_id, revision, deleted, projection_json, created_at) VALUES ('concern', ?, 2, 0, '{}', ?)").bind(id, SEED_TIME),
+      ]),
+    ]);
+
+    const shown = await drain();
+    expect(shown).toHaveLength(2);
+    expect(shown[0].hasMore).toBe(true);
+    expect(shown[0].changedConcerns).toHaveLength(100);
+    // The first review stops before the 101st changed concern, so the three new concerns that arrived earlier are in it.
+    expect(ids(shown[0].newConcerns).sort()).toEqual([...fresh].sort());
+    expect(ids(shown[0].changedConcerns)).toEqual(changed.slice(0, 70).concat(changed.slice(70, 100)).reverse());
+    expect(ids(shown[1].changedConcerns)).toEqual(changed.slice(100).reverse());
+    expect(shown[1].newConcerns).toEqual([]);
+    expect(shown[1].hasMore).toBe(false);
+    for (const b of shown) expect(new Set(await includedFor(b.id))).toEqual(new Set([...ids(b.newConcerns), ...ids(b.changedConcerns), ...ids(b.overdue), ...ids(b.unacknowledged)]));
+  });
+
+  it('keeps the cursor on an unreviewed capped snapshot, and a later reviewed older one still stops at its own boundary', async () => {
+    const sources = Array.from({ length: 130 }, uuid);
+    await run(sources.flatMap((id) => readySource(id)));
+    const first = (await api('GET', '/briefings/current', { token, now: T0 })).body.data;
+    // A source arriving after the snapshot is not covered by reviewing it.
+    const late = uuid();
+    await run(readySource(late));
+    expect((await api('GET', '/briefings/current', { token, now: T0 + 500 })).body.data.id).toBe(first.id);
+    await post(`/briefings/${first.id}/review`, {}, T0 + 1_000);
+    const rest = await drain();
+    const seen = [first, ...rest].flatMap((b) => b.newSourceIds);
+    expect([...seen].sort()).toEqual([...sources, late].sort());
+  });
+
+  it('binds at most 100 variables per statement when all four sections are full', async () => {
+    const created = Array.from({ length: 100 }, uuid);
+    const changed = Array.from({ length: 100 }, uuid);
+    const overdue = Array.from({ length: 100 }, uuid);
+    const unacknowledged = Array.from({ length: 100 }, uuid);
+    await run(changed.flatMap((id) => concernRevisions(id, ['created'])));
+    await setCursor(await maxSeq());
+    await run([
+      ...created.flatMap((id) => concernRevisions(id, ['created'])),
+      ...changed.flatMap((id) => [
+        db().prepare('UPDATE concerns SET revision = 2 WHERE id = ?').bind(id),
+        db().prepare("INSERT INTO concern_events(id, concern_id, from_revision, to_revision, kind, before_json, after_json, created_at) VALUES (?, ?, 1, 2, 'evidence_added', '{}', '{}', ?)").bind(uuid(), id, SEED_TIME),
+        db().prepare("INSERT INTO changes(entity_type, entity_id, revision, deleted, projection_json, created_at) VALUES ('concern', ?, 2, 0, '{}', ?)").bind(id, SEED_TIME),
+      ]),
+      ...overdue.map((id) => db().prepare("INSERT INTO concerns(id, revision, title, status, importance, due_revision, due_at, acknowledged_at, updated_at) VALUES (?, 1, 'Overdue', 'open', 'routine', 1, ?, ?, ?)").bind(id, SEED_TIME, SEED_TIME, SEED_TIME)),
+      ...unacknowledged.map((id) => db().prepare("INSERT INTO concerns(id, revision, title, status, importance, due_revision, updated_at) VALUES (?, 1, 'Unacknowledged', 'open', 'routine', 0, ?)").bind(id, SEED_TIME)),
+    ]);
+    // Every statement the route prepares is recorded with its bound-variable count (D1 allows 100 per statement).
+    const bound: number[] = [];
+    const real = env.CONTROL_DB;
+    const spy = new Proxy(real, {
+      get(target, prop) {
+        if (prop !== 'prepare') return Reflect.get(target, prop).bind(target);
+        return (sql: string) => {
+          const statement = target.prepare(sql);
+          return new Proxy(statement, {
+            get(inner, member) {
+              if (member === 'bind') return (...args: unknown[]) => { bound.push(args.length); return inner.bind(...args); };
+              return Reflect.get(inner, member).bind(inner);
+            },
+          });
+        };
+      },
+    });
+
+    const res = await api('GET', '/briefings/current', { token, now: T0, env: { ...env, CONTROL_DB: spy } as Env });
+    expect(res.status).toBe(200);
+    const briefing = res.body.data;
+    expect([briefing.newConcerns, briefing.changedConcerns, briefing.overdue, briefing.unacknowledged].map((list) => list.length)).toEqual([100, 100, 100, 100]);
+    expect(briefing.hasMore).toBe(false);
+    const all = [...ids(briefing.newConcerns), ...ids(briefing.changedConcerns), ...ids(briefing.overdue), ...ids(briefing.unacknowledged)];
+    expect(new Set(all).size).toBe(400);
+    expect([...(await includedFor(briefing.id))].sort()).toEqual([...all].sort());
+    expect(bound.length).toBeGreaterThan(8);
+    expect(Math.max(...bound)).toBeLessThanOrEqual(100);
   });
 });

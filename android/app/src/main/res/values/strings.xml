@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
     <string name="app_name">Adminifender</string>
 
     <string name="sign_in_title">Sign in</string>
@@ -74,6 +74,8 @@
     <string name="act_queued">Saved on this phone. It will be sent when online.</string>
     <string name="act_not_available">That isn\'t available for this item any more.</string>
     <string name="act_snooze_past">Pick a time in the future.</string>
+    <string name="act_wrong_item">That form was opened for a different item, so nothing was saved.</string>
+    <string name="form_follow_up_passed">The follow-up date has passed. Keep it, pick a future date, or clear the date to remove the follow-up.</string>
     <string name="act_gone">This item is no longer on this phone.</string>
     <string name="concern_missing">This item is no longer on this phone.</string>
 
@@ -93,6 +95,18 @@
         <item quantity="other">%d changes have not been sent and will be lost. Sync first if you want to keep them.</item>
     </plurals>
     <string name="sign_out_cached">Cached mail and settings will be removed from this phone.</string>
+    <plurals name="sign_out_chat_unconfirmed">
+        <item quantity="one">%d chat question has not been confirmed by the server and will be discarded. The server may or may not already have it.</item>
+        <item quantity="other">%d chat questions have not been confirmed by the server and will be discarded. The server may or may not already have them.</item>
+    </plurals>
+    <plurals name="sign_out_chat_drafts">
+        <item quantity="one">%d unsent chat draft will be lost.</item>
+        <item quantity="other">%d unsent chat drafts will be lost.</item>
+    </plurals>
+    <plurals name="sign_out_chat_at_worker">
+        <item quantity="one">%d chat question is still being answered by the server. Signing out asks the server to cancel it, which only works if it has not started, and the answer will not be kept here.</item>
+        <item quantity="other">%d chat questions are still being answered by the server. Signing out asks the server to cancel them, which only works for any that have not started, and the answers will not be kept here.</item>
+    </plurals>
     <string name="sign_out_confirm">Sign out</string>
     <string name="cancel">Cancel</string>
 
@@ -173,8 +187,201 @@
     <string name="extraction_ready">Text extracted</string>
     <string name="extraction_unsupported">This file type has no readable text</string>
     <string name="extraction_failed">Text couldn\'t be extracted</string>
+    <string name="extraction_reading">Reading text\u2026</string>
+    <string name="extraction_waiting_for_phone">Waiting for this phone to read it</string>
+    <string name="extraction_ready_limited">Text read from the first 100 pages</string>
+    <string name="extraction_encrypted">Password-protected, so its text can\'t be read</string>
+    <string name="extraction_policy_blocked">Not read: this email is set to no AI</string>
     <string name="source_concerns">Items from this message</string>
     <string name="source_no_concerns">No items on this phone come from this message.</string>
     <string name="concern_sources">Source emails</string>
     <string name="concern_source_not_cached">A source email that isn\'t on this phone yet</string>
+    <string name="nav_briefing">Briefing</string>
+    <string name="briefing_title">Briefing</string>
+    <string name="briefing_loading">Loading the briefing…</string>
+    <string name="briefing_loaded">Briefing %1$s</string>
+    <string name="briefing_through">Covers changes up to %1$s.</string>
+    <string name="briefing_more">More new or changed items are waiting. This briefing stops before them, so marking it reviewed leaves them for the next briefing.</string>
+    <string name="briefing_since">Since your last review on %1$s.</string>
+    <string name="briefing_first">Nothing has been marked reviewed yet.</string>
+    <string name="briefing_offline">Couldn\'t reach the server. Showing the briefing that was already loaded.</string>
+    <string name="briefing_sign_in">Sign in again to refresh the briefing. Showing the briefing that was already loaded.</string>
+    <string name="briefing_unavailable">The server couldn\'t give the briefing right now. Showing the briefing that was already loaded.</string>
+    <string name="briefing_phone_offline">Couldn\'t reach the server, and no briefing has been loaded yet.</string>
+    <string name="briefing_phone_sign_in">Sign in to load the briefing.</string>
+    <string name="briefing_phone_unavailable">The server couldn\'t give the briefing right now, and none has been loaded yet.</string>
+    <string name="briefing_phone_only">This is not the server\'s briefing. It lists only what this phone can work out itself, using this phone\'s clock, and can\'t tell what is new or changed. It can\'t be marked reviewed.</string>
+    <string name="briefing_review_button">Mark briefing reviewed</string>
+    <string name="briefing_review_note">This covers only what is listed here. It doesn\'t acknowledge, resolve or snooze anything.</string>
+    <string name="briefing_review_done">Marked reviewed.</string>
+    <string name="briefing_review_done_at">Marked reviewed %1$s.</string>
+    <string name="briefing_review_unconfirmed">Not confirmed: the server didn\'t answer. Mark it reviewed again to send the same request.</string>
+    <string name="review_msg_reviewed">Marked reviewed.</string>
+    <string name="review_msg_already">This briefing was already marked reviewed.</string>
+    <string name="review_msg_not_confirmed">Not confirmed. The server didn\'t answer, so it may or may not have been recorded. Try again.</string>
+    <string name="review_msg_sign_in">Sign in again, then mark it reviewed.</string>
+    <string name="review_msg_gone">The server no longer has this briefing. Refresh to load the current one.</string>
+    <string name="review_msg_refused">The server didn\'t accept this review. Refresh and try again.</string>
+    <string name="review_msg_changed">A newer briefing was loaded. Look at it, then mark it reviewed.</string>
+    <string name="briefing_section_new">New</string>
+    <string name="briefing_section_changed">Changed</string>
+    <string name="briefing_section_overdue">Overdue</string>
+    <string name="briefing_section_unacknowledged">Not acknowledged yet</string>
+    <string name="briefing_section_emails">New emails</string>
+    <string name="briefing_nothing">Nothing new or changed since your last review, and nothing overdue or waiting for acknowledgement.</string>
+    <plurals name="briefing_not_on_phone">
+        <item quantity="one">%d item in this briefing isn\'t on this phone yet. It appears after the next sync.</item>
+        <item quantity="other">%d items in this briefing aren\'t on this phone yet. They appear after the next sync.</item>
+    </plurals>
+    <string name="briefing_review_blocked_missing">Some items or emails in this briefing aren\'t on this phone, so you can\'t have seen them here. Sync or refresh the briefing, then mark it reviewed.</string>
+    <string name="briefing_review_blocked_behind">Some items here are older on this phone than in the briefing. Sync first, then mark it reviewed.</string>
+    <string name="briefing_behind">A newer version hasn\'t synced to this phone yet</string>
+
+    <string name="label_follow_up">Follow up %1$s</string>
+    <string name="label_due_in_zone">Due %1$s (%2$s)</string>
+    <string name="label_due_unconfirmed">Date not confirmed: “%1$s”</string>
+    <string name="action_wait">Wait for a reply…</string>
+    <string name="action_wait_edit">Edit wait…</string>
+    <string name="action_set_due">Set due date…</string>
+    <string name="action_change_due">Change due date…</string>
+    <string name="action_confirm_due">Confirm due date…</string>
+
+    <string name="form_wait_title">Wait for a reply</string>
+    <string name="form_wait_body">The item stays open on your list, marked waiting. A follow-up time is only a note for you.</string>
+    <string name="form_due_title">Due date</string>
+    <string name="form_due_email_said">The email said: “%1$s”</string>
+    <string name="form_note">Note (optional)</string>
+    <string name="form_party">Waiting on (optional)</string>
+    <string name="form_follow_up_date">Follow-up date (yyyy-mm-dd, optional)</string>
+    <string name="form_due_date">Date (yyyy-mm-dd)</string>
+    <string name="form_time">Time (24-hour, hh:mm)</string>
+    <string name="form_zone">Times are in %1$s.</string>
+    <string name="form_today">Today</string>
+    <string name="form_tomorrow">Tomorrow</string>
+    <string name="form_in_a_week">In a week</string>
+    <string name="form_save">Save</string>
+    <string name="form_remove_due">Remove date</string>
+    <string name="form_pick_earlier">The first time (%1$s)</string>
+    <string name="form_pick_later">The second time (%1$s)</string>
+    <string name="problem_note_too_long">Use at most 500 characters in the note.</string>
+    <string name="problem_party_too_long">Use at most 200 characters for who you\'re waiting on.</string>
+    <!-- The hyphens are the literal ISO 8601 example the user must type (year-month-day, 2026-10-12);
+         an en dash here would show a date the parser rejects, so TypographyDashes is ignored for this string only. -->
+    <string name="problem_bad_date" tools:ignore="TypographyDashes">Write the date as year-month-day, for example 2026-10-12, between 2000 and 2099.</string>
+    <string name="problem_bad_time">Write the time as hours and minutes, for example 09:30 or 17:00.</string>
+    <string name="problem_date_missing">Enter a date.</string>
+    <string name="problem_follow_up_past">Pick a follow-up time in the future.</string>
+    <string name="problem_time_skipped">That time doesn\'t exist on that date because the clocks go forward. Pick another time.</string>
+    <string name="problem_time_repeats">The clocks go back that night, so that time happens twice. Which one do you mean?</string>
+
+    <string name="nav_chat">Chat</string>
+    <string name="chat_title">Chat</string>
+    <string name="chat_intro">Ask about your mail. Answers use only emails and attachments the server may use, and show the passages they rest on. Choose what a conversation is about first; it can\'t be changed afterwards.</string>
+    <string name="chat_new_title">Start a conversation about</string>
+    <string name="chat_pick_all">All mail</string>
+    <string name="chat_pick_concern">A concern</string>
+    <string name="chat_pick_source">An email</string>
+    <string name="chat_pick_service">A service</string>
+    <string name="chat_choose_concern">Choose a concern</string>
+    <string name="chat_choose_source">Choose an email</string>
+    <string name="chat_choose_service">Choose a service</string>
+    <string name="chat_none_concern">No concerns are on this phone yet.</string>
+    <string name="chat_none_source">No emails that can be asked about are on this phone yet. Quarantined, unfinished and AI-restricted emails are left out.</string>
+    <string name="chat_none_service">No service is known on this phone. One appears here once a synced concern is linked to it. The server has no list of services to offer.</string>
+    <plurals name="chat_service_linked">
+        <item quantity="one">Linked to %d concern on this phone</item>
+        <item quantity="other">Linked to %d concerns on this phone</item>
+    </plurals>
+    <string name="chat_conversations">Conversations on this phone</string>
+    <string name="chat_loading">Loading…</string>
+    <string name="chat_no_conversations">No conversations yet.</string>
+    <string name="chat_last_used">Last used %1$s</string>
+    <string name="chat_has_draft">Has an unsent draft</string>
+    <string name="chat_thread_refused">The server refused this subject</string>
+    <string name="chat_missing">This conversation is no longer on this phone.</string>
+    <string name="chat_asking_about">Asking about</string>
+    <string name="chat_scope_all">Everything in your archive</string>
+    <string name="chat_scope_concern">Concern: %1$s</string>
+    <string name="chat_scope_concern_missing">A concern that isn\'t on this phone</string>
+    <string name="chat_scope_source">Email: %1$s</string>
+    <string name="chat_scope_source_missing">An email that isn\'t on this phone</string>
+    <string name="chat_scope_service">Service %1$s</string>
+    <string name="chat_scope_fixed">The subject is fixed for this conversation. Start a new one to ask about something else.</string>
+    <string name="chat_thread_unconfirmed">The server hasn\'t confirmed this conversation yet. Sending repeats the same request, which is safe.</string>
+    <string name="chat_thread_refused_detail">The server refused this subject (%1$s). Start another conversation.</string>
+    <string name="chat_problem_sign_in">Sign in again to send questions or read answers. Your questions are kept on this phone.</string>
+    <string name="chat_problem_unreachable">Couldn\'t reach the server. Your questions are kept and checked again when you return to this screen or after the next sync.</string>
+    <string name="chat_load_earlier">Show earlier questions</string>
+    <string name="chat_empty_thread">Nothing asked yet.</string>
+    <string name="chat_question_label">Your question</string>
+    <plurals name="chat_counter">
+        <item quantity="one">%1$d character of %2$d allowed</item>
+        <item quantity="other">%1$d characters of %2$d allowed</item>
+    </plurals>
+    <string name="chat_send">Ask</string>
+    <string name="chat_msg_empty">Type a question first.</string>
+    <string name="chat_msg_too_long">That question is too long to send.</string>
+    <string name="chat_msg_scope_refused">The server refused this subject, so nothing was sent.</string>
+    <string name="chat_msg_gone">This conversation or question is no longer on this phone.</string>
+    <string name="chat_msg_sign_in">Sign in again first.</string>
+    <string name="chat_msg_not_confirmed">The server didn\'t answer. Nothing is confirmed; the question is checked again and never sent twice.</string>
+    <string name="chat_msg_cancelled">Cancelled. The server confirmed it had not started.</string>
+    <string name="chat_msg_withdrawn">Cancelled on this phone. The server had no record of this question when you cancelled.</string>
+    <string name="chat_msg_already_dispatched">The server is already answering this question. Cancelling can\'t undo processing that has started.</string>
+    <string name="chat_msg_not_cancellable">This question is no longer waiting, so it can\'t be cancelled.</string>
+    <string name="chat_msg_cancel_refused">The server refused the cancel request.</string>
+    <string name="chat_msg_earlier_unavailable">Couldn\'t load earlier questions right now.</string>
+    <string name="chat_msg_draft_in_use">Your draft already has text. Send or clear it first; the earlier question stays here so nothing is lost.</string>
+    <string name="chat_you_asked">You asked · %1$s</string>
+    <string name="chat_checked">Status read from the server: %1$s</string>
+    <string name="chat_running_cannot_cancel">Already being answered. Cancelling can no longer undo it.</string>
+    <string name="chat_cancel">Cancel question</string>
+    <string name="chat_edit_again">Edit as a new question</string>
+    <string name="chat_status_not_sent">Not sent yet. Stored on this phone.</string>
+    <string name="chat_status_unconfirmed">Sent, but no answer came back. The server may or may not have it. The phone checks before doing anything else and never sends it twice.</string>
+    <string name="chat_status_waiting">Received by the server, not started yet.</string>
+    <string name="chat_status_running">The server is answering.</string>
+    <string name="chat_status_no_evidence">Answered without a model: no matching emails were found.</string>
+    <string name="chat_status_complete">Answered.</string>
+    <string name="chat_status_uncertain">Result unknown. The request to answer this was made and no reply could be confirmed. It may have been processed and counted against your allowance. It won\'t be repeated automatically; ask again if you want a new answer.</string>
+    <string name="chat_status_cancelled">Cancelled.</string>
+    <string name="chat_status_invalidated">Answer removed. An email it rests on was deleted, quarantined or restricted. Ask again for a new answer under today\'s settings.</string>
+    <string name="chat_status_withheld">Answer held back by the server: an email it rests on no longer qualifies, or a passage it cites can no longer be read.</string>
+    <string name="chat_status_unverified">Answer held back on this phone until every email it rests on is synced here and still allowed, or until the server can say what it rests on. It is checked again after the next sync.</string>
+    <string name="chat_status_refused">The server refused this question (%1$s). It was not answered.</string>
+    <string name="chat_status_answer_rejected">The server\'s answer didn\'t meet the format this app requires, so it isn\'t shown. Ask again.</string>
+    <string name="chat_status_withdrawn">Cancelled on this phone before the server confirmed it had this question; the server had no record of it at the time. If it reaches the server later, it will appear here as an ordinary question.</string>
+    <string name="chat_wait_needs_phone_model">Waiting for a model on this phone. This version of the app can\'t run one yet, so the question stays queued at the server until a later version can. You can cancel it.</string>
+    <string name="chat_wait_other">Waiting (reason: %1$s).</string>
+    <string name="chat_fail_not_allowed">Not answered: the settings don\'t allow AI for the emails involved.</string>
+    <string name="chat_fail_evidence_changed">Not answered: the emails it would use changed while it was waiting.</string>
+    <string name="chat_fail_invalid_output">Not answered: the model\'s reply didn\'t pass the checks, even after one repair.</string>
+    <string name="chat_fail_other">Not answered (code: %1$s).</string>
+    <string name="chat_answer">Answer</string>
+    <string name="chat_claims">What it rests on</string>
+    <string name="chat_basis_evidence">From your mail</string>
+    <string name="chat_basis_report">Reported, as of its date. Not proof of how things are now</string>
+    <string name="chat_basis_inference">Inference, not stated in the mail</string>
+    <string name="chat_basis_hypothesis">Possible cause, not confirmed</string>
+    <string name="chat_gaps">What your mail doesn\'t show</string>
+    <string name="chat_bullet">• %1$s</string>
+    <string name="chat_proposals">Suggestions</string>
+    <string name="chat_proposals_note">Suggestions only. Nothing has been sent or changed, and acting on one needs its own review.</string>
+    <string name="chat_proposal_reply">Suggested reply to an email</string>
+    <string name="chat_proposal_other">Suggested action</string>
+    <string name="chat_open_email">Open email</string>
+    <string name="chat_excerpt">“%1$s”</string>
+    <string name="chat_excerpt_unreadable">This passage can no longer be read.</string>
+    <string name="chat_cite_body">Email text</string>
+    <string name="chat_cite_attachment">Attachment</string>
+    <string name="chat_cite_attachment_page">Attachment, page %1$d</string>
+    <string name="chat_cite_where">%1$s · %2$s</string>
+    <string name="chat_cite_not_on_phone">email not on this phone</string>
+    <string name="chat_cite_sender_received">From %1$s · received %2$s</string>
+    <string name="chat_cite_received">Received %1$s</string>
+    <string name="chat_answered_at">Answered %1$s</string>
+    <string name="chat_service_concerns">Concerns: %1$s</string>
+    <string name="chat_ask_concern">Ask about this concern</string>
+    <string name="chat_ask_service">Ask about its service</string>
+    <string name="chat_ask_email">Ask about this email</string>
 </resources>

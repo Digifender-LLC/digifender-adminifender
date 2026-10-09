@@ -8,6 +8,7 @@ import {
 } from '@simplewebauthn/server';
 import type { Env } from '../env';
 import { HttpError, unauthenticated } from '../http/errors';
+import { assertion } from '../db/assert';
 import { readJson, v } from '../http/validate';
 import { consumeAttempt } from './rate-limit';
 import { authenticate, newSession } from './sessions';
@@ -129,7 +130,9 @@ export async function bootstrapOptions(request: Request, env: Env, now: number) 
   await consumeAttempt(env.CONTROL_DB, request, 'bootstrap', 5, now);
   const body = await readJson(request, v.object({ bootstrapToken: v.string({ max: 60, pattern: /^afb_[A-Za-z0-9_-]{43}$/ }), deviceName }));
   const unavailable = new HttpError(403, 'bootstrap_unavailable', 'Enrollment is not available.');
-  if (await env.CONTROL_DB.prepare('SELECT 1 FROM owner').first()) throw unavailable;
+  // Refused while any passkey is live. After a recovery reset (all passkeys revoked) the operator's one-time
+  // credential can enroll the owner again; the owner row and its archive stay.
+  if (await env.CONTROL_DB.prepare('SELECT 1 FROM passkeys WHERE revoked_at IS NULL').first()) throw unavailable;
   const bootstrap = await env.CONTROL_DB.prepare("SELECT id FROM auth_challenges WHERE kind = 'bootstrap' AND challenge_digest = ? AND consumed_at IS NULL AND expires_at > ?")
     .bind(await digest(body.bootstrapToken), now)
     .first<{ id: string }>();
@@ -151,13 +154,15 @@ export async function bootstrapVerify(request: Request, env: Env, now: number) {
   const guard = andGuards(consumedGuard(row.id, marker), consumedGuard(context.bootstrapId, marker));
   const deviceId = crypto.randomUUID();
   const recovery = await insertRecoveryKey(db, now, guard);
-  const session = await newSession(db, { deviceId, authEpoch: 1, recentAuthAt: now, now, guard });
+  const session = await newSession(db, { deviceId, authEpoch: 'current', recentAuthAt: now, now, guard });
   let results: D1Result[];
   try {
     results = await db.batch([
       consume(db, row.id, marker, now),
       consume(db, context.bootstrapId, marker, now),
-      db.prepare(`INSERT INTO owner(id, created_at, auth_epoch) SELECT 'owner', ?, 1 WHERE ${guard.sql}`).bind(now, ...guard.params),
+      // Two enrollments racing after a reset: only one may add a live passkey.
+      assertion(db, 'NOT EXISTS (SELECT 1 FROM passkeys WHERE revoked_at IS NULL)'),
+      db.prepare(`INSERT INTO owner(id, created_at, auth_epoch) SELECT 'owner', ?, 1 WHERE ${guard.sql} ON CONFLICT(id) DO NOTHING`).bind(now, ...guard.params),
       insertPasskey(db, info, now, guard),
       insertDevice(db, deviceId, context.deviceName, {}, now, guard),
       recovery.statement,
@@ -188,6 +193,35 @@ export async function passkeyOptions(request: Request, env: Env, now: number) {
   return { challengeId, options };
 }
 
+/** The origin the client reported, only when it has the shape of a public web or Android app origin. */
+function reportedOrigin(assertion: Record<string, unknown>): string | null {
+  try {
+    const response = assertion.response as { clientDataJSON?: unknown } | undefined;
+    if (typeof response?.clientDataJSON !== 'string') return null;
+    const json = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(response.clientDataJSON.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0))));
+    const origin = (json as { origin?: unknown }).origin;
+    return typeof origin === 'string' && /^(https:\/\/[a-z0-9.-]+(:\d+)?|http:\/\/localhost(:\d+)?|android:apk-key-hash:[A-Za-z0-9_-]{43})$/.test(origin) ? origin : null;
+  } catch {
+    return null;
+  }
+}
+
+function failureReason(error: unknown, assertion: Record<string, unknown>, origins: string[]): string {
+  const origin = reportedOrigin(assertion);
+  if (origin !== null && !origins.includes(origin)) return 'unexpected_origin';
+  const message = error instanceof Error ? error.message : '';
+  if (/challenge/i.test(message)) return 'challenge_mismatch';
+  if (/RP ID/i.test(message)) return 'rp_id_mismatch';
+  if (/user verif/i.test(message)) return 'user_not_verified';
+  if (/signature|unverified/i.test(message)) return 'bad_signature';
+  return 'invalid_response';
+}
+
+/** Content-free diagnostics: a reason class and the public origin (web origin or APK signing-key hash) only. */
+function logVerifyFailure(reason: string, assertion: Record<string, unknown>) {
+  console.warn(JSON.stringify({ event: 'passkey_verify_failed', reason, origin: reportedOrigin(assertion) }));
+}
+
 // POST /auth/passkey/verify
 export async function passkeyVerify(request: Request, env: Env, now: number) {
   const body = await readJson(
@@ -199,7 +233,10 @@ export async function passkeyVerify(request: Request, env: Env, now: number) {
   const passkey = await env.CONTROL_DB.prepare('SELECT id, public_key, sign_count, transports_json FROM passkeys WHERE id = ? AND revoked_at IS NULL')
     .bind(credentialId)
     .first<{ id: string; public_key: ArrayBuffer; sign_count: number; transports_json: string }>();
-  if (!passkey) throw unauthenticated();
+  if (!passkey) {
+    logVerifyFailure('unknown_credential', body.assertion);
+    throw unauthenticated();
+  }
   const rp = relyingParty(env);
   let newCounter: number;
   try {
@@ -213,7 +250,8 @@ export async function passkeyVerify(request: Request, env: Env, now: number) {
     });
     if (!result.verified) throw new Error('unverified');
     newCounter = result.authenticationInfo.newCounter;
-  } catch {
+  } catch (error) {
+    logVerifyFailure(failureReason(error, body.assertion, rp.origins), body.assertion);
     throw unauthenticated();
   }
 

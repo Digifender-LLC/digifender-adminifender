@@ -15,12 +15,25 @@ android {
         applicationId = "com.digifender.adminifender"
         minSdk = 31
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        // Release builds pass a monotonically increasing code; tools/release_preflight.py checks it against ops/releases.json.
+        versionCode = providers.gradleProperty("adminifender.versionCode").map(String::toInt).getOrElse(1)
+        versionName = providers.gradleProperty("adminifender.versionName").getOrElse("0.1.0")
         // Worker origin for this build. Local builds point at an unroutable host until an environment exists;
         // staging and production pass -Padminifender.apiBaseUrl=https://... (tdd.md#environments-and-preflight).
         val apiBaseUrl = providers.gradleProperty("adminifender.apiBaseUrl").getOrElse("https://adminifender.invalid/")
         buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
+    }
+
+    // Upload-key signing comes only from the environment (ops/release.md); the keystore and its passwords are never
+    // committed. Without them the release and staging builds stay unsigned, as in CI.
+    val uploadStore = providers.environmentVariable("ADMINIFENDER_UPLOAD_STORE_FILE").orNull
+    val upload = uploadStore?.let {
+        signingConfigs.create("upload") {
+            storeFile = file(it)
+            storePassword = providers.environmentVariable("ADMINIFENDER_UPLOAD_STORE_PASSWORD").get()
+            keyAlias = providers.environmentVariable("ADMINIFENDER_UPLOAD_KEY_ALIAS").get()
+            keyPassword = providers.environmentVariable("ADMINIFENDER_UPLOAD_KEY_PASSWORD").get()
+        }
     }
 
     buildTypes {
@@ -28,6 +41,20 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
+            signingConfig = upload
+        }
+        // Staging: a separate package and its own backend (tdd.md#environments-and-preflight), so it can never sign in
+        // to or read production. Built like release so the tested code is the shipped code.
+        create("staging") {
+            initWith(getByName("release"))
+            // Without an upload key, staging is signed with the local debug key so it installs by sideloading; its
+            // fingerprint goes into assetlinks.json for the .staging package (ops/staging.md).
+            signingConfig = upload ?: signingConfigs.getByName("debug")
+            applicationIdSuffix = ".staging"
+            versionNameSuffix = "-staging"
+            matchingFallbacks += "release"
+            val stagingUrl = providers.gradleProperty("adminifender.apiBaseUrl").getOrElse("https://adminifender-staging.digifender.com/")
+            buildConfigField("String", "API_BASE_URL", "\"$stagingUrl\"")
         }
     }
 
@@ -66,4 +93,5 @@ dependencies {
     implementation(libs.lifecycle.viewmodel.compose)
     testImplementation(libs.junit)
     testImplementation(libs.coroutines.test)
+    testImplementation(libs.serialization.json)
 }

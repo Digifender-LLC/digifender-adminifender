@@ -30,7 +30,9 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
@@ -108,6 +110,33 @@ class ArchiveViewModelTest {
         cache.rows.value = emptyMap()
         assertEquals(TextStatus.GONE, model.state.value.status)
         assertNull(model.state.value.text)
+        job.cancel()
+    }
+
+    @Test
+    fun selectionKeepsTheOwnersChoiceAndRefusesTheOneOverTheLimitOutLoud() = runTest {
+        val model = ArchiveViewModel(repo) { 10 * 86_400_000L }
+        val job = launch(UnconfinedTestDispatcher(testScheduler)) { model.state.collect {} }
+        assertFalse(model.state.value.selecting)
+        model.startSelecting()
+        val ids = (1..1001).map { "%08x-0000-4000-8000-%012x".format(it, it) }
+        ids.take(1000).forEach { model.toggle(it) }
+        assertEquals(1000, model.state.value.selection.size)
+        assertFalse(model.state.value.selectionAtLimit)
+        // The 1,001st is not added, and the screen is told why; nothing is dropped quietly.
+        model.toggle(ids[1000])
+        assertEquals(1000, model.state.value.selection.size)
+        assertTrue(model.state.value.selectionAtLimit)
+        assertFalse(ids[1000] in model.state.value.selection)
+        // Choosing again removes one and clears the notice.
+        model.toggle(ids[0])
+        assertEquals(999, model.state.value.selection.size)
+        assertFalse(model.state.value.selectionAtLimit)
+        // The order the owner chose is kept.
+        assertEquals(ids.subList(1, 1000), model.state.value.selection.toList())
+        model.stopSelecting()
+        assertFalse(model.state.value.selecting)
+        assertTrue(model.state.value.selection.isEmpty())
         job.cancel()
     }
 }

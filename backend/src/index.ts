@@ -5,12 +5,16 @@ import { JOB_HANDLERS } from './jobs/handlers';
 import { parseQueueEnvelope } from './jobs/queue-envelope';
 import { wakeSnoozed } from './concerns/lifecycle';
 import { expireExports } from './exports/job';
+import { maintainExtraction } from './extraction/device';
 import { releaseExpiredReservations } from './inference/budget';
 import { scheduleInactivity } from './notifications/events';
 import { SCHEDULED_PASS, observe } from './diagnostics/health';
 import { reconcile } from './jobs/reconcile';
 import { pruneChanges } from './sync/retention';
 import { runJob } from './jobs/runner';
+
+import { evaluateHeartbeats, evaluateReadiness } from './reports/obligations';
+import { recoveryRunId, runRecovery } from './recovery/recovery';
 
 export default {
   fetch(request, env) {
@@ -24,6 +28,11 @@ export default {
   },
 
   async queue(batch, env, _ctx) {
+    // Recovery mode: D1 stays the job authority, so acknowledged messages are re-published by the reconciler later.
+    if (recoveryRunId(env)) {
+      for (const message of batch.messages) message.ack();
+      return;
+    }
     for (const message of batch.messages) {
       // D1 is the job authority (lld.md#jobs); the queue only carries job IDs. Every message is acknowledged:
       // retries are scheduled in D1 and re-published by the scheduled reconciler.
@@ -44,12 +53,37 @@ export default {
 
   async scheduled(_controller, env, _ctx) {
     const now = Date.now();
-    await reconcile(env, now);
-    await wakeSnoozed(env.CONTROL_DB, now);
-    await pruneChanges(env.CONTROL_DB, now);
-    await expireExports(env, now);
-    await releaseExpiredReservations(env.CONTROL_DB, now);
-    await scheduleInactivity(env.CONTROL_DB, now);
+    const runId = recoveryRunId(env);
+    if (runId) {
+      // Nothing else runs until the recovery pass has finished and the operator redeploys without the run ID.
+      await runRecovery(env, runId, now);
+      return;
+    }
+    // Each step runs whatever happened to the others, so a failing step cannot stop export cleanup (which carries the
+    // deletion deadline) or any other upkeep. A failure is not absorbed: it is logged by step name only and the pass then
+    // fails, which leaves the pass unrecorded below, so health shows a failing pass as stale and the invocation as errored.
+    const steps: [string, () => Promise<unknown>][] = [
+      ['reconcile', () => reconcile(env, now)],
+      ['wake_snoozed', () => wakeSnoozed(env.CONTROL_DB, now)],
+      ['prune_changes', () => pruneChanges(env.CONTROL_DB, now)],
+      ['expire_exports', () => expireExports(env, now)],
+      ['maintain_extraction', () => maintainExtraction(env, now)],
+      ['release_reservations', () => releaseExpiredReservations(env.CONTROL_DB, now)],
+      ['schedule_inactivity', () => scheduleInactivity(env.CONTROL_DB, now)],
+      // P2 obligations; both return immediately unless reports are enabled.
+      ['evaluate_heartbeats', () => evaluateHeartbeats(env, now)],
+      ['evaluate_readiness', () => evaluateReadiness(env, now)],
+    ];
+    const failed: string[] = [];
+    for (const [step, run] of steps) {
+      try {
+        await run();
+      } catch {
+        failed.push(step);
+        console.warn(JSON.stringify({ event: 'scheduled_step_failed', step }));
+      }
+    }
+    if (failed.length > 0) throw new Error(`scheduled pass incomplete: ${failed.join(', ')}`);
     // Recorded only when every step above finished, so health shows a missed or failing pass as stale.
     await observe(env.CONTROL_DB, SCHEDULED_PASS, now);
   },

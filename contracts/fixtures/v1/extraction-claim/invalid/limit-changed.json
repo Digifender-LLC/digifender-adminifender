@@ -1,0 +1,22 @@
+{
+  "work": {
+    "leaseId": "3f9a1c2e-5b7d-4e8f-9a0b-1c2d3e4f5a6b",
+    "leaseToken": "9d8c7b6a-5f4e-4d3c-b2a1-0f9e8d7c6b5a",
+    "attachmentId": "5a6b7c8d-1e2f-4a3b-8c4d-5e6f7a8b9c0d",
+    "sourceId": "7c8d9e0f-2a3b-4c4d-9e5f-6a7b8c9d0e1f",
+    "kind": "pdf",
+    "contentHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "sizeBytes": 48213,
+    "extractorVersion": "android-extract-v1",
+    "policyRevision": 3,
+    "generationId": "dev:5a6b7c8d-1e2f-4a3b-8c4d-5e6f7a8b9c0d:aaaaaaaaaaaaaaaa:android-extract-v1:p3",
+    "ocrAllowed": true,
+    "maxPages": 200,
+    "maxBatchPages": 10,
+    "maxBatchBytes": 131072,
+    "nextBatchOrdinal": 0,
+    "nextPage": 1,
+    "batchHashes": [],
+    "expiresAt": "2026-10-09T12:10:00.000Z"
+  }
+}

@@ -1,0 +1,130 @@
+{
+  "id": "4f8c0d2e-6a71-4c93-8e3f-5a6b7c8d9e0f",
+  "snapshotSeq": 57,
+  "throughTime": "2026-10-08T07:00:00.000Z",
+  "lastReviewedAt": "2026-10-07T07:00:00.000Z",
+  "newConcerns": [
+    {
+      "id": "0b4e6f8a-2c3d-4e5f-8a9b-1c2d3e4f5a6b",
+      "revision": 2,
+      "title": "Invoice 42",
+      "status": "open",
+      "importance": "important",
+      "criticalBasis": null,
+      "serviceId": null,
+      "readAt": null,
+      "acknowledgedAt": null,
+      "resolvedAt": null,
+      "snoozeUntil": null,
+      "waiting": null,
+      "due": null,
+      "sourceIds": [
+        "6f1c2a10-8b1e-4c6d-9a51-3e0b7d2f4a11"
+      ],
+      "updatedAt": "2026-10-03T12:06:00.000Z"
+    }
+  ],
+  "changedConcerns": [
+    {
+      "id": "1c5f7a9b-3d4e-4f60-9b0c-2d3e4f5a6b7c",
+      "revision": 2,
+      "title": "Lease renewal",
+      "status": "waiting",
+      "importance": "important",
+      "criticalBasis": null,
+      "serviceId": null,
+      "readAt": null,
+      "acknowledgedAt": null,
+      "resolvedAt": null,
+      "snoozeUntil": null,
+      "waiting": {
+        "note": "Asked for the new terms",
+        "awaitedParty": "Landlord",
+        "followUpAt": "2026-10-12T09:00:00.000Z"
+      },
+      "due": null,
+      "sourceIds": [
+        "6f1c2a10-8b1e-4c6d-9a51-3e0b7d2f4a11"
+      ],
+      "updatedAt": "2026-10-03T12:06:00.000Z"
+    }
+  ],
+  "overdue": [
+    {
+      "id": "2d6a8b0c-4e5f-4a71-8c1d-3e4f5a6b7c8d",
+      "revision": 2,
+      "title": "Council tax",
+      "status": "open",
+      "importance": "important",
+      "criticalBasis": null,
+      "serviceId": null,
+      "readAt": null,
+      "acknowledgedAt": null,
+      "resolvedAt": null,
+      "snoozeUntil": null,
+      "waiting": null,
+      "due": {
+        "at": "2026-10-05T16:00:00.000Z",
+        "zone": "Europe/London",
+        "sourceText": "by 5pm Monday",
+        "revision": 1
+      },
+      "sourceIds": [
+        "6f1c2a10-8b1e-4c6d-9a51-3e0b7d2f4a11"
+      ],
+      "updatedAt": "2026-10-03T12:06:00.000Z"
+    }
+  ],
+  "unacknowledged": [
+    {
+      "id": "0b4e6f8a-2c3d-4e5f-8a9b-1c2d3e4f5a6b",
+      "revision": 2,
+      "title": "Invoice 42",
+      "status": "open",
+      "importance": "important",
+      "criticalBasis": null,
+      "serviceId": null,
+      "readAt": null,
+      "acknowledgedAt": null,
+      "resolvedAt": null,
+      "snoozeUntil": null,
+      "waiting": null,
+      "due": null,
+      "sourceIds": [
+        "6f1c2a10-8b1e-4c6d-9a51-3e0b7d2f4a11"
+      ],
+      "updatedAt": "2026-10-03T12:06:00.000Z"
+    },
+    {
+      "id": "3e7b9c1d-5f60-4b82-9d2e-4f5a6b7c8d9e",
+      "revision": 2,
+      "title": "Parcel notice",
+      "status": "open",
+      "importance": "important",
+      "criticalBasis": null,
+      "serviceId": null,
+      "readAt": null,
+      "acknowledgedAt": null,
+      "resolvedAt": null,
+      "snoozeUntil": null,
+      "waiting": null,
+      "due": {
+        "at": null,
+        "zone": null,
+        "sourceText": "next Thursday",
+        "revision": 0
+      },
+      "sourceIds": [
+        "6f1c2a10-8b1e-4c6d-9a51-3e0b7d2f4a11"
+      ],
+      "updatedAt": "2026-10-03T12:06:00.000Z"
+    }
+  ],
+  "newSourceIds": [
+    "6f1c2a10-8b1e-4c6d-9a51-3e0b7d2f4a11"
+  ],
+  "hasMore": false,
+  "summary": {
+    "text": "x"
+  }
+}

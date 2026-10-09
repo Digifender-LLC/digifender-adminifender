@@ -63,12 +63,15 @@ function requestPeriod(settings: InferenceSettings, kind: UsageKind, now: number
   return { id: `requests:${month(now)}:interactive`, startsAt, endsAt, limit: { requests: settings.limits.interactivePerMonth } };
 }
 
-/** Included allocation first, then the paid monthly ceiling: whichever admits the whole worst case. */
+/**
+ * Included allocation first, then the paid monthly ceiling: whichever admits the whole worst case. The included
+ * allocation is shared across the account, so it is used only when headroom is attested.
+ */
 function neuronPlans(settings: InferenceSettings, now: number): Period[] {
   const [dayStart, dayEnd] = dayBounds(now);
   const [monthStart, monthEnd] = monthBounds(now);
   const plans: Period[] = [];
-  if (settings.cloud.includedNeuronsPerDay > 0) plans.push({ id: `neurons:${day(now)}:included`, startsAt: dayStart, endsAt: dayEnd, limit: { neurons: settings.cloud.includedNeuronsPerDay } });
+  if (settings.cloud.includedNeuronsPerDay > 0 && settings.cloud.account !== 'unattested') plans.push({ id: `neurons:${day(now)}:included`, startsAt: dayStart, endsAt: dayEnd, limit: { neurons: settings.cloud.includedNeuronsPerDay } });
   const paid = paidNeuronLimit(settings.cloud);
   if (paid > 0) plans.push({ id: `neurons:${month(now)}:paid`, startsAt: monthStart, endsAt: monthEnd, limit: { neurons: paid } });
   return plans;

@@ -1,9 +1,12 @@
 package com.digifender.adminifender.core.data.local
 
 import androidx.room.withTransaction
+import com.digifender.adminifender.core.data.files.BlobDirectory
 import com.digifender.adminifender.core.data.network.SourceSummary
 import com.digifender.adminifender.core.data.network.SyncChange
 import com.digifender.adminifender.core.data.network.wireJson
+import com.digifender.adminifender.core.data.repository.SourceFact
+import com.digifender.adminifender.core.data.repository.restricts
 import com.digifender.adminifender.core.data.sync.ActionCodec
 import com.digifender.adminifender.core.data.sync.LocalStore
 import com.digifender.adminifender.core.data.sync.MutationState
@@ -22,12 +25,15 @@ import kotlinx.serialization.builtins.serializer
 
 private val stringList = ListSerializer(String.serializer())
 
+/** How long a deleted email's guard is kept if its tombstone never arrives: the server keeps tombstones 90 days. */
+private const val TOMBSTONE_GUARD_MS = 90L * 24 * 60 * 60 * 1000
+
 fun Concern.toEntity() = ConcernEntity(
     id = id, revision = revision, title = title, status = status.wire, importance = importance.wire, criticalBasis = criticalBasis,
     readAt = readAtMs, acknowledgedAt = acknowledgedAtMs, resolvedAt = resolvedAtMs, snoozeUntil = snoozeUntilMs,
     waitingNote = waiting?.note, awaitedParty = waiting?.awaitedParty, followUpAt = waiting?.followUpAtMs, hasWaiting = waiting != null,
     dueAt = due?.atMs, dueZone = due?.zone, dueSourceText = due?.sourceText, dueRevision = due?.revision,
-    sourceIdsJson = wireJson.encodeToString(stringList, sourceIds), updatedAt = updatedAtMs,
+    sourceIdsJson = wireJson.encodeToString(stringList, sourceIds), updatedAt = updatedAtMs, serviceId = serviceId,
 )
 
 fun ConcernEntity.toDomain() = Concern(
@@ -35,7 +41,7 @@ fun ConcernEntity.toDomain() = Concern(
     criticalBasis = criticalBasis, readAtMs = readAt, acknowledgedAtMs = acknowledgedAt, resolvedAtMs = resolvedAt, snoozeUntilMs = snoozeUntil,
     waiting = if (hasWaiting) Waiting(waitingNote, awaitedParty, followUpAt) else null,
     due = dueRevision?.let { Due(dueAt, dueZone, dueSourceText, it) },
-    sourceIds = wireJson.decodeFromString(stringList, sourceIdsJson), updatedAtMs = updatedAt,
+    sourceIds = wireJson.decodeFromString(stringList, sourceIdsJson), updatedAtMs = updatedAt, serviceId = serviceId,
 )
 
 fun SourceSummary.toEntity() = SourceEntity(id, revision, state, quarantined, privacy, receivedAtMs, subject, wireJson.encodeToString(stringList, from))
@@ -48,39 +54,86 @@ fun PendingMutationEntity.toQueued() = QueuedMutation(
     currentRevision = currentRevision,
 )
 
+private fun SourceSummary.toFact() = SourceFact(id, quarantined, privacy, state)
+
 /** [LocalStore] on Room; each method is a single transaction. */
-class RoomLocalStore(private val db: AppDatabase) : LocalStore {
+class RoomLocalStore(private val db: AppDatabase, private val blobs: BlobDirectory? = null, private val filesDropped: FilesDropped? = null) : LocalStore {
+    private val chat = RoomChatCache(db)
+
     override suspend fun syncState(): SyncState {
         val row = db.syncState().get() ?: return SyncState(throughSeq = 0, needsBootstrap = true, lastSyncedAtMs = null)
         return SyncState(row.throughSeq, row.needsBootstrap, row.lastSyncedAt)
     }
 
-    private suspend fun write(changes: List<SyncChange>) {
+    /**
+     * Applies [changes] and returns the emails whose change may have made a stored chat answer unsafe (see
+     * [restricts]). [held] is the set of emails the phone held before a full snapshot replaced them; without it each
+     * email's previous state is read from the table.
+     */
+    private suspend fun write(changes: List<SyncChange>, nowMs: Long, held: Map<String, SourceFact>? = null): MutableSet<String> {
+        val restricted = mutableSetOf<String>()
+        // Emails the owner just deleted whose tombstone has not arrived: a page that still lists them must not bring them back.
+        val guarded = db.tombstones().ids().toSet()
+        val removed = mutableListOf<String>()
         for (change in changes) {
             when (change) {
                 is SyncChange.ConcernChanged -> db.concerns().upsert(listOf(change.concern.toEntity()))
-                is SyncChange.SourceChanged -> db.sources().upsert(listOf(change.source.toEntity()))
+                is SyncChange.SourceChanged -> {
+                    if (change.source.id in guarded) continue
+                    val old = if (held != null) held[change.source.id] else db.sources().get(change.source.id)?.toFact()
+                    if (restricts(old, change.source.toFact())) restricted += change.source.id
+                    db.sources().upsert(listOf(change.source.toEntity()))
+                }
                 is SyncChange.Removed -> when (change.entityType) {
                     "concern" -> db.concerns().delete(change.entityId)
-                    "source" -> db.sources().delete(change.entityId)
+                    "source" -> {
+                        val old = if (held != null) held[change.entityId] else db.sources().get(change.entityId)?.toFact()
+                        if (restricts(old, null)) restricted += change.entityId
+                        db.sources().delete(change.entityId)
+                        removed += change.entityId
+                    }
                 }
                 is SyncChange.Ignored -> Unit
             }
         }
         // Cached text survives only for an unchanged source; deletion and revision changes drop it here.
         db.sourceTexts().pruneStale()
+        // The tombstone has arrived (or is old enough that the server no longer sends it): the guard has done its work.
+        db.tombstones().delete(removed)
+        db.tombstones().deleteOlderThan(nowMs - TOMBSTONE_GUARD_MS)
+        return restricted
     }
 
-    override suspend fun applyChanges(changes: List<SyncChange>, throughSeq: Long, nowMs: Long) = db.withTransaction {
-        write(changes)
-        db.syncState().put(SyncStateEntity(throughSeq = throughSeq, needsBootstrap = false, lastSyncedAt = nowMs))
+    override suspend fun applyChanges(changes: List<SyncChange>, throughSeq: Long, nowMs: Long) {
+        val names = db.withTransaction {
+            val restricted = write(changes, nowMs)
+            // Stored answers that rest on an email that just became unsafe are dropped in the same transaction.
+            chat.dropRestrictedAnswers(restricted)
+            // So are the downloaded files of an email that is gone, quarantined or stricter than when they were asked for.
+            val pruned = db.pruneRestrictedFiles()
+            db.syncState().put(SyncStateEntity(throughSeq = throughSeq, needsBootstrap = false, lastSyncedAt = nowMs))
+            pruned
+        }
+        blobs.afterPrune(names, filesDropped)
     }
 
-    override suspend fun replaceWithSnapshot(changes: List<SyncChange>, snapshotSeq: Long, nowMs: Long) = db.withTransaction {
-        db.concerns().clear()
-        db.sources().clear()
-        write(changes)
-        db.syncState().put(SyncStateEntity(throughSeq = snapshotSeq, needsBootstrap = false, lastSyncedAt = nowMs))
+    override suspend fun replaceWithSnapshot(changes: List<SyncChange>, snapshotSeq: Long, nowMs: Long) {
+        val names = db.withTransaction {
+            val held = db.sources().all().associate { it.id to it.toFact() }
+            db.concerns().clear()
+            db.sources().clear()
+            val restricted = write(changes, nowMs, held)
+            // An email the snapshot no longer lists was deleted while this phone was not looking.
+            val listed = changes.filterIsInstance<SyncChange.SourceChanged>().map { it.source.id }.toSet()
+            for ((id, fact) in held) if (id !in listed && restricts(fact, null)) restricted += id
+            chat.dropRestrictedAnswers(restricted)
+            // A full snapshot is complete: a guard for an email it does not list has nothing left to guard.
+            db.tombstones().delete(db.tombstones().ids().filter { it !in listed })
+            val pruned = db.pruneRestrictedFiles()
+            db.syncState().put(SyncStateEntity(throughSeq = snapshotSeq, needsBootstrap = false, lastSyncedAt = nowMs))
+            pruned
+        }
+        blobs.afterPrune(names, filesDropped)
     }
 
     override suspend fun markNeedsBootstrap() = db.withTransaction {

@@ -28,10 +28,10 @@ import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
 
-private const val NOW = 1_800_000_000_000L
+internal const val NOW = 1_800_000_000_000L
 
 /** Minimal store and cache sharing one queue, so a queued edit shows up in the flows like Room would. */
-private class Fake : LocalStore {
+internal class Fake : LocalStore {
     val concern = MutableStateFlow(listOf(Concern("c1", 2, "Invoice", Status.OPEN, Importance.ROUTINE, null, null, null, null, null, null, null, emptyList(), NOW - 1)))
     val queue = MutableStateFlow(emptyList<QueuedMutation>())
     val cache = object : CacheSource {
@@ -54,7 +54,7 @@ private class Fake : LocalStore {
     override suspend fun reapply(key: String, newKey: String, nowMs: Long): PendingMutation? = null
 }
 
-private object NoSync : SyncScheduler {
+internal object NoSync : SyncScheduler {
     override fun requestNow() = Unit
     override fun schedulePeriodic() = Unit
     override fun cancelAll() = Unit
@@ -85,6 +85,58 @@ class ConcernViewModelTest {
         model.act(ConcernAction.Resolve)
         assertEquals(ActMessage.NOT_AVAILABLE, model.message.value)
         assertEquals(listOf("k1", "k2"), fake.queue.value.map { it.mutation.idempotencyKey })
+        job.cancel()
+    }
+
+    @Test
+    fun waitAndDueDateAreQueuedAndShownOnTopWithoutClaimingTheServerAgreed() = runTest {
+        val model = ConcernViewModel("c1", repo)
+        val job = launch(UnconfinedTestDispatcher(testScheduler)) { model.state.collect {} }
+        model.act(ConcernAction.Wait("Asked for terms", "Landlord", NOW + 86_400_000))
+        assertEquals(ActMessage.QUEUED, model.message.value)
+        val waiting = model.state.value.view!!
+        assertEquals(Status.WAITING, waiting.shown.status)
+        assertEquals("Landlord", waiting.shown.waiting?.awaitedParty)
+        assertEquals(Status.OPEN, waiting.server.status)
+        // Editing the wait is allowed while waiting; setting a due date keeps the server revision.
+        model.act(ConcernAction.Wait("Chased", "Landlord", null))
+        assertEquals(ActMessage.QUEUED, model.message.value)
+        model.act(ConcernAction.SetDue(NOW + 3_600_000, "Europe/London", null))
+        assertEquals(ActMessage.QUEUED, model.message.value)
+        val view = model.state.value.view!!
+        assertEquals(NOW + 3_600_000, view.shown.due?.atMs)
+        assertEquals(2, view.server.revision)
+        assertEquals(listOf(ActionKind.MARK_READ, ActionKind.WAIT, ActionKind.WAIT, ActionKind.SET_DUE), fake.queue.value.map { it.mutation.action.kind })
+        assertEquals(listOf("k1", "k2", "k3", "k4"), fake.queue.value.map { it.mutation.idempotencyKey })
+        job.cancel()
+    }
+
+    @Test
+    fun waitIsRefusedLocallyForASnoozedItemButADueDateIsNot() = runTest {
+        fake.concern.value = listOf(fake.concern.value.single().copy(status = Status.SNOOZED, snoozeUntilMs = NOW + 60_000))
+        val model = ConcernViewModel("c1", repo)
+        val job = launch(UnconfinedTestDispatcher(testScheduler)) { model.state.collect {} }
+        model.act(ConcernAction.Wait(null, null, null))
+        assertEquals(ActMessage.NOT_AVAILABLE, model.message.value)
+        model.act(ConcernAction.SetDue(NOW + 1, null, null))
+        assertEquals(ActMessage.QUEUED, model.message.value)
+        job.cancel()
+    }
+
+    @Test
+    fun aSaveFromAFormOpenedForAnotherConcernIsRefusedNotAppliedHere() = runTest {
+        val model = ConcernViewModel("c1", repo)
+        val job = launch(UnconfinedTestDispatcher(testScheduler)) { model.state.collect {} }
+        val queuedBefore = fake.queue.value.size
+        // A push opened c1 while a wait form for c2 was still up: its values must not land on c1.
+        model.act(ConcernAction.Wait("For the other item", "Someone else", NOW + 86_400_000), forConcern = "c2")
+        assertEquals(ActMessage.WRONG_ITEM, model.message.value)
+        assertEquals(queuedBefore, fake.queue.value.size)
+        assertEquals(Status.OPEN, model.state.value.view?.shown?.status)
+        // The form that was opened for this concern still saves.
+        model.act(ConcernAction.Wait("Mine", null, null), forConcern = "c1")
+        assertEquals(ActMessage.QUEUED, model.message.value)
+        assertEquals(Status.WAITING, model.state.value.view?.shown?.status)
         job.cancel()
     }
 }

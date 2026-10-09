@@ -9,6 +9,7 @@ import { type Reservation, type UsageKind, releaseStatements, reserve, settleSta
 import { CLOUD_MAX_CHUNKS, type Message, type TextModel, repairMessages, runCloud, triageMessages, worstCaseInputTokens, CLOUD_OUTPUT_TOKENS } from './cloud';
 import { type Privacy, type Readiness, type TaskKind, type Thermal, cloudGate, localReady, route } from './routing';
 import { POLICY_REVISION_SQL, type Settings, loadSettings } from './settings';
+import { resolveTriageQuotes } from './quotes';
 import { type TriageOutput, normalizeTriage, parseModelJson, validateTriage } from './triage-output';
 
 export const INFER_TASK = 'triage';
@@ -225,6 +226,8 @@ export interface CloudTask<T> {
   /** Policy guards rechecked in the transaction that records dispatch. */
   eligible: { sql: string; params: unknown[] }[];
   messages: Message[];
+  /** Chunk IDs the reply may cite, with their text lengths, for the schema-repair hint. */
+  citable: { id: string; length: number }[];
   validate: (text: string) => { ok: true; value: T } | { ok: false; errors: string[] };
   /** Writes that store an accepted output; the last one's effect reports whether the output was kept. */
   store: (attemptId: string, modelId: string, value: T) => Promise<D1PreparedStatement[]>;
@@ -232,7 +235,7 @@ export interface CloudTask<T> {
 
 export type CloudOutcome =
   | { kind: 'succeeded'; attemptId: string; kept: boolean }
-  | { kind: 'invalid'; errors: string[] }
+  | { kind: 'invalid'; errors: string[]; firstErrors: string[] }
   | { kind: 'budget_exhausted'; repair: boolean; errors: string[] }
   | { kind: 'busy' }
   | { kind: 'uncertain' }
@@ -249,6 +252,7 @@ export async function dispatchCloud<T>(job: ClaimedJob, env: Env, now: number, s
   const running = { sql: RUNNING_GUARD, params: guardParams(job) };
   let messages: Message[] = t.messages;
   let lastErrors: string[] = [];
+  let firstErrors: string[] = [];
 
   for (const repair of [false, true]) {
     const attemptId = crypto.randomUUID();
@@ -318,14 +322,15 @@ export async function dispatchCloud<T>(job: ClaimedJob, env: Env, now: number, s
       return { kind: 'succeeded', attemptId, kept: stored.length === 0 || (results[results.length - 1]?.meta.changes ?? 0) >= 1 };
     }
     lastErrors = checked.errors;
+    if (!repair) firstErrors = checked.errors;
     await db.batch([
       ...settle,
       db.prepare("UPDATE inference_attempts SET state = 'invalid_output', error_code = 'invalid_output', usage_json = ?, completed_at = ? WHERE id = ?").bind(usage, now, attemptId),
     ]);
     // One schema-repair attempt, separately reserved; the rejected text goes back only to the same model.
-    messages = repairMessages(t.messages, reply.text, checked.errors);
+    messages = repairMessages(t.messages, reply.text, checked.errors, t.citable);
   }
-  return { kind: 'invalid', errors: lastErrors };
+  return { kind: 'invalid', errors: lastErrors, firstErrors };
 }
 
 async function cloudTriage(
@@ -336,6 +341,7 @@ async function cloudTriage(
 ): Promise<JobResult> {
   const { source, settings } = ctx;
   const chunkLengths = new Map(ctx.chunks.map((c) => [c.id, c.text.length]));
+  const chunkTexts = new Map(ctx.chunks.map((c) => [c.id, c.text]));
   const services = await knownServiceIds(env.CONTROL_DB);
   const outcome = await dispatchCloud(job, env, now, settings, {
     task: INFER_TASK,
@@ -345,9 +351,12 @@ async function cloudTriage(
     chunkIds: null,
     eligible: [sourceStillEligible(source.id, source.revision, source.privacy, settings.policyRevision)],
     messages: triageMessages(ctx.subject, ctx.chunks),
+    citable: ctx.chunks.map((c) => ({ id: c.id, length: c.text.length })),
     validate: (text) => {
       const parsed = parseModelJson(text);
-      return parsed.ok ? validateTriage(normalizeTriage(parsed.value), chunkLengths, services) : parsed;
+      if (!parsed.ok) return parsed;
+      const quoted = resolveTriageQuotes(normalizeTriage(parsed.value), chunkTexts);
+      return quoted.errors.length > 0 ? { ok: false as const, errors: quoted.errors } : validateTriage(quoted.value, chunkLengths, services);
     },
     store: async (attemptId, modelId, value) => [await resultStatement(env.CONTROL_DB, { id: attemptId, jobId: job.id, route: 'cloud', modelId }, source, settings.policyRevision, value, now)],
   });
@@ -365,6 +374,6 @@ async function cloudTriage(
       if (!outcome.repair) return ctx.queueLocal('budget_exhausted');
       return { kind: 'complete', output: { route: 'cloud', state: 'failed', error: 'invalid_output', repair: 'budget_exhausted', errors: outcome.errors } };
     case 'invalid':
-      return { kind: 'complete', output: { route: 'cloud', state: 'failed', error: 'invalid_output', errors: outcome.errors } };
+      return { kind: 'complete', output: { route: 'cloud', state: 'failed', error: 'invalid_output', errors: outcome.errors, firstErrors: outcome.firstErrors } };
   }
 }

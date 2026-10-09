@@ -2,6 +2,7 @@ import { parseSingleMailbox } from '../admission/addresses';
 import { scoreSpam } from '../admission/spam';
 import type { Env } from '../env';
 import { deterministicUuid, sha256Hex } from '../ids';
+import { isReportMail, reportJobStatements } from '../reports/job';
 import { CLAIM_GUARD, type ClaimedJob, type JobResult, guardParams } from '../jobs/runner';
 import { extractionJobStatements } from '../extraction/job';
 import { messageIdOf, threadReferences, triageJobStatements } from '../triage/job';
@@ -94,6 +95,9 @@ export async function parseJob(job: ClaimedJob, env: Env, now: number): Promise<
 
   const verdict = await admission(env, normalized);
   const sourceId = source.id;
+  // Report mail is restricted before triage, AI or OCR can see it, whatever its signature turns out to be (lld.md#reports).
+  const reportMail = await isReportMail(env, normalized.attachments.map((a) => a.name), mailboxHash);
+  const privacy = reportMail ? 'restricted_metadata' : source.privacy;
 
   // 1. R2 objects (per-source paths, content-addressed so retries overwrite identical bytes).
   const attachments = await Promise.all(
@@ -159,7 +163,7 @@ export async function parseJob(job: ClaimedJob, env: Env, now: number): Promise<
     kind: 'email',
     state: 'ready',
     admission: admissionValue,
-    privacy: source.privacy,
+    privacy,
     revision: source.revision + 1,
     receivedAt: new Date(source.received_at).toISOString(),
     subject: normalized.subject,
@@ -171,8 +175,9 @@ export async function parseJob(job: ClaimedJob, env: Env, now: number): Promise<
     output: { partitionId: partition.id, admission: admissionValue, manifestHash },
     statements: [
       control.prepare(
-        `UPDATE source_registry SET state = 'ready', partition_id = ?, admission = ?, revision = revision + 1 WHERE id = ? AND state IN ('staged', 'pending_index') AND ${CLAIM_GUARD}`,
-      ).bind(partition.id, admissionValue, sourceId, guardId, guardToken),
+        `UPDATE source_registry SET state = 'ready', partition_id = ?, admission = ?, privacy = ?, privacy_floor = CASE WHEN ? THEN 'restricted_metadata' ELSE privacy_floor END, revision = revision + 1
+         WHERE id = ? AND state IN ('staged', 'pending_index') AND ${CLAIM_GUARD}`,
+      ).bind(partition.id, admissionValue, privacy, reportMail ? 1 : 0, sourceId, guardId, guardToken),
       control.prepare(
         `INSERT INTO changes(entity_type, entity_id, revision, deleted, projection_json, created_at) SELECT 'source', ?, revision, 0, ?, ? FROM source_registry WHERE id = ? AND state = 'ready' AND ready_seq IS NULL AND ${CLAIM_GUARD}`,
       ).bind(sourceId, projection, now, sourceId, guardId, guardToken),
@@ -192,6 +197,7 @@ export async function parseJob(job: ClaimedJob, env: Env, now: number): Promise<
           .bind(a.id, sourceId, guardId, guardToken),
       ),
       ...extractionJobStatements(control, sourceId, now, CLAIM_GUARD, [guardId, guardToken]),
+      ...(reportMail ? reportJobStatements(control, sourceId, mailboxHash, now, CLAIM_GUARD, [guardId, guardToken]) : []),
     ],
   };
 }

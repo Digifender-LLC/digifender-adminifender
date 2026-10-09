@@ -1,3 +1,4 @@
+import { revertOrphans } from '../extraction/device';
 import { extractionJobStatements } from '../extraction/job';
 import { triageJobStatements } from '../triage/job';
 import { authenticate } from '../auth/sessions';
@@ -164,6 +165,8 @@ async function setAdmission(env: Env, now: number, id: string, revision: number,
     sourceChange(db, id, sourceProjection(next), now, { sql: 'revision = ? AND admission = ?', params: [revision + 1, admission] }),
   ];
   if (admission === 'quarantine') {
+    // A phone holding a lease on one of its files loses it now; the file returns to the queue once the batch commits (below).
+    statements.push(db.prepare("UPDATE extraction_leases SET state = 'cancelled', closed_at = ? WHERE source_id = ? AND state = 'leased'").bind(now, id));
     // Quarantine invalidates undispatched derived work for the source; nothing is deleted.
     statements.push(db.prepare("UPDATE jobs SET state = 'cancelled', error_code = 'quarantined' WHERE source_id = ? AND kind <> 'parse' AND state = 'pending'").bind(id));
     // Their attachments return to stored so release can queue them again under a new key.
@@ -178,6 +181,7 @@ async function setAdmission(env: Env, now: number, id: string, revision: number,
   }
   const results = await db.batch(statements);
   if (results[0]?.meta.changes !== 1) throw stale(revision + 1);
+  if (admission === 'quarantine') await revertOrphans(db, now);
   const updated = await env.CONTROL_DB.prepare(`SELECT ${REGISTRY_COLUMNS} FROM ${REGISTRY_FROM} WHERE r.id = ?`).bind(id).first<RegistryRow>();
   return sourceProjection(updated ?? next);
 }

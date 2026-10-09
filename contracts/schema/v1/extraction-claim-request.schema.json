@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://adminifender.invalid/schema/v1/extraction-claim-request.schema.json",
+  "title": "POST /device-work/extraction/claim body (lld.md#text-extraction-and-ocr)",
+  "description": "What this phone can do now. `pdfText` means it reads the text layer of a PDF (API 35 and later); `ocr` means the bundled Latin recognizer is ready. A phone that reports neither is told `no_capability`. The Worker decides per email whether recognition is allowed and says so in `ocrAllowed`.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "extractorVersion",
+    "pdfText",
+    "ocr"
+  ],
+  "properties": {
+    "extractorVersion": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 64,
+      "pattern": "^[a-z0-9][a-z0-9._-]*$"
+    },
+    "pdfText": {
+      "type": "boolean"
+    },
+    "ocr": {
+      "type": "boolean"
+    }
+  }
+}

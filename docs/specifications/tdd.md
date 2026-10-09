@@ -94,8 +94,21 @@ Use separate scoped deploy/runtime credentials. Wrangler configuration contains 
 | Costs | Account's existing paid plan/allowances and shared workloads; recorded model prices; app caps; account-wide inference accounting arrangement | With unknown free-inference headroom and no paid ceiling, cloud work stays paused/local. |
 | Recovery | D1 restore rehearsal, object/hash verification, current independent suppression-ledger verification, fresh identity enrollment and export restore | No production acceptance until recovery results are recorded. |
 | P2/P3 | Report producer examples or connector permission/review/readback evidence for each enabled integration | Feature stays disabled; do not label a repository plan as a live producer/API. |
+| Export storage | The [R2 export lifecycle preflight](#r2-export-lifecycle-preflight) recorded for the staging and the production archive bucket, plus the Workers plan and subrequest limit in force | No export is built in that environment; the multipart backstop is unverified and the 24-hour deletion bound is not claimed for unrecorded uploads. |
 
 Cloudflare provides permanent rejection through `setReject()` and rejects oversized inbound messages before the application. The application must not interpret this as a catch-all guarantee of SMTP retry on storage outage. Intake is complete only after durable staging and registration; reconcile orphan staging objects and expose failures. The [LLD](lld.md) defines the capture receipt boundary. [Email API](sources.md#cf-02), [inbound limit](sources.md#cf-04).
+
+### R2 export lifecycle preflight
+
+Why: an export ZIP is a multipart upload, R2 lists no object for an unfinished upload, and the Worker records upload IDs but cannot record one before R2 has created it ([LLD exports](lld.md#exports)). The bucket therefore needs its own one-day backstop for incomplete multipart uploads on `exports/`. R2 buckets already expire incomplete uploads after seven days by default, and a rule with an earlier expiry on a prefix takes precedence ([object lifecycles](https://developers.cloudflare.com/r2/buckets/object-lifecycles/), checked 2026-10-09). Nothing in this repository changes a bucket; run these by hand, staging first, with Wrangler as pinned in `backend/package.json` (4.147.0, whose `r2 bucket lifecycle list|add|set` and `--abort-multipart-days` were read from `--help` and the CLI source on 2026-10-09) and an API token with the Workers R2 Storage Write permission group:
+
+1. `npx wrangler r2 bucket lifecycle list <archive-bucket>`; save the output as evidence. These are the rules to keep.
+2. If no rule named `abort-stale-export-uploads` exists: `npx wrangler r2 bucket lifecycle add <archive-bucket> abort-stale-export-uploads exports/ --abort-multipart-days 1`. `add` reads the bucket's current rules and writes them back with the new one appended, so existing rules are kept; do not run two lifecycle edits at once. Do not use `lifecycle set --file` unless the file holds the full list from step 1 plus the new rule, because `set` replaces the whole configuration.
+3. `lifecycle list` again and compare with step 1: every earlier rule is unchanged, and the new rule is enabled, has prefix `exports/` and aborts incomplete uploads after one day. A mismatch fails the gate.
+4. Staging only, at least two days later: with a staging-scoped S3 API token, start an upload on `exports/preflight-probe/object` through the S3-compatible API and leave it open, then confirm with `ListMultipartUploads` (supported, [S3 API compatibility](https://developers.cloudflare.com/r2/api/s3/api/), checked 2026-10-09) that it is gone. Record when it was started and when it was seen gone; the days between are the real bound. If it is still there after that, the gate fails.
+5. Record the Workers plan and any `limits.subrequests` value for the Worker that builds exports, against the subrequest figures in the LLD build size bound.
+
+Until this is recorded, state the deletion bound for export objects as holding for recorded uploads and objects only.
 
 ## Execution and resource controls
 

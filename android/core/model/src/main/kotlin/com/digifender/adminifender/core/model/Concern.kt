@@ -53,6 +53,8 @@ data class Concern(
     val due: Due?,
     val sourceIds: List<String>,
     val updatedAtMs: Long,
+    /** The catalog service the Worker linked this concern to, if any. Only used to scope a chat; no name is synced. */
+    val serviceId: String? = null,
 )
 
 sealed interface ConcernAction {
