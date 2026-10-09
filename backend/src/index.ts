@@ -5,6 +5,7 @@ import { JOB_HANDLERS } from './jobs/handlers';
 import { parseQueueEnvelope } from './jobs/queue-envelope';
 import { wakeSnoozed } from './concerns/lifecycle';
 import { expireExports } from './exports/job';
+import { maintainExtraction } from './extraction/device';
 import { releaseExpiredReservations } from './inference/budget';
 import { scheduleInactivity } from './notifications/events';
 import { SCHEDULED_PASS, observe } from './diagnostics/health';
@@ -52,6 +53,7 @@ export default {
       ['wake_snoozed', () => wakeSnoozed(env.CONTROL_DB, now)],
       ['prune_changes', () => pruneChanges(env.CONTROL_DB, now)],
       ['expire_exports', () => expireExports(env, now)],
+      ['maintain_extraction', () => maintainExtraction(env, now)],
       ['release_reservations', () => releaseExpiredReservations(env.CONTROL_DB, now)],
       ['schedule_inactivity', () => scheduleInactivity(env.CONTROL_DB, now)],
     ];

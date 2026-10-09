@@ -49,7 +49,7 @@ interface ProcessingRow {
   job_id: string | null;
 }
 
-type Outcome = { state: 'ready'; generation: string } | { state: 'unsupported' | 'failed' | 'deferred'; detail: string };
+type Outcome = { state: 'ready'; generation: string } | { state: 'unsupported' | 'failed'; detail: string } | { state: 'deferred'; detail: string; deviceKind: 'pdf' | 'image' };
 
 /** Fenced publication of the attachment state and its change record; only the job that owns the row may write. */
 function publish(env: Env, job: ClaimedJob, row: ProcessingRow, outcome: Outcome, now: number): D1PreparedStatement[] {
@@ -57,12 +57,13 @@ function publish(env: Env, job: ClaimedJob, row: ProcessingRow, outcome: Outcome
   const [guardId, guardToken] = guardParams(job);
   const generation = outcome.state === 'ready' ? outcome.generation : null;
   const detail = outcome.state === 'ready' ? null : outcome.detail;
+  const deviceKind = outcome.state === 'deferred' ? outcome.deviceKind : null;
   const projection = JSON.stringify({ id: row.attachment_id, sourceId: row.source_id, state: outcome.state, detail, revision: row.revision + 1 });
   return [
     db.prepare(
-      `UPDATE attachment_processing SET state = ?, detail = ?, active_generation = COALESCE(?, active_generation), revision = revision + 1
+      `UPDATE attachment_processing SET state = ?, detail = ?, active_generation = COALESCE(?, active_generation), device_kind = COALESCE(?, device_kind), revision = revision + 1
        WHERE attachment_id = ? AND job_id = ? AND revision = ? AND policy_revision = ? AND ${CLAIM_GUARD}`,
-    ).bind(outcome.state, detail, generation, row.attachment_id, job.id, row.revision, row.policy_revision, guardId, guardToken),
+    ).bind(outcome.state, detail, generation, deviceKind, row.attachment_id, job.id, row.revision, row.policy_revision, guardId, guardToken),
     db.prepare(
       `INSERT INTO changes(entity_type, entity_id, revision, deleted, projection_json, created_at)
        SELECT 'attachment', attachment_id, revision, 0, ?, ? FROM attachment_processing WHERE attachment_id = ? AND job_id = ? AND revision = ? AND ${CLAIM_GUARD}`,
@@ -106,7 +107,7 @@ export async function extractJob(job: ClaimedJob, env: Env, now: number): Promis
   const kind = detectKind(attachment.name, attachment.declared_type, bytes);
   if (kind === 'unsupported') return { kind: 'complete', output: { kind }, statements: publish(env, job, row, { state: 'unsupported', detail: 'unsupported_type' }, now) };
   if (kind === 'image' && source.privacy === 'no_ai') return { kind: 'complete', output: { kind }, statements: publish(env, job, row, { state: 'unsupported', detail: 'policy_blocked' }, now) };
-  if (kind === 'pdf' || kind === 'image') return { kind: 'complete', output: { kind }, statements: publish(env, job, row, { state: 'deferred', detail: 'device_unavailable' }, now) };
+  if (kind === 'pdf' || kind === 'image') return { kind: 'complete', output: { kind }, statements: publish(env, job, row, { state: 'deferred', detail: 'device_unavailable', deviceKind: kind }, now) };
 
   let text: string;
   try {

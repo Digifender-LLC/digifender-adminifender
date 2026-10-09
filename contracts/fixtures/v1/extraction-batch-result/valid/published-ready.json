@@ -1,0 +1,13 @@
+{
+  "leaseId": "3f9a1c2e-5b7d-4e8f-9a0b-1c2d3e4f5a6b",
+  "batchOrdinal": 1,
+  "status": "accepted",
+  "batchHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "nextBatchOrdinal": 2,
+  "nextPage": 3,
+  "published": true,
+  "attachment": {
+    "state": "ready",
+    "detail": null
+  }
+}

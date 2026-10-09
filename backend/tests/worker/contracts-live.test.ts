@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { exportBody, parseStoredScope } from '../../src/exports/scope';
+import { batchBody, claimBody, outcomeBody } from '../../src/extraction/device';
 import { reviewBody } from '../../src/reviews/routes';
 import { contractValidator } from './support';
 
 // The shared JSON Schemas, compiled to standalone Ajv validators, run here inside the Workers runtime, so the same
 // checks that judge fixtures also judge the Worker's real responses (see expectContract in the feature tests).
-const fixtures = import.meta.glob<unknown>('../../../contracts/fixtures/v1/{export-scope,export-request,export-status,review-request,review-prepared,review-readback,review-confirmed,operation}/*/*.json', {
+const fixtures = import.meta.glob<unknown>('../../../contracts/fixtures/v1/{export-scope,export-request,export-status,review-request,review-prepared,review-readback,review-confirmed,operation,extraction-claim-request,extraction-claim,extraction-batch,extraction-batch-result,extraction-outcome}/*/*.json', {
   eager: true,
   import: 'default',
 });
@@ -35,6 +36,10 @@ describe('request validators agree with the shared request schemas', () => {
   }
   for (const { contract, expected, file, value } of entries.filter((e) => e.contract === 'review-request')) {
     it(`review-request/${expected}/${file}`, () => expect(parses(() => reviewBody(value, '$'))).toBe(expected === 'valid'));
+  }
+  for (const { contract, expected, file, value } of entries.filter((e) => ['extraction-claim-request', 'extraction-batch', 'extraction-outcome'].includes(e.contract))) {
+    const parser = { 'extraction-claim-request': claimBody, 'extraction-batch': batchBody, 'extraction-outcome': outcomeBody }[contract]!;
+    it(`${contract}/${expected}/${file}`, () => expect(parses(() => parser(value, '$'))).toBe(expected === 'valid'));
   }
   // A stored scope must already be in the normalized form the schema describes; anything else is refused, never widened.
   for (const { expected, file, value } of entries.filter((e) => e.contract === 'export-scope')) {

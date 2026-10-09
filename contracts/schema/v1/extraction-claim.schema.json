@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://adminifender.invalid/schema/v1/extraction-claim.schema.json",
+  "title": "POST /device-work/extraction/claim data (lld.md#text-extraction-and-ocr)",
+  "description": "Either one leased file or `work: null` with the reason. The phone downloads the bytes from GET /attachments/{attachmentId}/content, checks them against `contentHash`, and submits text in numbered batches under `leaseToken` before `expiresAt` (a heartbeat or an accepted batch renews it). `nextBatchOrdinal`, `nextPage` and `batchHashes` are the checkpoint of a generation that an earlier lease already began; a phone starts there. `ocrAllowed` false means the global mode or the email allows deterministic text only.",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "work",
+        "reason"
+      ],
+      "properties": {
+        "work": {
+          "type": "null"
+        },
+        "reason": {
+          "enum": [
+            "no_work",
+            "busy",
+            "no_capability"
+          ]
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "work"
+      ],
+      "properties": {
+        "work": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "leaseId",
+            "leaseToken",
+            "attachmentId",
+            "sourceId",
+            "kind",
+            "contentHash",
+            "sizeBytes",
+            "extractorVersion",
+            "policyRevision",
+            "generationId",
+            "ocrAllowed",
+            "maxPages",
+            "maxBatchPages",
+            "maxBatchBytes",
+            "nextBatchOrdinal",
+            "nextPage",
+            "batchHashes",
+            "expiresAt"
+          ],
+          "properties": {
+            "leaseId": {
+              "$ref": "common.schema.json#/$defs/uuid"
+            },
+            "leaseToken": {
+              "$ref": "common.schema.json#/$defs/uuid"
+            },
+            "attachmentId": {
+              "$ref": "common.schema.json#/$defs/uuid"
+            },
+            "sourceId": {
+              "$ref": "common.schema.json#/$defs/uuid"
+            },
+            "kind": {
+              "enum": [
+                "pdf",
+                "image"
+              ]
+            },
+            "contentHash": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "sizeBytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 26214400
+            },
+            "extractorVersion": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 64,
+              "pattern": "^[a-z0-9][a-z0-9._-]*$"
+            },
+            "policyRevision": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "generationId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "ocrAllowed": {
+              "type": "boolean"
+            },
+            "maxPages": {
+              "const": 100
+            },
+            "maxBatchPages": {
+              "const": 10
+            },
+            "maxBatchBytes": {
+              "const": 131072
+            },
+            "nextBatchOrdinal": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "nextPage": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 101
+            },
+            "batchHashes": {
+              "type": "array",
+              "maxItems": 100,
+              "items": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "description": "The server's hash of each batch already stored for this generation, in order (one per `nextBatchOrdinal`). The digest of these, joined by newlines and hashed with SHA-256, is `manifestHash` of the final batch."
+            },
+            "expiresAt": {
+              "$ref": "common.schema.json#/$defs/timestamp"
+            }
+          }
+        }
+      }
+    }
+  ]
+}

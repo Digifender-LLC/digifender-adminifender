@@ -1,0 +1,6 @@
+{
+  "extractorVersion": "android-extract-v1",
+  "pdfText": true,
+  "ocr": true,
+  "apiLevel": 35
+}

@@ -50,6 +50,8 @@ export async function cleanupJob(job: ClaimedJob, env: Env, now: number): Promis
     output: { sourceId: id },
     statements: [
       db.prepare(`DELETE FROM attachment_processing WHERE source_id = ? AND ${CLAIM_GUARD}`).bind(id, guardId, guardToken),
+      db.prepare(`DELETE FROM extraction_batches WHERE source_id = ? AND ${CLAIM_GUARD}`).bind(id, guardId, guardToken),
+      db.prepare(`DELETE FROM extraction_leases WHERE source_id = ? AND ${CLAIM_GUARD}`).bind(id, guardId, guardToken),
       db.prepare(`DELETE FROM triage_results WHERE source_id = ? AND ${CLAIM_GUARD}`).bind(id, guardId, guardToken),
       db.prepare(`DELETE FROM source_threads WHERE source_id = ? AND ${CLAIM_GUARD}`).bind(id, guardId, guardToken),
       db.prepare(`DELETE FROM concern_sources WHERE source_id = ? AND ${CLAIM_GUARD}`).bind(id, guardId, guardToken),
