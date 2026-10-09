@@ -1,6 +1,7 @@
 package com.digifender.adminifender.core.data
 
 import com.digifender.adminifender.core.data.export.CreateOutcome
+import com.digifender.adminifender.core.data.export.DiscoverOutcome
 import com.digifender.adminifender.core.data.export.ExportDownload
 import com.digifender.adminifender.core.data.export.ExportDownloadOutcome
 import com.digifender.adminifender.core.data.export.ExportIntent
@@ -14,6 +15,7 @@ import com.digifender.adminifender.core.data.network.CreateExportResult
 import com.digifender.adminifender.core.data.network.ExportAdmission
 import com.digifender.adminifender.core.data.network.ExportApi
 import com.digifender.adminifender.core.data.network.ExportFilter
+import com.digifender.adminifender.core.data.network.ExportListResult
 import com.digifender.adminifender.core.data.network.ExportRead
 import com.digifender.adminifender.core.data.network.ExportScope
 import com.digifender.adminifender.core.data.network.ExportState
@@ -66,7 +68,10 @@ class RecordingExportScheduler : ExportScheduler {
 class FakeExportApi : ExportApi {
     var onCreate: suspend (String, ExportScope) -> CreateExportResult = { _, _ -> CreateExportResult.NoAnswer("network") }
     var onStatus: suspend (String) -> ExportRead = { ExportRead.Unavailable("network") }
+    var onList: suspend () -> ExportListResult = { ExportListResult.Unavailable("network") }
     var onOpen: suspend (String) -> OpenResult = { OpenResult.Unavailable("network") }
+    var onOpenFrom: suspend (String, Long) -> OpenResult = { _, _ -> OpenResult.Unavailable("ranges_unsupported") }
+    val opensFrom = mutableListOf<Long>()
     val creates = mutableListOf<Pair<String, ExportScope>>()
     val opens = mutableListOf<String>()
 
@@ -77,9 +82,16 @@ class FakeExportApi : ExportApi {
 
     override suspend fun status(exportId: String) = onStatus(exportId)
 
+    override suspend fun list() = onList()
+
     override suspend fun openContent(exportId: String): OpenResult {
         opens += exportId
         return onOpen(exportId)
+    }
+
+    override suspend fun openContentFrom(exportId: String, offset: Long): OpenResult {
+        opensFrom += offset
+        return onOpenFrom(exportId, offset)
     }
 }
 
@@ -94,7 +106,8 @@ class ExportRepositoryTest {
     private val scheduler = RecordingExportScheduler()
     private var ids = 0
     private var now = 5_000L
-    private val repo = ExportRepository(api, store, scheduler, { now }, { "x-${ids++}" })
+    private val pauses = mutableListOf<Long>()
+    private val repo = ExportRepository(api, store, scheduler, { now }, { "x-${ids++}" }, { pauses += it })
     private val dir = tempDirectory()
     private val built = buildExport()
 
@@ -278,6 +291,86 @@ class ExportRepositoryTest {
         assertNull(out.intent.verification)
     }
 
+    /** The rest of the ZIP from [offset], as the Worker's 206 would carry it. */
+    private fun tail(offset: Long, bytes: ByteArray = built.bytes, failAfter: Int? = null, length: Long = bytes.size - offset): OpenResult {
+        val stream = ScriptedStream(bytes.copyOfRange(offset.toInt(), bytes.size), failAfter)
+        return OpenResult.Open(ContentStream(length, null, stream, stream::abort))
+    }
+
+    @Test
+    fun aDroppedConnectionIsContinuedWithAByteRangeAndTheWholeZipStillVerifies() = runBlocking {
+        val id = readyIntent()
+        val target = File(dir, "resumed.zip")
+        val cut = built.bytes.size / 3
+        api.onOpen = { contentOf(built.bytes, failAfter = cut).second }
+        api.onOpenFrom = { _, offset -> tail(offset) }
+        val out = repo.download(id, FileDestination(target)) as ExportDownloadOutcome.Verified
+        // Exactly the missing bytes were asked for, after a pause, and the file is the ZIP, byte for byte.
+        assertEquals(listOf(cut.toLong()), api.opensFrom)
+        assertEquals(listOf(1_000L), pauses)
+        assertArrayEquals(built.bytes, target.readBytes())
+        assertEquals(ExportDownload.VERIFIED, out.intent.download)
+        assertEquals(1, api.opens.size)
+    }
+
+    @Test
+    fun severalDropsAreContinuedOneAfterAnotherUpToTheLimit() = runBlocking {
+        val id = readyIntent()
+        val target = File(dir, "twice.zip")
+        val first = built.bytes.size / 4
+        api.onOpen = { contentOf(built.bytes, failAfter = first).second }
+        // The second connection also drops, 1/4 of the ZIP further on; the third finishes.
+        api.onOpenFrom = { _, offset -> if (offset == first.toLong()) tail(offset, failAfter = built.bytes.size / 4) else tail(offset) }
+        assertTrue(repo.download(id, FileDestination(target)) is ExportDownloadOutcome.Verified)
+        assertEquals(listOf(first.toLong(), first.toLong() + built.bytes.size / 4), api.opensFrom)
+        assertEquals(listOf(1_000L, 2_000L), pauses)
+        assertArrayEquals(built.bytes, target.readBytes())
+
+        // More drops than the limit allows end as an interruption, with the partial file discarded.
+        val other = File(dir, "never.zip")
+        api.opensFrom.clear()
+        pauses.clear()
+        api.onOpen = { contentOf(built.bytes, failAfter = 1_000).second }
+        api.onOpenFrom = { _, offset -> tail(offset, failAfter = 1_000) }
+        val interrupted = repo.download(id, FileDestination(other)) as ExportDownloadOutcome.Interrupted
+        assertEquals(3, api.opensFrom.size)
+        assertEquals("network", interrupted.intent.downloadError)
+        assertFalse(other.exists())
+    }
+
+    @Test
+    fun aResumeThatIsNotExactlyTheMissingBytesIsNeverUsed() = runBlocking {
+        val id = readyIntent()
+        val cut = built.bytes.size / 2
+        api.onOpen = { contentOf(built.bytes, failAfter = cut).second }
+        // A body of the wrong length, however well it is labelled.
+        val wrong = File(dir, "wrong.zip")
+        api.onOpenFrom = { _, offset -> tail(offset, length = built.bytes.size - offset - 7) }
+        assertTrue(repo.download(id, FileDestination(wrong)) is ExportDownloadOutcome.Interrupted)
+        assertFalse(wrong.exists())
+        // No ranged answer at all (the Worker ignored the range, or is unreachable).
+        val none = File(dir, "none.zip")
+        api.onOpenFrom = { _, _ -> OpenResult.Unavailable("range_not_honoured") }
+        assertTrue(repo.download(id, FileDestination(none)) is ExportDownloadOutcome.Interrupted)
+        assertFalse(none.exists())
+        api.onOpenFrom = { _, _ -> OpenResult.Gone("expired", 410) }
+        assertTrue(repo.download(id, FileDestination(File(dir, "gone.zip"))) is ExportDownloadOutcome.Interrupted)
+    }
+
+    @Test
+    fun aTailFromAnotherFileFailsTheFinalChecksAndTheFileIsDiscarded() = runBlocking {
+        val id = readyIntent()
+        val cut = built.bytes.size / 2
+        api.onOpen = { contentOf(built.bytes, failAfter = cut).second }
+        // Right length, wrong content: only the whole-ZIP verification can see that.
+        val tampered = built.bytes.copyOf().also { for (i in cut until it.size) it[i] = (it[i].toInt() xor 0x5a).toByte() }
+        api.onOpenFrom = { _, offset -> tail(offset, bytes = tampered) }
+        val target = File(dir, "tampered.zip")
+        val out = repo.download(id, FileDestination(target))
+        assertTrue(out.toString(), out is ExportDownloadOutcome.Failed)
+        assertFalse(target.exists())
+    }
+
     @Test
     fun aBodyShorterThanItsLengthOrCutBeforeItsEndRecordIsNeverVerified() = runBlocking {
         val id = readyIntent()
@@ -415,6 +508,74 @@ class ExportRepositoryTest {
         // Whether the partial file is still there is not known, and is not guessed.
         assertNull(row.destinationDiscarded)
         assertEquals(listOf(waiting.intent.localId), scheduler.polls)
+    }
+
+    private fun listed(id: String, state: ExportState = ExportState.READY, scope: ExportScope? = ExportScope.Archive(ExportAdmission.NORMAL), createdAt: Long = EXPORT_CREATED) =
+        if (state == ExportState.READY) built.status.copy(id = id, scope = scope, createdAtMs = createdAt) else ExportStatus(id, state, scope, 41, createdAt, createdAt + 1000, null, null, null, null)
+
+    @Test
+    fun exportsTheWorkerListsAreKeptAsCreatedExportsWithoutAnyRequestBeingMade() = runBlocking {
+        val ready = listed(uuid(8001))
+        val running = listed(uuid(8002), ExportState.RUNNING, createdAt = EXPORT_CREATED + 5)
+        api.onList = { ExportListResult.Ok(listOf(ready, running)) }
+        assertEquals(DiscoverOutcome.Done(found = 2, added = 2), repo.discover())
+        val rows = store.all().associateBy { it.exportId }
+        val adopted = rows.getValue(ready.id)
+        assertEquals(ExportPhase.CREATED, adopted.phase)
+        assertEquals(ready, adopted.status)
+        assertEquals(ready.scope, adopted.scope)
+        assertEquals(ExportDownload.NONE, adopted.download)
+        assertEquals(ready.createdAtMs, adopted.createdAtMs)
+        // Nothing was created, and only the export that can still change is polled.
+        assertTrue(api.creates.isEmpty())
+        assertEquals(listOf(rows.getValue(running.id).localId), scheduler.polls)
+        assertEquals(2, store.all().map { it.createKey }.toSet().size)
+    }
+
+    @Test
+    fun anExportThePhoneAlreadyHasIsNotAddedAgainAndARepeatInTheListIsAddedOnce() = runBlocking {
+        val id = readyIntent()
+        val again = listed(built.status.id)
+        val fresh = listed(uuid(8003))
+        api.onList = { ExportListResult.Ok(listOf(again, fresh, fresh)) }
+        assertEquals(DiscoverOutcome.Done(found = 3, added = 1), repo.discover())
+        assertEquals(2, store.all().size)
+        assertNotNull(store.get(id))
+        assertEquals(DiscoverOutcome.Done(found = 3, added = 0), repo.discover())
+        assertEquals(2, store.all().size)
+    }
+
+    @Test
+    fun anExportWithNoRecordedScopeIsNeverAdopted() = runBlocking {
+        api.onList = { ExportListResult.Ok(listOf(listed(uuid(8004), ExportState.INVALIDATED, scope = null))) }
+        assertEquals(DiscoverOutcome.Done(found = 1, added = 0), repo.discover())
+        assertTrue(store.all().isEmpty())
+    }
+
+    @Test
+    fun aFailedListChangesNothingAndSaysWhy() = runBlocking {
+        api.onList = { ExportListResult.SessionExpired }
+        assertEquals(DiscoverOutcome.SignIn, repo.discover())
+        api.onList = { ExportListResult.Unavailable("unavailable") }
+        assertEquals(DiscoverOutcome.Unavailable("unavailable"), repo.discover())
+        assertTrue(store.all().isEmpty())
+        assertTrue(scheduler.polls.isEmpty())
+    }
+
+    @Test
+    fun aListThatArrivesAfterSignOutAddsNothing() = runBlocking {
+        val gate = kotlinx.coroutines.CompletableDeferred<ExportListResult>()
+        val asked = kotlinx.coroutines.CompletableDeferred<Unit>()
+        api.onList = {
+            asked.complete(Unit)
+            gate.await()
+        }
+        val search = async { repo.discover() }
+        asked.await()
+        repo.invalidate()
+        gate.complete(ExportListResult.Ok(listOf(listed(uuid(8005)))))
+        assertEquals(DiscoverOutcome.Superseded, withTimeout(5_000) { search.await() })
+        assertTrue(store.all().isEmpty())
     }
 
     @Test

@@ -316,8 +316,11 @@ private fun SignedIn(container: AppContainer, activity: Activity, destination: M
                 is Route.StorageRoute -> {
                     val storageModel = viewModel { StorageViewModel(container.attachments, container.exports, container.deletions) }
                     val storage by storageModel.state.collectAsStateWithLifecycle()
+                    val discovery by storageModel.discovery.collectAsStateWithLifecycle()
                     StorageScreen(
                         storage,
+                        discovery,
+                        onDiscover = storageModel::discover,
                         onRemoveFile = storageModel::removeFile,
                         onClearFiles = storageModel::clearFiles,
                         onOpenSource = { open(Route.SourceRoute(it)) },

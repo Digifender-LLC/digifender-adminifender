@@ -14,6 +14,7 @@ Node 22.22.0, `backend/`: `npm run check` exit 0 (typecheck, **37 files, 933 tes
 
 ## Not covered, and not claimed
 
+- **Update (same day): the phone now resumes an export download inside one attempt and can list exports; see [export-resume-and-discovery.md](export-resume-and-discovery.md). The bullets below describe the state when this note was written.**
 - **The phone does not use ranges.** Resuming an export download needs the Android side to reopen the destination for appending, re-read the part already written through the streaming verifier, and then ask for the rest; attachment downloads are sealed as one message, so they would need a segmented format first. Neither exists, and an interrupted download on the phone still restarts from the start.
 - **The phone does not call `GET /exports`.** Adopting a listed export as a local record needs a decision on how it appears next to the owner's own requests; no Android parser for `export-list` exists yet.
 - Real R2 range reads were exercised only against the local R2 binding, not against the staging bucket. The staging Worker does not yet run this change.
