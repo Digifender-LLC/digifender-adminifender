@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { RESERVATION_TTL_MS, releaseExpiredReservations, reserve } from '../../src/inference/budget';
 import { DEVICE_LEASE_MS } from '../../src/inference/device';
 import { DEFAULT_INFERENCE, type InferenceSettings, loadSettings } from '../../src/inference/settings';
-import { T0, api, enrollOwner, ingest, runPending } from './support';
+import { T0, api, contractValidator, enrollOwner, ingest, runPending } from './support';
 
 let token: string;
 let keyCount = 0;
@@ -73,8 +73,23 @@ const status = async (sourceId: string) => (await api('GET', `/sources/${sourceI
 const periods = async () => (await api('GET', '/inference/budget', { token })).body.data.periods as { id: string; limit: any; reserved: any; settled: any }[];
 
 const READY = { foreground: false, charging: true, batteryPercent: 80, thermal: 'none', modelId: 'local-test-model', modelManifestHash: 'a'.repeat(64) };
-const claim = (now = T0, readiness: Record<string, unknown> = READY) => api('POST', '/device-work/claim', { token, key: key(), now, body: readiness });
-const submit = (attemptId: string, body: Record<string, unknown>, now = T0) => api('POST', `/device-work/${attemptId}/result`, { token, key: key(), now, body });
+/** Whatever the Worker accepts and answers must satisfy the shared device-work schemas, the same ones the phone's tests use. */
+const claim = async (now = T0, readiness: Record<string, unknown> = READY) => {
+  const res = await api('POST', '/device-work/claim', { token, key: key(), now, body: readiness });
+  if (res.status === 200) {
+    expect(contractValidator('device-work-readiness')(readiness), JSON.stringify(readiness)).toBe(true);
+    expect(contractValidator('device-work-claim')(res.body.data), JSON.stringify(res.body.data)).toBe(true);
+  }
+  return res;
+};
+const submit = async (attemptId: string, body: Record<string, unknown>, now = T0) => {
+  const res = await api('POST', `/device-work/${attemptId}/result`, { token, key: key(), now, body });
+  if (res.status === 200) {
+    expect(contractValidator('device-work-result')(body), JSON.stringify(body)).toBe(true);
+    expect(contractValidator('device-work-result-answer')(res.body.data), JSON.stringify(res.body.data)).toBe(true);
+  }
+  return res;
+};
 
 beforeEach(async () => {
   token = (await enrollOwner()).token;
@@ -331,7 +346,8 @@ describe('device work', () => {
     const work = (await claim()).body.data.work;
     const decline = (leaseToken: string) => api('POST', `/device-work/${work.attemptId}/decline`, { token, key: key(), body: { leaseToken, reason: 'input_too_large' } });
     expect((await decline(crypto.randomUUID())).body.error?.code).toBe('lease_lost');
-    expect((await decline(work.leaseToken)).body.data).toMatchObject({ state: 'cancelled', reason: 'input_too_large' });
+    expect(contractValidator('device-work-decline')({ leaseToken: work.leaseToken, reason: 'input_too_large' })).toBe(true);
+    expect((await decline(work.leaseToken)).body.data).toEqual({ attemptId: work.attemptId, state: 'cancelled', reason: 'input_too_large' });
     expect(await status(id)).toMatchObject({ state: 'cancelled', reason: 'input_too_large', result: null });
     // Not handed out again, and a result under the old lease is refused.
     expect((await claim()).body.data).toEqual({ work: null, reason: 'no_work' });

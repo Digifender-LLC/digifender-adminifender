@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://adminifender.invalid/schema/v1/device-work-result.schema.json",
+  "title": "POST /device-work/{attemptId}/result body (lld.md#triage)",
+  "description": "The local model's output, accepted only under the live lease, for the same input digest and the current policy revision. `outputJson` is the model's text, validated by the Worker like cloud output; `modelManifestHash` identifies the exact local model. One invalid output queues one repair task.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "leaseToken",
+    "inputDigest",
+    "policyRevision",
+    "outputJson",
+    "modelManifestHash"
+  ],
+  "properties": {
+    "leaseToken": {
+      "$ref": "common.schema.json#/$defs/uuid"
+    },
+    "inputDigest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "policyRevision": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "outputJson": {
+      "type": "string",
+      "maxLength": 65536
+    },
+    "modelManifestHash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

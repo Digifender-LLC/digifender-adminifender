@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://adminifender.invalid/schema/v1/device-work-readiness.schema.json",
+  "title": "POST /device-work/claim and /device-work/readiness body (lld.md#triage)",
+  "description": "What the operating system says about the phone and which local model is loaded. A model's own claims never count. The Worker applies its own gate (a loaded model, battery at least 30 %, thermal below severe, foreground for interactive work or charging for background work), so a phone that sends a state it cannot work in is simply told `not_ready`.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "foreground",
+    "charging",
+    "batteryPercent",
+    "thermal",
+    "modelId",
+    "modelManifestHash"
+  ],
+  "properties": {
+    "foreground": {
+      "type": "boolean"
+    },
+    "charging": {
+      "type": "boolean"
+    },
+    "batteryPercent": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "thermal": {
+      "enum": [
+        "none",
+        "light",
+        "moderate",
+        "severe",
+        "critical",
+        "emergency",
+        "shutdown"
+      ]
+    },
+    "modelId": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "pattern": "^[A-Za-z0-9._:/-]+$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "modelManifestHash": {
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  }
+}

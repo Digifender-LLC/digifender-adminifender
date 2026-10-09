@@ -1,0 +1,8 @@
+{
+  "foreground": false,
+  "charging": true,
+  "batteryPercent": 80,
+  "thermal": "none",
+  "modelId": null,
+  "modelManifestHash": null
+}

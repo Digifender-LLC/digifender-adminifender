@@ -1,0 +1,8 @@
+{
+  "foreground": true,
+  "charging": false,
+  "batteryPercent": 45,
+  "thermal": "none",
+  "modelId": "gemma-3-1b-it-int4",
+  "modelManifestHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+}

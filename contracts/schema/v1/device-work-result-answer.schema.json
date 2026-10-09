@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://adminifender.invalid/schema/v1/device-work-result-answer.schema.json",
+  "title": "POST /device-work/{attemptId}/result data (lld.md#triage)",
+  "description": "`succeeded`: the output was stored. `discarded`: it was valid but another result for the job was already kept. `invalid_output`: the output failed validation (`errors` says how) and `repairQueued` says whether one repair task was queued.",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "attemptId",
+        "state"
+      ],
+      "properties": {
+        "attemptId": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "state": {
+          "enum": [
+            "succeeded",
+            "discarded"
+          ]
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "attemptId",
+        "state",
+        "errors",
+        "repairQueued"
+      ],
+      "properties": {
+        "attemptId": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "state": {
+          "const": "invalid_output"
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "repairQueued": {
+          "type": "boolean"
+        }
+      }
+    }
+  ]
+}

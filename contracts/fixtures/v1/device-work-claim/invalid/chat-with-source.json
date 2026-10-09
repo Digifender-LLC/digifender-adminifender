@@ -1,0 +1,27 @@
+{
+  "work": {
+    "attemptId": "00000001-0000-4000-8000-000000000001",
+    "jobId": "00000002-0000-4000-8000-000000000002",
+    "policyRevision": 2,
+    "task": "chat",
+    "inputDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "chunkIds": [],
+    "messages": [
+      {
+        "role": "system",
+        "content": "You classify email."
+      },
+      {
+        "role": "user",
+        "content": "Subject: Invoice 7731\n\nPlease pay by Friday."
+      }
+    ],
+    "repair": true,
+    "modelId": null,
+    "leaseToken": "00000005-0000-4000-8000-000000000005",
+    "expiresAt": "2026-10-09T12:05:00.000Z",
+    "turnId": "00000006-0000-4000-8000-000000000006",
+    "sourceId": "00000003-0000-4000-8000-000000000003",
+    "sourceRevision": 1
+  }
+}
