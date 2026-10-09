@@ -30,7 +30,7 @@ Planned Android slices, in order:
 
 1. 14j (rest): local inference readiness and claims (`/device-work`, LiteRT-LM), and continuation past 100 pages for long documents (needs a Worker change too).
 2. Remaining Worker contract gaps from the 14i Android evidence: no range support on downloads and no export list call. (`safeName` keeping `..` was fixed on 2026-10-09.)
-3. Emulator instrumentation runs, screenshots and TalkBack checks. The Room store, archive, briefing, chat, file and review cache and migration tests (including 3 to 4 and 4 to 5) and the Keystore vault and file-key tests are compiled but have never been run; CI compiles them (its result was not re-checked here).
+3. Emulator instrumentation runs, screenshots and TalkBack checks. The Room store, archive, briefing, chat, file and review cache tests and every Room migration from 1 to 5 ran for the first time on 2026-10-09 on the JVM under Robolectric (32 tests, 0 failures; [evidence](evidence/room-tests-on-jvm.md)); they have not run on a device or emulator, and CI did not run them (the pull request's checks were refused for a GitHub billing reason). The Keystore vault and file-key tests are still compiled only.
 
 Only the owner can do these, and slice 15 needs all of them:
 

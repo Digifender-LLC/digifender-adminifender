@@ -1,5 +1,7 @@
 package com.digifender.adminifender.core.data
 
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 import androidx.room.Room
 import androidx.room.testing.MigrationTestHelper
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -72,7 +74,8 @@ class RoomBriefingCacheTest {
     fun clearingAllTablesForSignOutRemovesTheBriefing() = runTest {
         cache.replace(briefing("b1"))
         cache.setReview("b1", StoredReview(ReviewPhase.UNCONFIRMED, "key-1"))
-        db.clearAllTables()
+        // Blocking, like production's sign-out: off the main thread, which Robolectric's test thread is.
+        withContext(Dispatchers.IO) { db.clearAllTables() }
         assertNull(cache.current().first())
         assertFalse(cache.setReview("b1", StoredReview.NONE))
     }
