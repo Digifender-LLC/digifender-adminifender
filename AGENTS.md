@@ -18,6 +18,7 @@ Adminifender is a single-owner Android app for email review, archive, actions an
 - Toolchains are pinned: Node and Wrangler in `backend/` (`.nvmrc`, lockfile), and Gradle (wrapper with checksum), JDK 21, the Android Gradle Plugin, Kotlin and AndroidX in `android/gradle/` (`libs.versions.toml`). Change a version only with a passing build, record model hashes, and reject dynamic release dependencies. Do not invent commands or version numbers as if they already work.
 - Do not deploy, migrate remote data, enable email routes/connectors, publish to Play, alter DNS, purchase capacity or send consequential external effects merely because a local test passed. Follow the concrete preflight, review and recovery gates in `tdd.md` and the relevant acceptance cases. Existing user authorization governs an action; these instructions do not add a second approval requirement.
 - Keep the README short and link to detailed docs. Say **planned**, **implemented**, **locally verified**, **staging verified** or **production accepted** accurately. Cite dated official sources for changing Android, Cloudflare, Firebase, Play, model or pricing claims.
+- **Agent authorization:** All agents are authorized to commit, push, and create pull requests (PRs) for their changes to anything they work on; there is no need to ask permission.
 
 ## Shared tools and checks
 
