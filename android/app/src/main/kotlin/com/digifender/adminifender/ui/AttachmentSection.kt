@@ -41,7 +41,7 @@ fun AttachmentRow(info: AttachmentInfo, file: LocalFile?, busy: Boolean, actions
     val size = Formatter.formatShortFileSize(context, info.sizeBytes)
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(info.name, style = MaterialTheme.typography.bodyMedium)
-        Text(listOfNotNull(info.declaredType, size, extractionText(info.extraction)).joinToString(" · "), style = MaterialTheme.typography.bodySmall)
+        Text(listOfNotNull(info.declaredType, size, extractionText(info.extraction, info.extractionDetail)).joinToString(" · "), style = MaterialTheme.typography.bodySmall)
         Text(fileStateText(info, file), style = MaterialTheme.typography.bodySmall, color = if (file?.state == FileState.FAILED) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             when (file?.state) {

@@ -101,12 +101,17 @@ fun SourceScreen(
 }
 
 @Composable
-fun extractionText(state: String) = stringResource(
-    when (state) {
-        "ready" -> R.string.extraction_ready
-        "queued", "extracting", "deferred" -> R.string.extraction_pending
-        "unsupported" -> R.string.extraction_unsupported
-        "failed" -> R.string.extraction_failed
+fun extractionText(state: String, detail: String? = null) = stringResource(
+    when {
+        state == "ready" && detail == "limit" -> R.string.extraction_ready_limited
+        state == "ready" -> R.string.extraction_ready
+        state == "extracting" -> R.string.extraction_reading
+        state == "deferred" && detail == "device_unavailable" -> R.string.extraction_waiting_for_phone
+        state == "queued" || state == "deferred" -> R.string.extraction_pending
+        state == "unsupported" && detail == "encrypted" -> R.string.extraction_encrypted
+        state == "unsupported" && detail == "policy_blocked" -> R.string.extraction_policy_blocked
+        state == "unsupported" -> R.string.extraction_unsupported
+        state == "failed" -> R.string.extraction_failed
         else -> R.string.extraction_stored
     },
 )

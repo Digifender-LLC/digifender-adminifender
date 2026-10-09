@@ -378,7 +378,9 @@ class ExportRepository(
             withContext(NonCancellable) { settle(localId, startedIn, destination, failure, null) }
             throw CancellationException("export download stopped")
         }
-        return settle(localId, startedIn, destination, failure, if (failure == null) verification else null)
+        // The stream is finished and the file is written: recording how it ended (and removing the file if the session is gone) is not
+        // interrupted half-way, or a stop arriving in this window would leave a complete file and a row that still says "downloading".
+        return withContext(NonCancellable) { settle(localId, startedIn, destination, failure, if (failure == null) verification else null) }
     }
 
     /** A failed read is a dropped connection, unless it failed because this download was being stopped. */
@@ -399,7 +401,11 @@ class ExportRepository(
                 val f = failure ?: Failure(ExportDownload.FAILED, "unverified")
                 current.copy(download = f.state, downloadError = f.code, destinationDiscarded = discarded, verification = null, verifiedAtMs = null, updatedAtMs = clock())
             }
-        } ?: return ExportDownloadOutcome.Superseded
+        } ?: run {
+            // Superseded (signed out, or the intent is gone): a file that verified is no longer this request's to keep.
+            if (failure == null && verification != null) destination.discard()
+            return ExportDownloadOutcome.Superseded
+        }
         // A file that finished while the export was being invalidated (a mail in it deleted meanwhile) must not look clean: read the state once more.
         if (refreshAfter || next.download == ExportDownload.VERIFIED) refresh(localId)
         return when {

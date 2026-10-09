@@ -187,6 +187,11 @@
     <string name="extraction_ready">Text extracted</string>
     <string name="extraction_unsupported">This file type has no readable text</string>
     <string name="extraction_failed">Text couldn\'t be extracted</string>
+    <string name="extraction_reading">Reading text\u2026</string>
+    <string name="extraction_waiting_for_phone">Waiting for this phone to read it</string>
+    <string name="extraction_ready_limited">Text read from the first 100 pages</string>
+    <string name="extraction_encrypted">Password-protected, so its text can\'t be read</string>
+    <string name="extraction_policy_blocked">Not read: this email is set to no AI</string>
     <string name="source_concerns">Items from this message</string>
     <string name="source_no_concerns">No items on this phone come from this message.</string>
     <string name="concern_sources">Source emails</string>

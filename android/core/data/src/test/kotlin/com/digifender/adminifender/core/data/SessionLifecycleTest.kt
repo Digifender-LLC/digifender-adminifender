@@ -156,6 +156,30 @@ class SessionLifecycleTest {
     }
 
     @Test
+    fun anEndedSessionAlsoStopsDeviceExtractionAndRemovesItsDownloads() = runBlocking {
+        val work = File(dir, "extraction").also { it.mkdirs() }
+        val leftover = File(work, "lease.part").also { it.writeText("document bytes") }
+        val fake = FakeWorker(pretendWork(PretendFile()))
+        val extractor = com.digifender.adminifender.core.data.extraction.DeviceExtractor(
+            fake, fake, opener(com.digifender.adminifender.core.data.extraction.OpenOutcome.Unsupported),
+            com.digifender.adminifender.core.data.extraction.ExtractionCapabilities(true, true, "android-extract-v1"), { null }, work, { 0L }, {},
+        )
+        var cancelled = 0
+        val extractionScheduler = object : com.digifender.adminifender.core.data.extraction.ExtractionScheduler {
+            override fun requestNow() = Unit
+
+            override fun schedulePeriodic() = Unit
+
+            override fun cancel() {
+                cancelled += 1
+            }
+        }
+        SessionEnd(attachments, exports, extractor, extractionScheduler).ended()
+        assertEquals(1, cancelled)
+        assertFalse(leftover.exists())
+    }
+
+    @Test
     fun explicitSignOutFencesLateAnswersAsWell() = runBlocking {
         val gate = kotlinx.coroutines.CompletableDeferred<CreateExportResult>()
         exportApi.onCreate = { _, _ -> gate.await() }

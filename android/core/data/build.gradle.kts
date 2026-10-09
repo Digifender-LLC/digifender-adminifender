@@ -44,6 +44,8 @@ dependencies {
     implementation(libs.coroutines.core)
     implementation(libs.credentials)
     implementation(libs.work.runtime)
+    // Bundled Latin text recognition for scanned PDF pages and images; the model ships in the app.
+    implementation(libs.mlkit.text.recognition)
     // Passkeys on devices whose platform provider is Google Play services.
     runtimeOnly(libs.credentials.play.services)
     testImplementation(libs.junit)

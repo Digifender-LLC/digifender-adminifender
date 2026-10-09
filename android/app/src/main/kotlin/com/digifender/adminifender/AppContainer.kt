@@ -3,6 +3,8 @@ package com.digifender.adminifender
 import android.content.Context
 import android.os.Build
 import com.digifender.adminifender.core.data.export.ExportRepository
+import com.digifender.adminifender.core.data.extraction.DeviceExtractor
+import com.digifender.adminifender.core.data.extraction.ExtractionCapabilities
 import com.digifender.adminifender.core.data.files.AttachmentRepository
 import com.digifender.adminifender.core.data.files.FileCipher
 import com.digifender.adminifender.core.data.files.SessionEnd
@@ -10,11 +12,17 @@ import com.digifender.adminifender.core.data.local.FilesDropped
 import com.digifender.adminifender.core.data.local.LocalCache
 import com.digifender.adminifender.core.data.network.HttpApi
 import com.digifender.adminifender.core.data.network.HttpExportApi
+import com.digifender.adminifender.core.data.network.HttpExtractionApi
 import com.digifender.adminifender.core.data.network.HttpReviewApi
+import com.digifender.adminifender.core.data.platform.AndroidRunConditions
 import com.digifender.adminifender.core.data.platform.KeystoreFileKeys
+import com.digifender.adminifender.core.data.platform.MlKitTextRecognizer
+import com.digifender.adminifender.core.data.platform.PDF_TEXT_LAYER_AVAILABLE
+import com.digifender.adminifender.core.data.platform.PlatformDocumentOpener
 import com.digifender.adminifender.core.data.platform.KeystoreTokenVault
 import com.digifender.adminifender.core.data.platform.WorkDownloadScheduler
 import com.digifender.adminifender.core.data.platform.WorkExportScheduler
+import com.digifender.adminifender.core.data.platform.WorkExtractionScheduler
 import com.digifender.adminifender.core.data.platform.WorkSyncScheduler
 import com.digifender.adminifender.core.data.push.HttpPushApi
 import com.digifender.adminifender.push.PushRegistrationWorker
@@ -28,9 +36,11 @@ import com.digifender.adminifender.core.data.review.RecentAuthenticator
 import com.digifender.adminifender.core.data.session.HttpAuthApi
 import com.digifender.adminifender.core.data.session.SessionManager
 import com.digifender.adminifender.core.data.sync.SyncEngine
+import java.io.File
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
@@ -43,6 +53,9 @@ import okhttp3.OkHttpClient
 
 /** How long sign-out waits, in all, for the best-effort cancel requests; it never blocks longer than this. */
 private const val CANCEL_ON_SIGN_OUT_MS = 5_000L
+
+/** Identifies this build's way of reading documents to the Worker; part of a generation's identity, so a new reader never mixes with an old one. */
+private const val EXTRACTOR_VERSION = "android-extract-v1"
 
 /** Constructor injection by hand: one instance of each adapter for the process (lld.md#android). */
 class AppContainer(context: Context) {
@@ -69,7 +82,20 @@ class AppContainer(context: Context) {
     private val contentApi = HttpExportApi(streamingHttp, baseUrl, session)
     val attachments = AttachmentRepository(contentApi, cache.files, cache.blobs, FileCipher(KeystoreFileKeys()), WorkDownloadScheduler(app), clock)
     val exports = ExportRepository(contentApi, cache.exports, WorkExportScheduler(app), clock)
-    private val sessionEnd = SessionEnd(attachments, exports)
+
+    // Text read from PDFs and images on this phone (its own text layer, bundled recognition); the text goes to the Worker and nowhere else.
+    private val extractionScheduler = WorkExtractionScheduler(app)
+    val extractor = DeviceExtractor(
+        api = HttpExtractionApi(http, baseUrl, session),
+        content = contentApi,
+        opener = PlatformDocumentOpener(app, MlKitTextRecognizer()),
+        capabilities = ExtractionCapabilities(pdfText = PDF_TEXT_LAYER_AVAILABLE, ocr = true, extractorVersion = EXTRACTOR_VERSION),
+        conditions = AndroidRunConditions(app),
+        workDir = File(app.noBackupFilesDir, "extraction"),
+        clock = clock,
+    )
+    private val sessionEnd = SessionEnd(attachments, exports, extractor, extractionScheduler)
+    private var extractionTicks: Job? = null
 
     /** A deleted email's private copies go in one step: its downloads stop and its files go, then rows, text and answers, and sync is asked for the tombstone. */
     private val purgeDeleted = DeletedSourcePurge { ids, nowMs ->
@@ -85,6 +111,8 @@ class AppContainer(context: Context) {
     }
 
     init {
+        // Nothing is running yet, so whatever a killed process left behind is simply removed.
+        extractor.purge()
         background.launch {
             // Start of the app: nothing is sent; interrupted work is requeued or marked, and files no row names are removed.
             attachments.recover()
@@ -108,6 +136,9 @@ class AppContainer(context: Context) {
         scheduler.requestNow()
         PushRegistrationWorker.enqueue(app)
         background.launch { attachments.resumeHeld() }
+        extractionScheduler.schedulePeriodic()
+        // Files wait for the phone, so every finished sync is a reason to look again; the work itself is one run at a time.
+        if (extractionTicks?.isActive != true) extractionTicks = background.launch { syncTicks.collect { extractionScheduler.requestNow() } }
     }
 
     /**
@@ -119,6 +150,9 @@ class AppContainer(context: Context) {
     suspend fun signOut() {
         scheduler.cancelAll()
         PushRegistrationWorker.cancel(app)
+        extractionTicks?.cancel()
+        extractionScheduler.cancel()
+        extractor.purge()
         // Downloads and exports stop and their files go first; answers that arrive later are discarded by their repositories.
         exports.invalidate()
         deletions.invalidate()

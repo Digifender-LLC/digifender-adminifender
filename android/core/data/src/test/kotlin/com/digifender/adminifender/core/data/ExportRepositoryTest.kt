@@ -369,6 +369,25 @@ class ExportRepositoryTest {
     }
 
     @Test
+    fun aStopBetweenTheLastReadAndTheRecordRemovesTheFinishedFileAndSettlesTheRow() = runBlocking {
+        val id = readyIntent()
+        val (_, open) = contentOf(built.bytes)
+        api.onOpen = { open }
+        val target = File(dir, "stopped-late.zip")
+        val inner = FileDestination(target)
+        // The session ends after the whole ZIP was written and verified, and before the outcome is recorded.
+        val destination = object : com.digifender.adminifender.core.data.files.Destination by inner {
+            override fun sizeBytes(): Long? {
+                runBlocking { repo.invalidate() }
+                return inner.sizeBytes()
+            }
+        }
+        val outcome = withTimeout(10_000) { repo.download(id, destination) }
+        assertTrue(outcome is ExportDownloadOutcome.Superseded)
+        assertFalse("a finished file is not kept for a request that no longer exists", target.exists())
+    }
+
+    @Test
     fun noEntryIsEverWrittenOutsideTheChosenDestination() = runBlocking {
         val hostile = buildExport(extraEntries = listOf("files/../../escape.txt" to "x".encodeToByteArray()))
         val id = readyIntent(hostile)
