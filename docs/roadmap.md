@@ -1,6 +1,6 @@
 # Implementation roadmap
 
-Tracks delivery of the [baseline phases](specifications/baseline.md#delivery-phases) in small reviewable slices. Status words follow [AGENTS.md](../AGENTS.md): **planned**, **implemented**, **locally verified**, **staging verified**, **production accepted**. Nothing below is deployed, and no slice is staging verified or production accepted.
+Tracks delivery of the [baseline phases](specifications/baseline.md#delivery-phases) in small reviewable slices. Status words follow [AGENTS.md](../AGENTS.md): **planned**, **implemented**, **locally verified**, **staging verified**, **production accepted**. A staging Worker runs the code of this branch (deployed 2026-10-09; see [ops/staging.md](../ops/staging.md) and the [reconciliation note](evidence/staging-reconciliation.md)), but no slice is staging verified or production accepted: the staging runs recorded in `ops/staging.md` (a live email, an enrollment and a passkey sign-in on the S24+) were made on an earlier build from a different branch and have not been repeated on this one. Nothing is deployed to production.
 
 ## P1 core app
 

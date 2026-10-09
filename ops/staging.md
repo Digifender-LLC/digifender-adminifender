@@ -1,6 +1,6 @@
 # Staging environment
 
-**Status (2026-10-04): provisioned and deployed with synthetic data only.** Nothing in staging is production accepted.
+**Status (2026-10-09): provisioned 2026-10-04; redeployed 2026-10-09 from the reconciled branch (Worker version `3a0d83dd-fa39-4325-b7f2-c421ab7822b3`, control migration 15).** Nothing in staging is production accepted. The runs recorded below as made on 2026-10-04 were on the earlier build; see the [reconciliation note](../docs/evidence/staging-reconciliation.md) for what changed and what has not been repeated.
 
 | Item | Value |
 | --- | --- |
@@ -62,3 +62,14 @@ The asset-links statement is published on `https://digifender.com/.well-known/as
 - **Push:** no `FCM_SERVICE_ACCOUNT` secret and no staging Firebase project, so delivery reports `push_unavailable`.
 - **P2 reports:** `REPORTS_ENABLED` is not set, so all P2 routes answer `feature_disabled`. Enabling it on staging needs a `REPORT_KEY_WRAP` secret and a registered alias with a key, as part of the P2 acceptance run.
 - **Email (routed 2026-10-04, owner decision):** Cloudflare Email Routing sends every address at digifender.com, whumpo.com, openhost.pro, labthrift.com and chapel.cloud (catch-all plus the former `admin@openhost.pro` and chapel.cloud `hello@`, `dmarc@` and `tlsrpt@` rules) to the `adminifender-staging` Worker. This replaced the earlier forwards to the owner's personal inboxes, so mail to these domains is no longer delivered anywhere else. labthrift.com previously refused all mail; its null MX was removed, Email Routing turned on and its SPF changed to `v=spf1 include:_spf.mx.cloudflare.net ~all`. The owner accepted staging receiving this mail because no real mail arrives at these domains yet. Before production, route these domains to the production Worker (or back to forwards) and keep staging on a synthetic address. To undo, set each zone's rules back to forwarding in the Cloudflare dashboard under Email, Email Routing, Routing rules.
+
+## Reconciled deployment (2026-10-09)
+
+The staging Worker was first deployed from a branch that implemented slices 14g to 14j and P2 separately from `main`. On 2026-10-09 `main`'s code, with that branch's server-side work ported onto it, was deployed in its place. What this means for anything that talks to staging:
+
+- **Device extraction paths changed.** Phones now use `POST /api/v1/device-work/extraction/{claim,<id>/heartbeat,<id>/batch,<id>/outcome}`; the earlier `/api/v1/device-extraction/*` and `/attachments/{id}/resume-extraction` routes are gone (404). "Resume next pages" is not implemented on this build.
+- **Migrations:** `0013_recovery_runs`, `0014_export_scope` and `0015_device_extraction` were applied; `0015` first drops the earlier prototype's `extraction_leases` and `extraction_batches` (empty on staging) and creates the current ones under the same names. `/api/v1/meta` reports `controlMigration: 15`.
+- **An APK built from the earlier branch does not match this Worker** (different chat, briefing, export and extraction contracts). Build a new staging APK from this branch (`./gradlew :app:assembleStaging`) before using the phone against it. That APK has not been installed or tried on a phone.
+- **R2 export lifecycle preflight, steps 1 to 3 (2026-10-09):** on `adminifender-archive-staging` the rule `abort-stale-export-uploads` (prefix `exports/`, abort incomplete multipart uploads after 1 day) was added next to the unchanged `Default Multipart Abort Rule` (7 days), and `lifecycle list` was compared before and after. Step 4 (an open upload through the S3 API, checked at least two days later) is not done, so the one-day bound is not claimed.
+- **Rollback points taken before the change:** D1 time-travel bookmarks `0000015b-0000000a-000050ff-ff7e8a8eb5f700e4d59510e5620cd696` (control) and `00000013-00000000-000050ff-8886b01d12d27a77722c766d69356d70` (archive), and the previous Worker versions `fbee07ef-ed5b-4845-a2d9-69523910e01f` and `826522a8-34ff-4c20-b740-0379503f8a4d` (`wrangler versions list --env staging`). Restoring the control database to its bookmark also undoes the three migrations above.
+

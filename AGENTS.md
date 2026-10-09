@@ -2,7 +2,7 @@
 
 ## Project and source of truth
 
-Adminifender is a single-owner Android app for email review, archive, actions and grounded assistant chat. Implementation has started: `backend/` holds the Worker, `contracts/` the shared schemas and `android/` the app's Gradle project; there is no deployed environment yet. [docs/roadmap.md](docs/roadmap.md) tracks each slice's status. Do not claim a planned component, test, CI run or integration is implemented.
+Adminifender is a single-owner Android app for email review, archive, actions and grounded assistant chat. Implementation has started: `backend/` holds the Worker, `contracts/` the shared schemas and `android/` the app's Gradle project; a synthetic-data staging environment exists (see `ops/staging.md`) and nothing is deployed to production. [docs/roadmap.md](docs/roadmap.md) tracks each slice's status. Do not claim a planned component, test, CI run or integration is implemented.
 
 - Start with `README.md`, then read only the relevant contract under `docs/specifications/`. `baseline.md` owns accepted defaults and phases; `srs.md` owns requirement IDs and acceptance cases; `lld.md` owns exact contracts; `tdd.md` owns technology, testing and release design; ADRs record decisions. `docs/feature-suggestions.md` is historical context, not authority over the accepted baseline.
 - Layout: `backend/` for the TypeScript Cloudflare Worker, `contracts/` for shared schemas/fixtures and `android/` for Kotlin/Compose exist. Planned and not yet present: `models/` for manifests/evaluations without model bytes, and `ops/` for operational procedures.
