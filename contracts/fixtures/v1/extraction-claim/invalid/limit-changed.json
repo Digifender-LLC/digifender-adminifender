@@ -11,6 +11,7 @@
     "policyRevision": 3,
     "generationId": "dev:5a6b7c8d-1e2f-4a3b-8c4d-5e6f7a8b9c0d:aaaaaaaaaaaaaaaa:android-extract-v1:p3",
     "ocrAllowed": true,
+    "startPage": 1,
     "maxPages": 200,
     "maxBatchPages": 10,
     "maxBatchBytes": 131072,

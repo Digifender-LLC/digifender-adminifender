@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://adminifender.invalid/schema/v1/extraction-batch.schema.json",
   "title": "POST /device-work/extraction/{leaseId}/batch body (lld.md#text-extraction-and-ocr)",
-  "description": "One immutable batch of page text. `batchOrdinal` is the next unused number for the generation (or an earlier one, to repeat it: the same content is answered `replayed`, different content is a 409). Every batch advances at least one page and at most ten (`lastPage`, counting pages with no text); pages ascend, and the parts of one page are numbered from 0, travel together and are joined by one newline. At most 128 KiB of UTF-8 text per batch. Only the final batch sets `complete`; it also carries `manifestHash`, the SHA-256 of the server's hashes of all earlier batches (as returned in `batchHash` or the claim's `batchHashes`) joined by newlines, and `totalPages` when the document has more pages than the phone read. `pdf_text` is a native text layer; `ocr` needs `ocrAllowed`. Nothing is readable until the final batch is accepted.",
+  "description": "One immutable batch of page text. `batchOrdinal` is the next unused number for the generation (or an earlier one, to repeat it: the same content is answered `replayed`, different content is a 409). Every batch advances at least one page and at most ten (`lastPage`, counting pages with no text), and a lease reads at most `maxPages` pages from its `startPage`; pages ascend, and the parts of one page are numbered from 0, travel together and are joined by one newline. At most 128 KiB of UTF-8 text per batch. Only the final batch sets `complete`; it also carries `manifestHash`, the SHA-256 of the server's hashes of all earlier batches (as returned in `batchHash` or the claim's `batchHashes`) joined by newlines, and `totalPages` when the document has more pages than the phone read. `pdf_text` is a native text layer; `ocr` needs `ocrAllowed`. Nothing is readable until the final batch is accepted.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -42,7 +42,7 @@
     "batchOrdinal": {
       "type": "integer",
       "minimum": 0,
-      "maximum": 100
+      "maximum": 1000
     },
     "pages": {
       "type": "array",
@@ -60,7 +60,7 @@
           "page": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 100
+            "maximum": 1000
           },
           "part": {
             "type": "integer",
@@ -90,7 +90,7 @@
     "lastPage": {
       "type": "integer",
       "minimum": 1,
-      "maximum": 100
+      "maximum": 1000
     },
     "totalPages": {
       "type": "integer",

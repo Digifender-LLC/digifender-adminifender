@@ -139,6 +139,7 @@ const ROUTES: Route[] = [
   { method: 'POST', pattern: /^\/device-work\/extraction\/claim$/, handler: ownerMutation(extractionDevice.claimBody, extractionDevice.claimExtraction, { recentAuth: false }) },
   { method: 'POST', pattern: new RegExp(`^/device-work/extraction/${ID}/heartbeat$`), handler: ownerMutation(extractionDevice.heartbeatBody, extractionDevice.extractionHeartbeat, { recentAuth: false }) },
   { method: 'POST', pattern: new RegExp(`^/device-work/extraction/${ID}/batch$`), handler: ownerMutation(extractionDevice.batchBody, extractionDevice.submitBatch, { recentAuth: false }) },
+  { method: 'POST', pattern: new RegExp(`^/attachments/${ID}/read-more$`), handler: mutation(extractionDevice.readMoreBody, extractionDevice.readMore) },
   { method: 'POST', pattern: new RegExp(`^/device-work/extraction/${ID}/outcome$`), handler: ownerMutation(extractionDevice.outcomeBody, extractionDevice.reportOutcome, { recentAuth: false }) },
   { method: 'POST', pattern: /^\/device-work\/readiness$/, handler: ownerMutation(device.readinessBody, device.reportReadiness, { recentAuth: false }) },
   { method: 'POST', pattern: /^\/device-work\/claim$/, handler: ownerMutation(device.readinessBody, device.claimWork, { recentAuth: false }) },

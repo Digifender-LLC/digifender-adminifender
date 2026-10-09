@@ -19,6 +19,7 @@ import com.digifender.adminifender.core.data.network.ExtractionWork
 import com.digifender.adminifender.core.data.network.HeartbeatResult
 import com.digifender.adminifender.core.data.network.MAX_BATCH_BYTES
 import com.digifender.adminifender.core.data.network.MAX_BATCH_PAGES
+import com.digifender.adminifender.core.data.network.MAX_DOCUMENT_PAGES
 import com.digifender.adminifender.core.data.network.MAX_EXTRACTION_PAGES
 import com.digifender.adminifender.core.data.network.NoWorkReason
 import com.digifender.adminifender.core.data.network.OpenResult
@@ -42,6 +43,7 @@ fun pretendWork(
     file: PretendFile,
     kind: DeviceKind = DeviceKind.PDF,
     ocrAllowed: Boolean = true,
+    startPage: Int = 1,
     nextBatchOrdinal: Int = 0,
     nextPage: Int = 1,
     batchHashes: List<String> = emptyList(),
@@ -57,6 +59,7 @@ fun pretendWork(
     policyRevision = 3,
     generationId = "dev:${uuid(23)}:${file.sha256.take(16)}:android-extract-v1:p3",
     ocrAllowed = ocrAllowed,
+    startPage = startPage,
     nextBatchOrdinal = nextBatchOrdinal,
     nextPage = nextPage,
     batchHashes = batchHashes,
@@ -111,7 +114,9 @@ class FakeWorker(private val work: ExtractionWork) : ExtractionApi, AttachmentCo
         fun refuse(code: String) = SubmitResult.Refused(code, 409)
         if (batch.ordinal != nextOrdinal) return refuse("batch_out_of_order")
         if (batch.lastPage < nextPage || batch.lastPage - nextPage + 1 > MAX_BATCH_PAGES) return SubmitResult.Refused("invalid_request", 400)
-        if (!batch.complete && batch.lastPage >= MAX_EXTRACTION_PAGES) return SubmitResult.Refused("invalid_request", 400)
+        // A lease reads at most MAX_EXTRACTION_PAGES from its first page, and the last of them closes the read.
+        val lastAllowed = minOf(work.startPage + MAX_EXTRACTION_PAGES - 1, MAX_DOCUMENT_PAGES)
+        if (batch.lastPage > lastAllowed || (!batch.complete && batch.lastPage >= lastAllowed)) return SubmitResult.Refused("invalid_request", 400)
         if (batch.pages.sumOf { it.text.toByteArray().size } > MAX_BATCH_BYTES) return SubmitResult.Refused("invalid_request", 400)
         var previous = nextPage - 1
         for (page in batch.pages) {

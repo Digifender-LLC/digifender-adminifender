@@ -66,7 +66,7 @@ class ExtractionWireFixturesTest {
 
     @Test
     fun claimAnswers() {
-        val valid = allValid("extraction-claim", setOf("work-fresh", "work-resumed", "no-work", "busy"), ::parseClaim)
+        val valid = allValid("extraction-claim", setOf("work-fresh", "work-resumed", "work-read-more", "no-work", "busy"), ::parseClaim)
         val fresh = (valid.getValue("work-fresh") as ClaimResponse.Work).work
         assertEquals(DeviceKind.PDF, fresh.kind)
         assertEquals(0, fresh.nextBatchOrdinal)
@@ -77,6 +77,13 @@ class ExtractionWireFixturesTest {
         assertFalse(resumed.ocrAllowed)
         assertEquals(2, resumed.batchHashes.size)
         assertEquals(21, resumed.nextPage)
+        assertEquals(1, resumed.startPage)
+        // A read the owner asked to continue starts after the published pages and continues the copied batches.
+        val readMore = (valid.getValue("work-read-more") as ClaimResponse.Work).work
+        assertEquals(101, readMore.startPage)
+        assertEquals(10, readMore.nextBatchOrdinal)
+        assertEquals(101, readMore.nextPage)
+        assertEquals(10, readMore.batchHashes.size)
         assertEquals(NoWorkReason.NO_WORK, (valid.getValue("no-work") as ClaimResponse.None).reason)
         assertEquals(NoWorkReason.BUSY, (valid.getValue("busy") as ClaimResponse.None).reason)
         allInvalid(
@@ -90,7 +97,7 @@ class ExtractionWireFixturesTest {
     fun batchRequests() {
         val valid = allValid(
             "extraction-batch",
-            setOf("first-batch", "ocr-with-confidence-and-parts", "blank-pages-only", "final-batch", "final-batch-first-and-only"),
+            setOf("first-batch", "ocr-with-confidence-and-parts", "blank-pages-only", "final-batch", "final-batch-first-and-only", "resumed-read-batch"),
             ::parseBatchRequest,
         )
         assertEquals(1, valid.getValue("first-batch").batch.pages.size)

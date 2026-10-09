@@ -2,6 +2,7 @@ package com.digifender.adminifender.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.digifender.adminifender.core.data.extraction.ReadMoreRepository
 import com.digifender.adminifender.core.data.files.AskOutcome
 import com.digifender.adminifender.core.data.files.AttachmentPreview
 import com.digifender.adminifender.core.data.files.AttachmentRepository
@@ -10,6 +11,7 @@ import com.digifender.adminifender.core.data.files.FileRead
 import com.digifender.adminifender.core.data.files.LocalFile
 import com.digifender.adminifender.core.data.files.PreviewResult
 import com.digifender.adminifender.core.data.files.SaveOutcome
+import com.digifender.adminifender.core.data.network.ReadMoreOutcome
 import com.digifender.adminifender.core.data.repository.AttachmentInfo
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -22,7 +24,7 @@ import kotlinx.coroutines.launch
 private const val STOP_TIMEOUT_MS = 5_000L
 
 /** What the last action on an attachment came to, in words the screen can choose. */
-enum class AttachmentNotice { TOO_LARGE, NEEDS_REFRESH, SOURCE_GONE, SAVED, SAVE_FAILED, SAVE_LEFTOVER, DAMAGED, NOT_AVAILABLE, NOT_SHOWN }
+enum class AttachmentNotice { TOO_LARGE, NEEDS_REFRESH, SOURCE_GONE, SAVED, SAVE_FAILED, SAVE_LEFTOVER, DAMAGED, NOT_AVAILABLE, NOT_SHOWN, READ_MORE_ASKED, READ_MORE_NOTHING, READ_MORE_UNAVAILABLE, READ_MORE_SIGN_IN }
 
 /** Text shown inside the app. It is plain text only; nothing in it is a link or markup. */
 data class PreviewState(val attachmentId: String, val name: String, val text: String, val truncated: Boolean)
@@ -36,7 +38,7 @@ data class AttachmentsUiState(
 )
 
 /** Download, remove, read and save-a-copy for one email's attachments. Every download is the owner's explicit request. */
-class AttachmentsViewModel(private val sourceId: String, private val attachments: AttachmentRepository) : ViewModel() {
+class AttachmentsViewModel(private val sourceId: String, private val attachments: AttachmentRepository, private val readMore: ReadMoreRepository) : ViewModel() {
     private val notice = MutableStateFlow<Pair<AttachmentNotice, String?>?>(null)
     private val preview = MutableStateFlow<PreviewState?>(null)
     private val busy = MutableStateFlow<String?>(null)
@@ -52,6 +54,19 @@ class AttachmentsViewModel(private val sourceId: String, private val attachments
                 AskOutcome.NeedsRefresh -> AttachmentNotice.NEEDS_REFRESH to info.name
                 AskOutcome.SourceUnavailable -> AttachmentNotice.SOURCE_GONE to info.name
                 AskOutcome.Asked, AskOutcome.AlreadyReady, AskOutcome.AlreadyActive -> null
+            }
+        }
+    }
+
+    /** Asks for the pages after the ones already read. Nothing searchable changes until the phone has read them. */
+    fun readMore(info: AttachmentInfo) {
+        viewModelScope.launch {
+            notice.value = when (readMore.request(info.id)) {
+                is ReadMoreOutcome.Requested -> AttachmentNotice.READ_MORE_ASKED to info.name
+                ReadMoreOutcome.NothingToRead -> AttachmentNotice.READ_MORE_NOTHING to info.name
+                is ReadMoreOutcome.NotAvailable -> AttachmentNotice.SOURCE_GONE to info.name
+                ReadMoreOutcome.SessionExpired -> AttachmentNotice.READ_MORE_SIGN_IN to info.name
+                is ReadMoreOutcome.Unavailable -> AttachmentNotice.READ_MORE_UNAVAILABLE to info.name
             }
         }
     }
