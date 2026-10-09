@@ -29,7 +29,7 @@ Slice 14f landed on 2026-10-04. Slice 14g was locally verified on 2026-10-08. Sl
 Planned Android slices, in order:
 
 1. 14j (rest): local inference readiness and claims (`/device-work`, LiteRT-LM). Continuation past 100 pages is done (see the row above).
-2. Remaining Worker contract gaps from the 14i Android evidence: no range support on downloads and no export list call. (`safeName` keeping `..` was fixed on 2026-10-09.)
+2. Worker range support on downloads and a list of exports are done ([evidence](evidence/range-downloads-and-export-list.md)); the phone uses neither yet (resuming a download and rediscovering exports are Android work).
 3. Emulator instrumentation runs, screenshots and TalkBack checks. The Room store, archive, briefing, chat, file and review cache and migration tests (including 3 to 4 and 4 to 5) and the Keystore vault and file-key tests are compiled but have never been run; CI compiles them (its result was not re-checked here).
 
 Only the owner can do these, and slice 15 needs all of them:

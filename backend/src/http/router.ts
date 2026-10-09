@@ -107,6 +107,7 @@ const ROUTES: Route[] = [
   { method: 'POST', pattern: /^\/spam-overrides$/, handler: mutation(admission.spamOverrideBody, admission.createSpamOverride) },
   { method: 'PATCH', pattern: new RegExp(`^/spam-overrides/${ID}$`), handler: mutation(admission.spamOverridePatch, admission.updateSpamOverride) },
   { method: 'POST', pattern: /^\/exports$/, handler: mutation(exportsRoutes.exportBody, exportsRoutes.createExport) },
+  { method: 'GET', pattern: /^\/exports$/, handler: exportsRoutes.listExports },
   { method: 'GET', pattern: new RegExp(`^/exports/${ID}$`), handler: exportsRoutes.getExport },
   { method: 'GET', pattern: new RegExp(`^/exports/${ID}/content$`), handler: exportsRoutes.getExportContent },
   { method: 'POST', pattern: /^\/reviews$/, handler: ownerMutation(reviews.reviewBody, reviews.createReview, { recentAuth: false }) },
