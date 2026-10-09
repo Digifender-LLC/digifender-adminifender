@@ -33,7 +33,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.digifender.adminifender.AppContainer
 import com.digifender.adminifender.R
@@ -142,6 +144,16 @@ private fun SignedIn(container: AppContainer, activity: Activity, destination: M
         saved = encode(stack.dropLast(1))
     }
     val askScope = rememberCoroutineScope()
+    // The pinned local model: the owner picks the downloaded file, which is installed only if its size and SHA-256 match the manifest.
+    val modelState by container.models.state.collectAsStateWithLifecycle()
+    val modelPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            askScope.launch {
+                container.models.install(uri)
+                container.afterModelChange()
+            }
+        }
+    }
     // Starts a chat about a concern, email or service, or returns to the latest one for the same subject. No request is made yet.
     fun ask(scope: ChatScope) {
         askScope.launch { container.chat.openThread(scope)?.let { open(Route.ChatRoute(it)) } }
@@ -336,6 +348,7 @@ private fun SignedIn(container: AppContainer, activity: Activity, destination: M
                     // events, and the view model outlives both, so each stops the timers.
                     LifecycleEventEffect(Lifecycle.Event.ON_START) { chatModel.onForeground() }
                     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { chatModel.onBackground() }
+                    LocalChatWork(container)
                     DisposableEffect(chatModel) { onDispose { chatModel.onBackground() } }
                     TextButton(onClick = ::back, modifier = Modifier.padding(horizontal = 8.dp)) { Text(stringResource(R.string.back)) }
                     ChatThreadScreen(
@@ -410,9 +423,35 @@ private fun SignedIn(container: AppContainer, activity: Activity, destination: M
                         onNotificationsChanged = { PushRegistrationWorker.enqueue(context) },
                         onOpenStorage = { open(Route.StorageRoute()) },
                         deletionPending = deletionPending,
+                        model = ModelUi(
+                            modelState,
+                            onChoose = { modelPicker.launch(arrayOf("*/*")) },
+                            onRemove = {
+                                askScope.launch {
+                                    container.models.remove()
+                                    container.afterModelChange()
+                                }
+                            },
+                        ),
                     )
                 }
             }
         }
     }
 }
+
+/** While a chat screen is showing, the phone offers itself for a chat turn that waits on local evidence, every few seconds. */
+@Composable
+private fun LocalChatWork(container: AppContainer) {
+    val owner = LocalLifecycleOwner.current
+    LaunchedEffect(owner) {
+        owner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                container.runLocalChatNow()
+                delay(LOCAL_CHAT_POLL_MS)
+            }
+        }
+    }
+}
+
+private const val LOCAL_CHAT_POLL_MS = 15_000L

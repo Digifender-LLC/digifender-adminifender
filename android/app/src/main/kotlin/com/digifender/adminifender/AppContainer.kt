@@ -2,6 +2,7 @@ package com.digifender.adminifender
 
 import android.content.Context
 import android.os.Build
+import com.digifender.adminifender.core.data.device.DeviceWorkRunner
 import com.digifender.adminifender.core.data.export.ExportRepository
 import com.digifender.adminifender.core.data.extraction.DeviceExtractor
 import com.digifender.adminifender.core.data.extraction.ExtractionCapabilities
@@ -11,10 +12,12 @@ import com.digifender.adminifender.core.data.files.SessionEnd
 import com.digifender.adminifender.core.data.local.FilesDropped
 import com.digifender.adminifender.core.data.local.LocalCache
 import com.digifender.adminifender.core.data.network.HttpApi
+import com.digifender.adminifender.core.data.network.HttpDeviceWorkApi
 import com.digifender.adminifender.core.data.network.HttpExportApi
 import com.digifender.adminifender.core.data.network.HttpExtractionApi
 import com.digifender.adminifender.core.data.network.HttpReviewApi
 import com.digifender.adminifender.core.data.platform.AndroidRunConditions
+import com.digifender.adminifender.core.data.platform.DeviceWorkWorker
 import com.digifender.adminifender.core.data.platform.KeystoreFileKeys
 import com.digifender.adminifender.core.data.platform.MlKitTextRecognizer
 import com.digifender.adminifender.core.data.platform.PDF_TEXT_LAYER_AVAILABLE
@@ -36,6 +39,10 @@ import com.digifender.adminifender.core.data.review.RecentAuthenticator
 import com.digifender.adminifender.core.data.session.HttpAuthApi
 import com.digifender.adminifender.core.data.session.SessionManager
 import com.digifender.adminifender.core.data.sync.SyncEngine
+import com.digifender.adminifender.core.model.WorkKind
+import com.digifender.adminifender.inference.DeviceProbe
+import com.digifender.adminifender.inference.ModelState
+import com.digifender.adminifender.inference.ModelStore
 import java.io.File
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CoroutineScope
@@ -95,6 +102,27 @@ class AppContainer(context: Context) {
         clock = clock,
     )
     private val sessionEnd = SessionEnd(attachments, exports, extractor, extractionScheduler)
+
+    // Local inference (lld.md#triage): triage and chat tasks the Worker leases to this phone, run by a model the owner installs and
+    // that matches the pinned manifest. Without a manifest or a model nothing is claimed.
+    val probe = DeviceProbe(app)
+    val models = ModelStore(app, BuildConfig.MODEL_MANIFEST_B64.takeIf { it.isNotEmpty() }?.let { String(android.util.Base64.decode(it, android.util.Base64.DEFAULT)) })
+    val deviceWork = DeviceWorkRunner(HttpDeviceWorkApi(http, baseUrl, session), models::model, probe::readiness)
+    private val foregroundWork = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    /** Schedules the charging background runs when a verified model is installed, and stops them when there is none. */
+    fun afterModelChange() {
+        if (models.state.value is ModelState.Installed) DeviceWorkWorker.schedule(app) else DeviceWorkWorker.cancel(app)
+    }
+
+    /**
+     * Offers the phone for interactive work while the app is open, for a chat turn waiting on local-only evidence. Whatever
+     * happens shows up through the turn's state at the Worker, not through this call.
+     */
+    fun runLocalChatNow() {
+        if (models.state.value !is ModelState.Installed) return
+        foregroundWork.launch { deviceWork.runOnce(WorkKind.INTERACTIVE) }
+    }
     private var extractionTicks: Job? = null
 
     /** A deleted email's private copies go in one step: its downloads stop and its files go, then rows, text and answers, and sync is asked for the tombstone. */
@@ -137,6 +165,7 @@ class AppContainer(context: Context) {
         PushRegistrationWorker.enqueue(app)
         background.launch { attachments.resumeHeld() }
         extractionScheduler.schedulePeriodic()
+        afterModelChange()
         // Files wait for the phone, so every finished sync is a reason to look again; the work itself is one run at a time.
         if (extractionTicks?.isActive != true) extractionTicks = background.launch { syncTicks.collect { extractionScheduler.requestNow() } }
     }
@@ -153,6 +182,7 @@ class AppContainer(context: Context) {
         extractionTicks?.cancel()
         extractionScheduler.cancel()
         extractor.purge()
+        DeviceWorkWorker.cancel(app)
         // Downloads and exports stop and their files go first; answers that arrive later are discarded by their repositories.
         exports.invalidate()
         deletions.invalidate()

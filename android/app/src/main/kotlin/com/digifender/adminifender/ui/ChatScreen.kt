@@ -317,7 +317,7 @@ private fun statusLine(turn: ChatTurn, phase: TurnPhase): String = when (phase) 
 @Composable
 private fun waitingText(reason: String?): String = when (reason) {
     null -> stringResource(R.string.chat_status_waiting)
-    // Every one of these routes the question to a model on the phone, which this version of the app cannot run yet.
+    // Every one of these routes the question to a model on the phone, which runs only when the owner has installed the pinned model.
     "local_only", "cloud_unavailable", "model_rate_unknown", "account_headroom_unknown", "budget_exhausted" -> stringResource(R.string.chat_wait_needs_phone_model)
     else -> stringResource(R.string.chat_wait_other, reason)
 }

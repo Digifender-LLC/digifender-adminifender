@@ -1,3 +1,5 @@
+import java.util.Base64
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -22,6 +24,11 @@ android {
         // staging and production pass -Padminifender.apiBaseUrl=https://... (tdd.md#environments-and-preflight).
         val apiBaseUrl = providers.gradleProperty("adminifender.apiBaseUrl").getOrElse("https://adminifender.invalid/")
         buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
+        // Pinned local model manifest (../models/README.md), embedded base64-encoded; without one the app reports that no local
+        // model is configured. The model bytes themselves are never part of the build.
+        val manifestPath = providers.gradleProperty("adminifender.modelManifest").orNull
+        val manifestB64 = manifestPath?.let { Base64.getEncoder().encodeToString(rootProject.file(it).readBytes()) } ?: ""
+        buildConfigField("String", "MODEL_MANIFEST_B64", "\"$manifestB64\"")
     }
 
     // Upload-key signing comes only from the environment (ops/release.md); the keystore and its passwords are never
@@ -83,6 +90,8 @@ dependencies {
     implementation(libs.coroutines.core)
     implementation(libs.lifecycle.runtime.compose)
     implementation(libs.work.runtime)
+    // On-device LLM runtime for local triage and chat (CPU backend); the model file itself is chosen by the owner.
+    implementation(libs.litertlm)
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.messaging)
     implementation(platform(libs.compose.bom))
