@@ -104,6 +104,7 @@ const ROUTES: Route[] = [
   { method: 'GET', pattern: new RegExp(`^/exports/${ID}$`), handler: exportsRoutes.getExport },
   { method: 'GET', pattern: new RegExp(`^/exports/${ID}/content$`), handler: exportsRoutes.getExportContent },
   { method: 'POST', pattern: /^\/reviews$/, handler: ownerMutation(reviews.reviewBody, reviews.createReview, { recentAuth: false }) },
+  { method: 'GET', pattern: new RegExp(`^/reviews/${ID}$`), handler: reviews.getReview },
   { method: 'POST', pattern: new RegExp(`^/reviews/${ID}/confirm$`), handler: ownerMutation(reviews.confirmBody, reviews.confirmReview, { recentAuth: true }) },
   { method: 'GET', pattern: new RegExp(`^/operations/${ID}$`), handler: reviews.getOperation },
   { method: 'GET', pattern: /^\/sync\/bootstrap$/, handler: sync.bootstrap },

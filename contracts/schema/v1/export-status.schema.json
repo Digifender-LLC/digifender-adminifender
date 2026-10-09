@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://adminifender.invalid/schema/v1/export-status.schema.json",
+  "title": "POST /exports and GET /exports/{id} data (lld.md#exports)",
+  "description": "Progress of one export. `counts` and `omissions` come from the manifest and are present only when the export is ready. `invalidated` is final: `deleted` (a source in it was deleted), `quarantined` (a source in a normal-only export was quarantined since), `admission_changed` (a source in a quarantine-only export was released since; the scope asks for quarantined mail only) or `scope_unknown` (created before scopes existed; never downloadable). A `failed` export carries the job's fixed failure code. Only a `ready` export can be downloaded, and every download is checked again.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "state", "scope", "snapshotSeq", "createdAt", "expiresAt", "counts", "omissions", "invalidatedReason", "failureCode"],
+  "properties": {
+    "id": { "$ref": "common.schema.json#/$defs/uuid" },
+    "state": { "enum": ["pending", "running", "ready", "failed", "expired", "invalidated"] },
+    "scope": { "oneOf": [{ "$ref": "export-scope.schema.json" }, { "type": "null" }] },
+    "snapshotSeq": { "type": "integer", "minimum": 0 },
+    "createdAt": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "expiresAt": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "counts": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sources", "attachments", "concerns", "rules", "services"],
+          "properties": {
+            "sources": { "type": "integer", "minimum": 0 },
+            "attachments": { "type": "integer", "minimum": 0 },
+            "concerns": { "type": "integer", "minimum": 0 },
+            "rules": { "type": "integer", "minimum": 0 },
+            "services": { "type": "integer", "minimum": 0 }
+          }
+        }
+      ]
+    },
+    "omissions": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["sourceId", "reason"],
+            "properties": {
+              "sourceId": { "$ref": "common.schema.json#/$defs/uuid" },
+              "reason": { "enum": ["deleted", "quarantined", "admission_changed", "excluded_by_admission", "not_in_snapshot"] }
+            }
+          }
+        }
+      ]
+    },
+    "invalidatedReason": { "enum": [null, "deleted", "quarantined", "admission_changed", "scope_unknown"] },
+    "failureCode": { "oneOf": [{ "type": "null" }, { "type": "string", "pattern": "^[a-z][a-z0-9_]*$", "maxLength": 64 }] }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "state": { "const": "ready" } } },
+      "then": { "properties": { "scope": { "type": "object" }, "counts": { "type": "object" }, "omissions": { "type": "array" } } },
+      "else": { "properties": { "counts": { "type": "null" }, "omissions": { "type": "null" } } }
+    },
+    {
+      "if": { "properties": { "state": { "const": "invalidated" } } },
+      "then": { "properties": { "invalidatedReason": { "type": "string" } } },
+      "else": { "properties": { "invalidatedReason": { "type": "null" } } }
+    },
+    {
+      "if": { "properties": { "state": { "const": "failed" } } },
+      "then": { "properties": { "failureCode": { "type": "string" } } },
+      "else": { "properties": { "failureCode": { "type": "null" } } }
+    },
+    {
+      "if": { "properties": { "scope": { "type": "null" } } },
+      "then": { "properties": { "state": { "const": "invalidated" }, "invalidatedReason": { "const": "scope_unknown" } } }
+    }
+  ]
+}

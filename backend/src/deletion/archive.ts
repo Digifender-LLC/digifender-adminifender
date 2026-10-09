@@ -94,8 +94,16 @@ export async function archiveDeletionStatements(env: Env, plan: DeletionPlan, op
       ).bind(crypto.randomUUID(), `cleanup:${id}`, id, now, JSON.stringify({ sourceId: id }), now),
       db.prepare("INSERT OR IGNORE INTO outbox(id, dedupe_key, kind, reference_id, state, next_at) SELECT ?, 'job:' || id, 'job', id, 'pending', ? FROM jobs WHERE dedupe_key = ?")
         .bind(crypto.randomUUID(), now, `cleanup:${id}`),
-      // Export objects built from a snapshot that included this source are invalid immediately.
-      db.prepare("UPDATE exports SET state = 'invalidated' WHERE state IN ('pending', 'running', 'ready') AND snapshot_seq >= COALESCE((SELECT ready_seq FROM source_registry WHERE id = ?), 0)").bind(id),
+      // Exports still being built, or without a recorded scope, are invalid if the source could be in them. A ready
+      // export is invalid exactly when its published attempt contains the source (a superseded attempt's rows do not count).
+      // cleanup_next_at is cleared so the next scheduled pass removes its objects instead of waiting for a reconcile due later.
+      db
+        .prepare(
+          `UPDATE exports SET state = 'invalidated', invalidated_reason = 'deleted', settled_at = COALESCE(settled_at, ?), cleanup_next_at = NULL WHERE
+             (state IN ('pending', 'running') OR (state = 'ready' AND scope_json IS NULL)) AND snapshot_seq >= COALESCE((SELECT ready_seq FROM source_registry WHERE id = ?), 0)
+             OR (state = 'ready' AND id IN (SELECT es.export_id FROM export_sources es JOIN exports e ON e.id = es.export_id AND e.attempt = es.attempt WHERE es.source_id = ?))`,
+        )
+        .bind(now, id, id),
     );
   }
   for (const concernId of plan.erase) {

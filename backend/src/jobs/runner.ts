@@ -23,6 +23,11 @@ export interface ClaimedJob {
 
 /** SQL guard for statements that may only apply while this claim still holds. Bind with guardParams(job). */
 export const CLAIM_GUARD = "EXISTS (SELECT 1 FROM jobs WHERE id = ? AND lease_token = ? AND state IN ('complete', 'failed'))";
+/**
+ * SQL guard for statements a handler runs *while* its claim is still being held (before it returns a result): true
+ * only while this exact claim is the running one. A newer claim replaces the token, so a stale attempt changes nothing.
+ */
+export const LEASE_GUARD = "EXISTS (SELECT 1 FROM jobs WHERE id = ? AND lease_token = ? AND state = 'running')";
 export const guardParams = (job: ClaimedJob): [string, string] => [job.id, job.leaseToken];
 
 export type JobResult =
@@ -35,19 +40,43 @@ export type JobResult =
 
 export type JobHandler = (job: ClaimedJob, env: Env, now: number) => Promise<JobResult>;
 
+/** Error code of a job whose last permitted attempt ended without a result (its lease ran out): content-free. */
+export const LEASE_EXPIRED = 'lease_expired';
+
+/**
+ * The attempt cap also holds for attempts that never settled. An attempt whose invocation was killed (or whose D1
+ * settle never arrived) leaves the job `running` until its lease ends; a retry costs an attempt only when it settles, so
+ * without this a job would be claimed again after every lease, forever. A `leased` or `running` job whose lease has
+ * expired with the cap already spent becomes `dead` here, with the lease cleared, and can never be claimed again. One
+ * statement selects by state, expiry and attempt count, so it cannot touch a live lease, a settled job or one still
+ * below the cap, and a stale settle of the old claim finds neither its token nor the `running` state. Pass a job ID to
+ * resolve one job, or none to resolve up to `limit` of them (the scheduled reconciler). Returns how many became dead.
+ */
+export async function settleExpiredAtCap(db: D1Database, now: number, jobId?: string, limit = 50): Promise<number> {
+  const result = await db
+    .prepare(
+      `UPDATE jobs SET state = 'dead', error_code = ?, lease_token = NULL, lease_until = NULL
+       WHERE id IN (SELECT id FROM jobs WHERE state IN ('leased', 'running') AND lease_until < ? AND attempt >= ? AND (? IS NULL OR id = ?) LIMIT ?)`,
+    )
+    .bind(LEASE_EXPIRED, now, MAX_ATTEMPTS, jobId ?? null, jobId ?? null, limit)
+    .run();
+  return result.meta.changes;
+}
+
 /**
  * Claims a due job by conditional update with a fresh fencing token (lld.md#jobs). Only replay-safe kinds are
- * run here; an expired lease on them is retried. Returns null when another worker holds or finished it.
+ * run here; an expired lease on them is retried, but only while attempts remain (`settleExpiredAtCap` ends the rest), so
+ * no claim ever carries an attempt number above `MAX_ATTEMPTS`. Returns null when another worker holds or finished it.
  */
 export async function claimJob(db: D1Database, jobId: string, now: number): Promise<ClaimedJob | null> {
   const token = crypto.randomUUID();
   const row = await db
     .prepare(
       `UPDATE jobs SET state = 'running', attempt = attempt + 1, lease_token = ?, lease_until = ?
-       WHERE id = ? AND ((state = 'pending' AND next_at <= ?) OR (state IN ('leased', 'running') AND lease_until < ?))
+       WHERE id = ? AND ((state = 'pending' AND next_at <= ?) OR (state IN ('leased', 'running') AND lease_until < ? AND attempt < ?))
        RETURNING id, kind, source_id, input_revision, attempt, input_json`,
     )
-    .bind(token, now + LEASE_MS, jobId, now, now)
+    .bind(token, now + LEASE_MS, jobId, now, now, MAX_ATTEMPTS)
     .first<{ id: string; kind: string; source_id: string | null; input_revision: number | null; attempt: number; input_json: string }>();
   if (!row) return null;
   return { id: row.id, kind: row.kind, sourceId: row.source_id, inputRevision: row.input_revision, attempt: row.attempt, leaseToken: token, input: JSON.parse(row.input_json) };
@@ -88,6 +117,8 @@ export interface RunOutcome {
 }
 
 export async function runJob(env: Env, handlers: Readonly<Record<string, JobHandler>>, jobId: string, now = Date.now()): Promise<RunOutcome> {
+  // A lease that expired with the attempt cap spent ends the job instead of starting an attempt past the cap.
+  if ((await settleExpiredAtCap(env.CONTROL_DB, now, jobId)) > 0) return { jobId, status: 'dead' };
   const job = await claimJob(env.CONTROL_DB, jobId, now);
   if (!job) return { jobId, status: 'skipped' };
   const handler = handlers[job.kind];

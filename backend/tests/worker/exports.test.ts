@@ -64,7 +64,7 @@ describe('exports', () => {
     const files = await unzip(download.body.data as Uint8Array);
 
     const manifest = JSON.parse(decoder.decode(files.get('manifest.json')));
-    expect(manifest).toMatchObject({ schemaVersion: 1, exportId: id });
+    expect(manifest).toMatchObject({ schemaVersion: 2, exportId: id, scope: { kind: 'archive', admission: 'normal' }, omissions: [], sections: { rules: 'included', services: 'included', partialConcerns: 0 } });
     for (const file of manifest.files as { path: string; sha256: string; bytes: number }[]) {
       expect(await sha256Hex(files.get(file.path)!)).toBe(file.sha256);
       expect(files.get(file.path)!.length).toBe(file.bytes);

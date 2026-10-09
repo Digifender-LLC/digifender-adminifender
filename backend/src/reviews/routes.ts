@@ -139,6 +139,67 @@ export async function confirmReview(env: Env, now: number, body: ReturnType<type
   return { operationId, state: 'succeeded', receipt };
 }
 
+// GET /reviews/{id} — content-free recovery readback. Read-only: it creates and confirms nothing and needs no recent
+// passkey session. It never returns parameters, previews or excerpts, so it is safe after the targets are deleted.
+export async function getReview(request: Request, env: Env, now: number, [id]: string[]) {
+  await authenticate(request, env, now);
+  const row = await env.CONTROL_DB.prepare(
+    'SELECT r.id, r.kind, r.digest, r.expires_at, r.created_at, r.consumed_operation_id, o.state AS operation_state FROM action_reviews r LEFT JOIN operations o ON o.id = r.consumed_operation_id WHERE r.id = ?',
+  )
+    .bind(v.uuid()(id, '$.id'))
+    .first<{ id: string; kind: Effect; digest: string; expires_at: number; created_at: number; consumed_operation_id: string | null; operation_state: string | null }>();
+  if (!row) throw notFound();
+  return {
+    reviewId: row.id,
+    effect: row.kind,
+    paramsDigest: row.digest,
+    state: row.consumed_operation_id ? 'consumed' : row.expires_at <= now ? 'expired' : 'open',
+    createdAt: new Date(row.created_at).toISOString(),
+    expiresAt: new Date(row.expires_at).toISOString(),
+    requiresRecentAuth: true,
+    consumedOperationId: row.consumed_operation_id,
+    operationState: row.consumed_operation_id ? (row.operation_state ?? 'uncertain') : null,
+  };
+}
+
+type CleanupState = 'pending' | 'partial' | 'complete' | 'failed' | 'unknown';
+
+/**
+ * Cleanup progress of an archive deletion, derived from the deletion ledger rows written by this operation for the
+ * sources in its intent. The receipt only means hidden, tombstoned and recorded; removal of archive rows and objects
+ * is asynchronous. Sources the ledger does not account for under this operation make the answer `unknown`, and so
+ * does a source whose ledger row contradicts its cleanup job (the job finished, for example by finding the source
+ * already deleted, yet the row never became `completed`): that is counted as `unrecorded`, because the ledger cannot
+ * be believed for it. `live_archive` covers the live archive rows and the source's own R2 prefixes; it excludes
+ * export objects (they expire and are swept on their own schedule, see `expireExports`) and backups. A job waiting
+ * to retry is reported as `pending` or `partial`, not as a failure.
+ */
+async function archiveCleanup(env: Env, operationId: string, sourceIds: string[]) {
+  // An intent without sources is not something this module writes; claim nothing about it.
+  if (!Array.isArray(sourceIds) || sourceIds.length === 0) return { scope: 'live_archive' as const, state: 'unknown' as CleanupState, total: 0, completed: 0, failed: 0, unrecorded: 0 };
+  const { results } = await env.CONTROL_DB.prepare(
+    `SELECT l.source_id, l.state, (SELECT j.state FROM jobs j WHERE j.dedupe_key = 'cleanup:' || l.source_id) AS job_state FROM deletion_ledger l
+     WHERE json_extract(l.targets_json, '$.operationId') = ? AND l.source_id IN (${sourceIds.map(() => '?').join(',')})`,
+  )
+    .bind(operationId, ...sourceIds)
+    .all<{ source_id: string; state: string; job_state: string | null }>();
+  const total = sourceIds.length;
+  const recorded = new Set(results.map((r) => r.source_id));
+  const missing = sourceIds.filter((s) => !recorded.has(s)).length;
+  // A finished cleanup job whose ledger row is still pending: the two disagree, so no state is claimed for the source.
+  const contradicted = results.filter((r) => r.state !== 'completed' && r.job_state === 'complete').length;
+  const unrecorded = missing + contradicted;
+  const completed = results.filter((r) => r.state === 'completed').length;
+  // Not completed and either out of retries or without any cleanup job to run: needs attention, never silently pending.
+  const failed = results.filter((r) => r.state !== 'completed' && (r.job_state === 'failed' || r.job_state === 'dead' || r.job_state === 'cancelled' || r.job_state === null)).length;
+  let state: CleanupState;
+  if (unrecorded > 0) state = 'unknown';
+  else if (failed > 0) state = 'failed';
+  else if (completed === total) state = 'complete';
+  else state = completed === 0 ? 'pending' : 'partial';
+  return { scope: 'live_archive' as const, state, total, completed, failed, unrecorded };
+}
+
 // GET /operations/{id}
 export async function getOperation(request: Request, env: Env, now: number, [id]: string[]) {
   await authenticate(request, env, now);
@@ -153,14 +214,16 @@ export async function getOperation(request: Request, env: Env, now: number, [id]
     settled_at: number | null;
   }>();
   if (!row) throw notFound();
+  const intent = JSON.parse(row.intent_json) as { effect: Effect; params: Params };
   return {
     id: row.id,
     reviewId: row.review_id,
     state: row.state,
-    intent: JSON.parse(row.intent_json) as unknown,
+    intent,
     receipt: row.receipt_json ? (JSON.parse(row.receipt_json) as unknown) : null,
     errorCode: row.error_code,
     createdAt: new Date(row.created_at).toISOString(),
     settledAt: row.settled_at === null ? null : new Date(row.settled_at).toISOString(),
+    cleanup: intent.effect === 'archive.delete' ? await archiveCleanup(env, row.id, (intent.params as { sourceIds: string[] }).sourceIds) : null,
   };
 }

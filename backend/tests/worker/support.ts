@@ -1,4 +1,5 @@
 import { env } from 'cloudflare:workers';
+import { validators } from 'virtual:contract-validators';
 import type { Env, QueueEnvelope } from '../../src/env';
 import { handleFetch } from '../../src/http/router';
 import { type InboundEmail, admitEmail } from '../../src/admission/capture';
@@ -105,4 +106,22 @@ export function sessionClock(owner: { token: string; refreshToken: string }, sta
     issued = now;
     return token;
   };
+}
+
+/** The real JSON Schema of a shared contract, compiled in Node by vitest.config.ts. */
+export function contractValidator(name: string) {
+  const validate = validators[name];
+  if (!validate) throw new Error(`no schema named ${name}`);
+  return validate;
+}
+
+/** Fails with the schema's own error list when a live response does not match its shared contract. */
+export function expectContract(name: string, data: unknown): void {
+  const validate = contractValidator(name);
+  if (!validate(data)) throw new Error(`${name} contract: ${JSON.stringify(validate.errors)} for ${JSON.stringify(data).slice(0, 400)}`);
+}
+
+/** The negative twin: the contract must refuse this shape. */
+export function expectContractViolation(name: string, data: unknown): void {
+  if (contractValidator(name)(data)) throw new Error(`${name} contract unexpectedly accepted ${JSON.stringify(data).slice(0, 400)}`);
 }

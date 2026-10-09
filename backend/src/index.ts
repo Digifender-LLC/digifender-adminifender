@@ -44,12 +44,27 @@ export default {
 
   async scheduled(_controller, env, _ctx) {
     const now = Date.now();
-    await reconcile(env, now);
-    await wakeSnoozed(env.CONTROL_DB, now);
-    await pruneChanges(env.CONTROL_DB, now);
-    await expireExports(env, now);
-    await releaseExpiredReservations(env.CONTROL_DB, now);
-    await scheduleInactivity(env.CONTROL_DB, now);
+    // Each step runs whatever happened to the others, so a failing step cannot stop export cleanup (which carries the
+    // deletion deadline) or any other upkeep. A failure is not absorbed: it is logged by step name only and the pass then
+    // fails, which leaves the pass unrecorded below, so health shows a failing pass as stale and the invocation as errored.
+    const steps: [string, () => Promise<unknown>][] = [
+      ['reconcile', () => reconcile(env, now)],
+      ['wake_snoozed', () => wakeSnoozed(env.CONTROL_DB, now)],
+      ['prune_changes', () => pruneChanges(env.CONTROL_DB, now)],
+      ['expire_exports', () => expireExports(env, now)],
+      ['release_reservations', () => releaseExpiredReservations(env.CONTROL_DB, now)],
+      ['schedule_inactivity', () => scheduleInactivity(env.CONTROL_DB, now)],
+    ];
+    const failed: string[] = [];
+    for (const [step, run] of steps) {
+      try {
+        await run();
+      } catch {
+        failed.push(step);
+        console.warn(JSON.stringify({ event: 'scheduled_step_failed', step }));
+      }
+    }
+    if (failed.length > 0) throw new Error(`scheduled pass incomplete: ${failed.join(', ')}`);
     // Recorded only when every step above finished, so health shows a missed or failing pass as stale.
     await observe(env.CONTROL_DB, SCHEDULED_PASS, now);
   },

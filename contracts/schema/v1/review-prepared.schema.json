@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://adminifender.invalid/schema/v1/review-prepared.schema.json",
+  "title": "POST /reviews data (lld.md#reviewed-actions)",
+  "description": "The exact change the backend read from current state. This is the only response that carries the preview (source subjects for a deletion), so the phone shows it now and stores only what its own cache already holds. `paramsDigest` binds the confirmation to the effect, the parameters and the revisions in `preconditions`; the review expires after 10 minutes and confirming needs a recent passkey session.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["reviewId", "effect", "params", "paramsDigest", "preconditions", "preview", "expiresAt", "requiresRecentAuth"],
+  "properties": {
+    "reviewId": { "$ref": "common.schema.json#/$defs/uuid" },
+    "effect": { "enum": ["archive.delete", "device.revoke"] },
+    "params": { "type": "object" },
+    "paramsDigest": { "$ref": "#/$defs/digest" },
+    "preconditions": { "type": "object" },
+    "preview": { "type": "object", "required": ["expectedCount"], "properties": { "expectedCount": { "type": "integer", "minimum": 1 } } },
+    "expiresAt": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "requiresRecentAuth": { "const": true }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "effect": { "const": "archive.delete" } } },
+      "then": {
+        "properties": {
+          "params": { "$ref": "review-request.schema.json#/oneOf/0/properties/params" },
+          "preconditions": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["sources", "concerns"],
+            "properties": { "sources": { "$ref": "#/$defs/revisions" }, "concerns": { "$ref": "#/$defs/revisions" } }
+          },
+          "preview": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["sources", "attachments", "concernsErased", "concernsDetached", "derived", "expectedCount"],
+            "properties": {
+              "sources": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["id", "subject", "receivedAt", "admission"],
+                  "properties": {
+                    "id": { "$ref": "common.schema.json#/$defs/uuid" },
+                    "subject": { "type": ["string", "null"] },
+                    "receivedAt": { "$ref": "common.schema.json#/$defs/timestamp" },
+                    "admission": { "enum": ["normal", "quarantine"] }
+                  }
+                }
+              },
+              "attachments": { "type": "integer", "minimum": 0 },
+              "concernsErased": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/uuid" } },
+              "concernsDetached": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/uuid" } },
+              "derived": { "type": "array", "items": { "type": "string" } },
+              "expectedCount": { "type": "integer", "minimum": 1 }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "effect": { "const": "device.revoke" } } },
+      "then": {
+        "properties": {
+          "params": { "$ref": "review-request.schema.json#/oneOf/1/properties/params" },
+          "preconditions": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["devices"],
+            "properties": { "devices": { "$ref": "#/$defs/revisions" } }
+          },
+          "preview": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["device", "current", "sessionsRevoked", "expectedCount"],
+            "properties": {
+              "device": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "name"],
+                "properties": { "id": { "$ref": "common.schema.json#/$defs/uuid" }, "name": { "type": "string" } }
+              },
+              "current": { "type": "boolean" },
+              "sessionsRevoked": { "type": "integer", "minimum": 0 },
+              "expectedCount": { "const": 1 }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "revisions": {
+      "description": "Entity ID to the exact revision the review was read at.",
+      "type": "object",
+      "propertyNames": { "$ref": "common.schema.json#/$defs/uuid" },
+      "additionalProperties": { "type": "integer", "minimum": 1 }
+    }
+  }
+}
