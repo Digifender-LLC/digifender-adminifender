@@ -74,7 +74,7 @@ class RoomArchiveCacheTest {
         store.applyChanges(
             listOf(
                 SyncChange.SourceChanged(1, source("a", at = 300)),
-                SyncChange.SourceChanged(2, source("b", subject = "Holiday", at = 200)),
+                SyncChange.SourceChanged(2, source("b", subject = "Holiday", at = 200, from = "friend@example.org")),
                 SyncChange.SourceChanged(3, source("q", subject = "Water bill", quarantined = true)),
             ),
             3,
@@ -88,7 +88,8 @@ class RoomArchiveCacheTest {
         assertEquals(emptyList<String>(), cache.search(listOf("p_y"), ArchiveView.ARCHIVE, null, null, null, 50).map { it.source.id })
         assertEquals(emptyList<String>(), cache.search(listOf("%"), ArchiveView.ARCHIVE, null, null, null, 50).map { it.source.id })
         assertEquals(listOf("a"), cache.search(listOf("water"), ArchiveView.ARCHIVE, null, 250, null, 50).map { it.source.id })
-        assertEquals(listOf("a", "b"), cache.search(listOf("water"), ArchiveView.ARCHIVE, "billing@water.example", null, null, 50).map { it.source.id })
+        assertEquals(listOf("a"), cache.search(listOf("water"), ArchiveView.ARCHIVE, "billing@water.example", null, null, 50).map { it.source.id })
+        assertEquals(listOf("b"), cache.search(listOf("water"), ArchiveView.ARCHIVE, "friend@example.org", null, null, 50).map { it.source.id })
         assertEquals(emptyList<String>(), cache.search(listOf("water"), ArchiveView.ARCHIVE, "water.example", null, null, 50).map { it.source.id })
     }
 

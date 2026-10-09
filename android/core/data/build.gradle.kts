@@ -45,9 +45,19 @@ tasks.withType<Test>().configureEach { systemProperty("contractsDir", contractsD
 // Robolectric's native SQLite runtime has no Linux aarch64 build ("not supported on Linux (aarch64)"), so the Room tests that
 // run under it are skipped on such hosts, with this message; x86_64 hosts (CI) and devices run them. Force with
 // -Padminifender.forceRobolectric=true.
+// Another way to run them on such a host: -Padminifender.testJava=<path> runs the unit-test JVM with that java, for example an
+// x86_64 JDK started through user-mode QEMU (see docs/verification.md); then nothing is skipped.
 val robolectricUnsupportedHere = System.getProperty("os.name").startsWith("Linux") &&
     System.getProperty("os.arch") in setOf("aarch64", "arm64") &&
-    !providers.gradleProperty("adminifender.forceRobolectric").isPresent
+    !providers.gradleProperty("adminifender.forceRobolectric").isPresent &&
+    !providers.gradleProperty("adminifender.testJava").isPresent
+providers.gradleProperty("adminifender.testJava").orNull?.let { java ->
+    tasks.withType<Test>().configureEach {
+        executable = java
+        // Robolectric extracts its native library into the temp directory; keep it where there is room (TMPDIR if set).
+        System.getenv("TMPDIR")?.let { systemProperty("java.io.tmpdir", it) }
+    }
+}
 tasks.withType<Test>().configureEach {
     if (robolectricUnsupportedHere) {
         exclude("**/Room*Test*")
