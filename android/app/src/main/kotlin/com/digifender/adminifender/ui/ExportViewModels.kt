@@ -3,6 +3,7 @@ package com.digifender.adminifender.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.digifender.adminifender.core.data.export.CreateOutcome
+import com.digifender.adminifender.core.data.export.DiscoverOutcome
 import com.digifender.adminifender.core.data.export.ExportIntent
 import com.digifender.adminifender.core.data.export.ExportRepository
 import com.digifender.adminifender.core.data.export.RefreshOutcome
@@ -252,6 +253,18 @@ data class StorageUiState(
 )
 
 /** What this phone holds privately: downloaded files, exports in progress or finished, and deletions that are open or unknown. */
+sealed interface Discovery {
+    data object Idle : Discovery
+
+    data object Searching : Discovery
+
+    data class Done(val found: Int, val added: Int) : Discovery
+
+    data object SignIn : Discovery
+
+    data object Failed : Discovery
+}
+
 class StorageViewModel(
     private val attachments: AttachmentRepository,
     private val exports: ExportRepository,
@@ -265,6 +278,24 @@ class StorageViewModel(
             reviews.sortedByDescending { it.createdAtMs },
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), StorageUiState(emptyList(), 0, emptyList(), emptyList()))
+
+    private val discoveryState = MutableStateFlow<Discovery>(Discovery.Idle)
+
+    /** The outcome of the last "find exports" request, shown under the button. */
+    val discovery: StateFlow<Discovery> = discoveryState
+
+    fun discover() {
+        if (discoveryState.value == Discovery.Searching) return
+        discoveryState.value = Discovery.Searching
+        viewModelScope.launch {
+            discoveryState.value = when (val outcome = exports.discover()) {
+                is DiscoverOutcome.Done -> Discovery.Done(outcome.found, outcome.added)
+                DiscoverOutcome.SignIn -> Discovery.SignIn
+                is DiscoverOutcome.Unavailable -> Discovery.Failed
+                DiscoverOutcome.Superseded -> Discovery.Idle
+            }
+        }
+    }
 
     fun removeFile(attachmentId: String) {
         viewModelScope.launch { attachments.remove(attachmentId) }

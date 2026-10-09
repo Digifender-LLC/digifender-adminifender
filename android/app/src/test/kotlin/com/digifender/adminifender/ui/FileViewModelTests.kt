@@ -3,6 +3,8 @@ package com.digifender.adminifender.ui
 import com.digifender.adminifender.core.data.export.CreateOutcome
 import com.digifender.adminifender.core.data.export.ExportDownload
 import com.digifender.adminifender.core.data.export.ExportRepository
+import com.digifender.adminifender.core.data.extraction.ExtractionScheduler
+import com.digifender.adminifender.core.data.extraction.ReadMoreRepository
 import com.digifender.adminifender.core.data.files.AttachmentRepository
 import com.digifender.adminifender.core.data.files.BlobDirectory
 import com.digifender.adminifender.core.data.files.DownloadResult
@@ -16,6 +18,8 @@ import com.digifender.adminifender.core.data.network.ExportScope
 import com.digifender.adminifender.core.data.network.ExportState
 import com.digifender.adminifender.core.data.network.OpenResult
 import com.digifender.adminifender.core.data.network.PrepareResult
+import com.digifender.adminifender.core.data.network.ReadMoreApi
+import com.digifender.adminifender.core.data.network.ReadMoreOutcome
 import com.digifender.adminifender.core.data.network.ReviewRead
 import com.digifender.adminifender.core.data.repository.ArchiveRepository
 import com.digifender.adminifender.core.data.repository.AttachmentInfo
@@ -73,6 +77,27 @@ class AttachmentsViewModelTest {
     private val api = ScriptedContentApi()
     private val scheduler = FakeScheduler()
     private val repo = AttachmentRepository(api, store, blobs, FileCipher(SoftKeys()), scheduler, { System.currentTimeMillis() })
+    private var readMoreAnswer: ReadMoreOutcome = ReadMoreOutcome.Requested(101)
+    private val readMoreCalls = mutableListOf<String>()
+    private var syncs = 0
+    private var extractionRuns = 0
+    private val readMore = ReadMoreRepository(
+        object : ReadMoreApi {
+            override suspend fun readMore(attachmentId: String): ReadMoreOutcome {
+                readMoreCalls += attachmentId
+                return readMoreAnswer
+            }
+        },
+        object : ExtractionScheduler {
+            override fun requestNow() {
+                extractionRuns += 1
+            }
+
+            override fun schedulePeriodic() = Unit
+
+            override fun cancel() = Unit
+        },
+    ) { syncs += 1 }
     private val text = "hello <b>plain</b>".encodeToByteArray()
     private fun info(type: String? = "text/plain", name: String = "note.txt", bytes: ByteArray = text, size: Long = bytes.size.toLong(), sha: String = sha256Of(bytes)) =
         AttachmentInfo(att, name, type, size, "ready", null, sha, "attachment")
@@ -84,8 +109,42 @@ class AttachmentsViewModelTest {
     fun reset() = Dispatchers.resetMain()
 
     @Test
+    fun readingMoreQueuesTheNextPagesAndSaysSoWithoutChangingAnythingSearchable() = runBlocking {
+        val model = AttachmentsViewModel(src, repo, readMore)
+        val job = launch(Dispatchers.Unconfined) { model.state.collect {} }
+        model.readMore(info())
+        eventually { model.state.value.notice == AttachmentNotice.READ_MORE_ASKED }
+        assertEquals(listOf(att), readMoreCalls)
+        // A sync is asked for (so the file shows as waiting) and the reader is scheduled.
+        assertEquals(1, syncs)
+        assertEquals(1, extractionRuns)
+        assertEquals("note.txt", model.state.value.noticeName)
+        job.cancel()
+    }
+
+    @Test
+    fun readingMoreSaysWhyWhenItCannotBeQueuedAndSchedulesNothing() = runBlocking {
+        val model = AttachmentsViewModel(src, repo, readMore)
+        val job = launch(Dispatchers.Unconfined) { model.state.collect {} }
+        for ((answer, expected) in listOf(
+            ReadMoreOutcome.NothingToRead to AttachmentNotice.READ_MORE_NOTHING,
+            ReadMoreOutcome.NotAvailable("not_eligible") to AttachmentNotice.SOURCE_GONE,
+            ReadMoreOutcome.SessionExpired to AttachmentNotice.READ_MORE_SIGN_IN,
+            ReadMoreOutcome.Unavailable("network") to AttachmentNotice.READ_MORE_UNAVAILABLE,
+        )) {
+            readMoreAnswer = answer
+            model.noticeShown()
+            model.readMore(info())
+            eventually { model.state.value.notice == expected }
+        }
+        assertEquals(0, syncs)
+        assertEquals(0, extractionRuns)
+        job.cancel()
+    }
+
+    @Test
     fun askingStoresTheRequestAndRefusalsAreSaidNotSwallowed() = runBlocking {
-        val model = AttachmentsViewModel(src, repo)
+        val model = AttachmentsViewModel(src, repo, readMore)
         val job = launch(Dispatchers.Unconfined) { model.state.collect {} }
         model.ask(info(size = 26L * 1024 * 1024))
         eventually { model.state.value.notice == AttachmentNotice.TOO_LARGE }
@@ -104,7 +163,7 @@ class AttachmentsViewModelTest {
 
     @Test
     fun aDownloadedTextFileIsShownAsPlainTextAndOtherFormatsAreNotOpened() = runBlocking {
-        val model = AttachmentsViewModel(src, repo)
+        val model = AttachmentsViewModel(src, repo, readMore)
         val job = launch(Dispatchers.Unconfined) { model.state.collect {} }
         model.ask(info())
         api.serve(text)
@@ -127,7 +186,7 @@ class AttachmentsViewModelTest {
 
     @Test
     fun savingACopyNamesWhereItWentAndWhetherAFailedOneWasRemoved() = runBlocking {
-        val model = AttachmentsViewModel(src, repo)
+        val model = AttachmentsViewModel(src, repo, readMore)
         val job = launch(Dispatchers.Unconfined) { model.state.collect {} }
         model.ask(info())
         api.serve(text)

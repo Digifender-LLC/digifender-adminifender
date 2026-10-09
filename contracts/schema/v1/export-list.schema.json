@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://adminifender.invalid/schema/v1/export-list.schema.json",
+  "title": "GET /exports data (lld.md#exports)",
+  "description": "The newest exports first (at most `limit`, default 20, at most 50), each exactly as GET /exports/{id} reports it, so a phone that lost its record of an export can find it again. An export whose manifest cannot be read is listed as `failed` with that fixed code instead of failing the list.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "exports"
+  ],
+  "properties": {
+    "exports": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "$ref": "export-status.schema.json"
+      }
+    }
+  }
+}

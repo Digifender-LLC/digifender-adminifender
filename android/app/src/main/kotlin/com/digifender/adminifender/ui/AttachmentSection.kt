@@ -33,6 +33,7 @@ class AttachmentActions(
     val onSave: (AttachmentInfo) -> Unit,
     val onNoticeShown: () -> Unit,
     val onClosePreview: () -> Unit,
+    val onReadMore: (AttachmentInfo) -> Unit,
 )
 
 @Composable
@@ -44,6 +45,10 @@ fun AttachmentRow(info: AttachmentInfo, file: LocalFile?, busy: Boolean, actions
         Text(listOfNotNull(info.declaredType, size, extractionText(info.extraction, info.extractionDetail)).joinToString(" · "), style = MaterialTheme.typography.bodySmall)
         Text(fileStateText(info, file), style = MaterialTheme.typography.bodySmall, color = if (file?.state == FileState.FAILED) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            // Only a document that was read up to its first pages; the text already read stays searchable meanwhile.
+            if (info.extraction == "ready" && info.extractionDetail == "limit") {
+                OutlinedButton(onClick = { actions.onReadMore(info) }) { Text(stringResource(R.string.attachment_read_more)) }
+            }
             when (file?.state) {
                 null, FileState.FAILED -> if (info.sizeBytes <= MAX_ATTACHMENT_BYTES) {
                     OutlinedButton(onClick = { actions.onAsk(info) }) { Text(stringResource(if (file == null) R.string.attachment_download else R.string.attachment_download_again)) }
@@ -105,6 +110,10 @@ fun AttachmentNoticeAndPreview(state: AttachmentsUiState, actions: AttachmentAct
                     AttachmentNotice.DAMAGED -> R.string.attachment_notice_damaged
                     AttachmentNotice.NOT_AVAILABLE -> R.string.attachment_notice_not_available
                     AttachmentNotice.NOT_SHOWN -> R.string.attachment_notice_not_shown
+                    AttachmentNotice.READ_MORE_ASKED -> R.string.attachment_notice_read_more_asked
+                    AttachmentNotice.READ_MORE_NOTHING -> R.string.attachment_notice_read_more_nothing
+                    AttachmentNotice.READ_MORE_UNAVAILABLE -> R.string.attachment_notice_read_more_unavailable
+                    AttachmentNotice.READ_MORE_SIGN_IN -> R.string.attachment_notice_read_more_sign_in
                 },
                 name,
             ),

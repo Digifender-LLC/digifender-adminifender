@@ -168,6 +168,33 @@ class DeviceExtractorTest {
     }
 
     @Test
+    fun aReadTheOwnerAskedToContinueStartsAfterThePublishedPagesAndStopsAHundredLater() = runBlocking {
+        val hashes = (1..10).map { sha256Hex("batch$it".toByteArray()) }
+        val worker = FakeWorker(pretendWork(file, startPage = 101, nextBatchOrdinal = 10, nextPage = 101, batchHashes = hashes))
+        val pages = FakePages(250, native = (1..250).associateWith { "$LONG_TEXT page $it" })
+        val result = extractor(worker, pages).runOnce()
+        assertEquals(RunResult.Published(uuid(23), limited = true), result)
+        // Only the pages after the published ones are read, and a lease still reads at most a hundred.
+        assertEquals((101..200).toList(), pages.nativeCalls)
+        assertEquals((10..19).toList(), worker.batches.map { it.ordinal })
+        assertEquals(200, worker.batches.last().lastPage)
+        assertEquals(250, worker.batches.last().totalPages)
+        // The fake Worker refuses a final batch whose manifest does not cover the ten published batches' hashes, so reaching here proves it.
+        assertEquals(101, worker.accepted.keys.first())
+        assertEquals(200, worker.accepted.keys.last())
+    }
+
+    @Test
+    fun aReadThatReachesTheEndOfALongerDocumentIsNotLimited() = runBlocking {
+        val hashes = (1..10).map { sha256Hex("batch$it".toByteArray()) }
+        val worker = FakeWorker(pretendWork(file, startPage = 101, nextBatchOrdinal = 10, nextPage = 101, batchHashes = hashes))
+        val pages = FakePages(130, native = (1..130).associateWith { "$LONG_TEXT page $it" })
+        assertEquals(RunResult.Published(uuid(23), limited = false), extractor(worker, pages).runOnce())
+        assertEquals((101..130).toList(), pages.nativeCalls)
+        assertNull(worker.batches.last().totalPages)
+    }
+
+    @Test
     fun pagesThatDoNotFitOneBatchAreSplitBetweenBatches() = runBlocking {
         val worker = workerFor()
         val big = "w".repeat(60 * 1024)

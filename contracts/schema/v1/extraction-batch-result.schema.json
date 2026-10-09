@@ -21,7 +21,7 @@
     "batchOrdinal": {
       "type": "integer",
       "minimum": 0,
-      "maximum": 100
+      "maximum": 1000
     },
     "status": {
       "enum": [
@@ -36,12 +36,12 @@
     "nextBatchOrdinal": {
       "type": "integer",
       "minimum": 1,
-      "maximum": 101
+      "maximum": 1001
     },
     "nextPage": {
       "type": "integer",
       "minimum": 2,
-      "maximum": 101
+      "maximum": 1001
     },
     "published": {
       "type": "boolean"

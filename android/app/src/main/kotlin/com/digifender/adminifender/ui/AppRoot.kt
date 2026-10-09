@@ -221,7 +221,7 @@ private fun SignedIn(container: AppContainer, activity: Activity, destination: M
                     val sourceModel = viewModel(key = "source-$id") { SourceViewModel(id, container.archive) }
                     val source by sourceModel.state.collectAsStateWithLifecycle()
                     val busy by sourceModel.busy.collectAsStateWithLifecycle()
-                    val filesModel = viewModel(key = "files-$id") { AttachmentsViewModel(id, container.attachments) }
+                    val filesModel = viewModel(key = "files-$id") { AttachmentsViewModel(id, container.attachments, container.readMore) }
                     val files by filesModel.state.collectAsStateWithLifecycle()
                     // Which attachment a document-picker result is for survives a rotation, so a created document is never left orphaned.
                     var saving by rememberSaveable { mutableStateOf<String?>(null) }
@@ -247,6 +247,7 @@ private fun SignedIn(container: AppContainer, activity: Activity, destination: M
                             },
                             onNoticeShown = filesModel::noticeShown,
                             onClosePreview = filesModel::closePreview,
+                            onReadMore = filesModel::readMore,
                         )
                     }
                     TextButton(onClick = ::back, modifier = Modifier.padding(horizontal = 8.dp)) { Text(stringResource(R.string.back)) }
@@ -315,8 +316,11 @@ private fun SignedIn(container: AppContainer, activity: Activity, destination: M
                 is Route.StorageRoute -> {
                     val storageModel = viewModel { StorageViewModel(container.attachments, container.exports, container.deletions) }
                     val storage by storageModel.state.collectAsStateWithLifecycle()
+                    val discovery by storageModel.discovery.collectAsStateWithLifecycle()
                     StorageScreen(
                         storage,
+                        discovery,
+                        onDiscover = storageModel::discover,
                         onRemoveFile = storageModel::removeFile,
                         onClearFiles = storageModel::clearFiles,
                         onOpenSource = { open(Route.SourceRoute(it)) },

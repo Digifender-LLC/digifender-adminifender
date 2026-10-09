@@ -16,10 +16,14 @@ import okhttp3.Request
 
 // Device extraction of PDFs and images (lld.md#text-extraction-and-ocr). The limits below are the Worker's; the claim
 // repeats them and a claim that states other limits is refused, so a changed Worker cannot silently change what is sent.
+/** Pages one lease reads; a longer document is read over several leases, each started by the owner's "read more". */
 const val MAX_EXTRACTION_PAGES = 100
+
+/** Pages of one document that can be read in total. */
+const val MAX_DOCUMENT_PAGES = 1000
 const val MAX_BATCH_PAGES = 10
 const val MAX_BATCH_BYTES = 128 * 1024
-private const val MAX_BATCHES = 100
+private const val MAX_BATCHES = MAX_DOCUMENT_PAGES
 private const val MAX_PART = 999
 private const val MAX_ATTACHMENT_BYTES = 26_214_400L
 private val EXTRACTOR_VERSION = Regex("^[a-z0-9][a-z0-9._-]*$")
@@ -82,6 +86,8 @@ data class ExtractionWork(
     val policyRevision: Long,
     val generationId: String,
     val ocrAllowed: Boolean,
+    /** The first page this lease reads: 1, or the page after the published ones when the owner asked to read more. */
+    val startPage: Int,
     val nextBatchOrdinal: Int,
     val nextPage: Int,
     /** The server's hash of each batch already stored, in order; one per [nextBatchOrdinal]. */
@@ -225,7 +231,7 @@ fun parseBatchRequest(element: JsonElement): BatchRequest {
         val text = entry.text("text", p)
         if (text.isEmpty() || text.codePointCount(0, text.length) > MAX_BATCH_BYTES) throw WireException("$p.text: wrong length")
         PageText(
-            entry.ranged("page", p, 1, MAX_EXTRACTION_PAGES.toLong()).toInt(),
+            entry.ranged("page", p, 1, MAX_DOCUMENT_PAGES.toLong()).toInt(),
             entry.ranged("part", p, 0, MAX_PART.toLong()).toInt(),
             entry.choice("method", p, PageMethod.byWire),
             text,
@@ -243,7 +249,7 @@ fun parseBatchRequest(element: JsonElement): BatchRequest {
         body.version("extractorVersion", path),
         body.long("policyRevision", path, 0),
         body.generation(path),
-        ExtractionBatch(body.ranged("batchOrdinal", path, 0, MAX_BATCHES.toLong()).toInt(), pages, body.ranged("lastPage", path, 1, MAX_EXTRACTION_PAGES.toLong()).toInt(), complete, totalPages, manifest),
+        ExtractionBatch(body.ranged("batchOrdinal", path, 0, MAX_BATCHES.toLong()).toInt(), pages, body.ranged("lastPage", path, 1, MAX_DOCUMENT_PAGES.toLong()).toInt(), complete, totalPages, manifest),
     )
 }
 
@@ -270,7 +276,7 @@ fun parseClaim(element: JsonElement): ClaimResponse {
         p,
         setOf(
             "leaseId", "leaseToken", "attachmentId", "sourceId", "kind", "contentHash", "sizeBytes", "extractorVersion", "policyRevision", "generationId",
-            "ocrAllowed", "maxPages", "maxBatchPages", "maxBatchBytes", "nextBatchOrdinal", "nextPage", "batchHashes", "expiresAt",
+            "ocrAllowed", "startPage", "maxPages", "maxBatchPages", "maxBatchBytes", "nextBatchOrdinal", "nextPage", "batchHashes", "expiresAt",
         ),
     )
     // The limits are part of the contract; a Worker that states other ones is not the Worker this version was written for.
@@ -298,8 +304,9 @@ fun parseClaim(element: JsonElement): ClaimResponse {
             work.long("policyRevision", p, 0),
             work.generation(p),
             work.bool("ocrAllowed", p),
+            work.ranged("startPage", p, 1, MAX_DOCUMENT_PAGES.toLong()).toInt(),
             nextOrdinal,
-            work.ranged("nextPage", p, 1, MAX_EXTRACTION_PAGES + 1L).toInt(),
+            work.ranged("nextPage", p, 1, MAX_DOCUMENT_PAGES + 1L).toInt(),
             hashes,
             work.timestamp("expiresAt", p),
         ),
@@ -330,7 +337,7 @@ fun parseBatchResult(element: JsonElement): BatchResult {
         status,
         body.digest("batchHash", path),
         body.ranged("nextBatchOrdinal", path, 1, MAX_BATCHES + 1L).toInt(),
-        body.ranged("nextPage", path, 2, MAX_EXTRACTION_PAGES + 1L).toInt(),
+        body.ranged("nextPage", path, 2, MAX_DOCUMENT_PAGES + 1L).toInt(),
         published,
         limited,
     )
@@ -402,7 +409,29 @@ interface ExtractionApi {
 /** Codes under which the Worker has ended the lease or made it unusable; the run stops and the file is claimed again later. */
 private val LEASE_ENDED = setOf("lease_lost", "not_eligible", "policy_changed", "input_changed", "generation_mismatch", "generation_corrupt")
 
-class HttpExtractionApi(client: OkHttpClient, baseUrl: HttpUrl, tokens: AccessTokens) : ExtractionApi {
+/** What the Worker said to the owner's request for the pages after the ones already read. */
+sealed interface ReadMoreOutcome {
+    /** The file is queued to continue from [resumePage]; what is searchable has not changed. */
+    data class Requested(val resumePage: Int) : ReadMoreOutcome
+
+    /** The file has no further pages waiting (already requested, already complete, or never read). */
+    data object NothingToRead : ReadMoreOutcome
+
+    /** The email is gone, quarantined or otherwise not processable now. */
+    data class NotAvailable(val code: String) : ReadMoreOutcome
+
+    data object SessionExpired : ReadMoreOutcome
+
+    /** No usable answer. The same request may be repeated: asking twice is one request. */
+    data class Unavailable(val code: String) : ReadMoreOutcome
+}
+
+/** `POST /attachments/{id}/read-more`: the owner's request to read the pages after the published ones (lld.md#text-extraction-and-ocr). */
+interface ReadMoreApi {
+    suspend fun readMore(attachmentId: String): ReadMoreOutcome
+}
+
+class HttpExtractionApi(client: OkHttpClient, baseUrl: HttpUrl, tokens: AccessTokens) : ExtractionApi, ReadMoreApi {
     private val core = HttpCore(client, baseUrl, tokens)
 
     /** One POST with a fresh Idempotency-Key. Repeating a batch is safe without a stable key: the Worker answers a stored one as a replay. */
@@ -471,6 +500,28 @@ class HttpExtractionApi(client: OkHttpClient, baseUrl: HttpUrl, tokens: AccessTo
             }
         },
     )
+
+    override suspend fun readMore(attachmentId: String): ReadMoreOutcome {
+        if (!isUuid(attachmentId)) return ReadMoreOutcome.NotAvailable("invalid_request")
+        return post(
+            arrayOf("attachments", attachmentId, "read-more"),
+            buildJsonObject {},
+            ReadMoreOutcome.SessionExpired,
+            { ReadMoreOutcome.Unavailable(it) },
+            { data ->
+                val body = data.asObject("$").exactly("$", setOf("attachmentId", "state", "detail", "resumePage"))
+                if (body.uuid("attachmentId", "$") != attachmentId) throw WireException("$.attachmentId: another attachment")
+                ReadMoreOutcome.Requested(body.ranged("resumePage", "$", 2, MAX_DOCUMENT_PAGES.toLong()).toInt())
+            },
+            { status, e ->
+                when {
+                    e.code == "nothing_to_read" -> ReadMoreOutcome.NothingToRead
+                    e.code == "not_eligible" || status == 404 -> ReadMoreOutcome.NotAvailable(e.code)
+                    else -> ReadMoreOutcome.Unavailable(e.code)
+                }
+            },
+        )
+    }
 
     override suspend fun outcome(work: ExtractionWork, outcome: ExtractionOutcome): OutcomeResult = post(
         arrayOf("device-work", "extraction", work.leaseId, "outcome"),

@@ -65,6 +65,7 @@ interface Work {
   policyRevision: number;
   generationId: string;
   ocrAllowed: boolean;
+  startPage: number;
   nextBatchOrdinal: number;
   nextPage: number;
   batchHashes: string[];
@@ -107,6 +108,8 @@ const manifest = (hashes: string[]) => sha256Hex(hashes.join('\n'));
 const state = async (attachmentId: string) => db().prepare('SELECT state, detail, active_generation, revision FROM attachment_processing WHERE attachment_id = ?').bind(attachmentId).first<{ state: string; detail: string | null; active_generation: string | null; revision: number }>();
 const chunksOf = async (sourceId: string) => (await api('GET', `/sources/${sourceId}/chunks`, { token })).body.data.chunks as { attachmentId: string | null; page: number | null; text: string; startOffset: number | null }[];
 const found = async (q: string) => (await api('GET', `/search?q=${encodeURIComponent(q)}`, { token })).body.data.results as { sourceId: string }[];
+/** The distinct emails a search finds: a hit is one chunk, so a long document matches many times. */
+const foundIn = async (q: string) => [...new Set((await found(q)).map((r) => r.sourceId))];
 
 async function setInference(inference: InferenceSettings) {
   const current = await loadSettings(db());
@@ -251,6 +254,153 @@ describe('device extraction', () => {
     expect(done.status, JSON.stringify(done.body)).toBe(200);
     expect(done.body.data.attachment).toEqual({ state: 'ready', detail: 'limit' });
     expect((await chunksOf(sourceId)).filter((c) => c.attachmentId === work.attachmentId)).toHaveLength(10);
+  });
+
+  /** Reads pages 1 to 100 of a 250-page document (one short page of text each) and publishes them with the limit. */
+  async function publishFirstHundred(files = [pdf()]) {
+    const source = await deferredSource(files);
+    const work = await claimWork();
+    const hashes: string[] = [];
+    for (let ordinal = 0; ordinal < 10; ordinal += 1) {
+      const first = ordinal * 10 + 1;
+      const pages = Array.from({ length: 10 }, (_, i) => page(first + i, `Alpha page ${first + i} text`));
+      const last = first + 9;
+      const final = ordinal === 9;
+      const res = await batch(work, { batchOrdinal: ordinal, pages, lastPage: last, ...(final ? { complete: true, totalPages: 250, manifestHash: await manifest(hashes) } : {}) });
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
+      hashes.push(res.body.data.batchHash);
+    }
+    return { ...source, work, hashes };
+  }
+
+  const readMore = (attachmentId: string, now = T0) => api('POST', `/attachments/${attachmentId}/read-more`, { token, key: key(), now, body: {} });
+  const archiveCount = async (generation: string) => (await env.ARCHIVE_0001.prepare('SELECT COUNT(*) AS n FROM chunks WHERE generation_id = ?').bind(generation).first<{ n: number }>())!.n;
+
+  it('reads on past the limit: the published text stays searchable, the new generation starts as its copy and replaces it whole', async () => {
+    const { sourceId, work: first } = await publishFirstHundred();
+    expect(await state(first.attachmentId)).toMatchObject({ state: 'ready', detail: 'limit', active_generation: first.generationId });
+    expect(await foundIn('Alpha')).toEqual([sourceId]);
+
+    const asked = await readMore(first.attachmentId);
+    expect(asked.status, JSON.stringify(asked.body)).toBe(200);
+    expect(asked.body.data).toMatchObject({ state: 'deferred', detail: 'device_unavailable', resumePage: 101 });
+    // Waiting for the phone changes nothing the owner can search.
+    expect(await foundIn('Alpha')).toEqual([sourceId]);
+    expect(await state(first.attachmentId)).toMatchObject({ state: 'deferred', active_generation: first.generationId });
+
+    const work = await claimWork({ now: T0 + 1000 });
+    expect(work).toMatchObject({ attachmentId: first.attachmentId, startPage: 101, nextBatchOrdinal: 10, nextPage: 101 });
+    expect(work.batchHashes).toHaveLength(10);
+    expect(work.generationId).toBe(`${first.generationId}:r101`);
+    // The copy is whole before the lease exists, and the published generation is untouched.
+    expect(await archiveCount(work.generationId)).toBe(await archiveCount(first.generationId));
+    expect(await state(first.attachmentId)).toMatchObject({ state: 'extracting', active_generation: first.generationId });
+
+    const b10 = await batch(work, { batchOrdinal: 10, pages: [page(101, 'Beta page 101 text'), page(105, 'Beta page 105 text')], lastPage: 110 });
+    expect(b10.status, JSON.stringify(b10.body)).toBe(200);
+    expect(await foundIn('Beta')).toEqual([]);
+    const done = await batch(work, { batchOrdinal: 11, pages: [page(111, 'Beta page 111 text')], lastPage: 120, complete: true, totalPages: 120, manifestHash: await manifest([...work.batchHashes, b10.body.data.batchHash]) });
+    expect(done.status, JSON.stringify(done.body)).toBe(200);
+    expect(done.body.data.attachment).toEqual({ state: 'ready', detail: null });
+
+    expect(await state(first.attachmentId)).toMatchObject({ state: 'ready', detail: null, active_generation: work.generationId });
+    const row = await db().prepare('SELECT pages_read, pages_total, resume_page FROM attachment_processing WHERE attachment_id = ?').bind(first.attachmentId).first();
+    expect(row).toEqual({ pages_read: 120, pages_total: 120, resume_page: null });
+    // Old and new text are both there, each once: only the new generation is read.
+    expect(await foundIn('Alpha')).toEqual([sourceId]);
+    expect(await foundIn('Beta')).toEqual([sourceId]);
+    const published = await env.ARCHIVE_0001.prepare('SELECT page FROM chunks WHERE attachment_id = ? AND generation_id = ? ORDER BY ordinal').bind(first.attachmentId, work.generationId).all<{ page: number }>();
+    expect(published.results.map((c) => c.page)).toEqual([...Array.from({ length: 100 }, (_, i) => i + 1), 101, 105, 111]);
+    // The earlier generation goes after a day, and the new one stays.
+    await maintainExtraction(env, T0 + UNPUBLISHED_GENERATION_MS + 10_000);
+    expect(await archiveCount(first.generationId)).toBe(0);
+    expect(await archiveCount(work.generationId)).toBe(103);
+    expect(await foundIn('Alpha')).toEqual([sourceId]);
+  });
+
+  it('stops a lease a hundred pages after the page it started on, and makes the last of them close the read', async () => {
+    const { work: first } = await publishFirstHundred();
+    await readMore(first.attachmentId);
+    const work = await claimWork({ now: T0 + 1000 });
+    // Pages 101 to 190 in nine batches, then 191 to 194: the next batch stays within ten pages but would end past page 200.
+    for (let ordinal = 10; ordinal < 19; ordinal += 1) {
+      const firstPage = 101 + (ordinal - 10) * 10;
+      const res = await batch(work, { batchOrdinal: ordinal, pages: [page(firstPage, `Beta page ${firstPage} text`)], lastPage: firstPage + 9 }, T0 + 1000);
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
+    }
+    expect((await batch(work, { batchOrdinal: 19, pages: [page(191, 'Beta page 191 text')], lastPage: 194 }, T0 + 1000)).status).toBe(200);
+    const over = await batch(work, { batchOrdinal: 20, pages: [page(195, 'Beta page 195 text')], lastPage: 204 }, T0 + 1000);
+    expect(over.status).toBe(400);
+    expect(over.body.error?.details?.reason).toBe('beyond_lease_pages');
+    // Page 200 is the last this lease may read, so a batch ending there must close the read.
+    const open = await batch(work, { batchOrdinal: 20, pages: [page(195, 'Beta page 195 text')], lastPage: 200 }, T0 + 1000);
+    expect(open.status).toBe(400);
+    expect(open.body.error?.details?.reason).toBe('required_at_page_limit');
+  });
+
+  it('keeps reading in steps: a second request after another limit continues from the page reached', async () => {
+    const { work: first } = await publishFirstHundred();
+    await readMore(first.attachmentId);
+    const second = await claimWork({ now: T0 + 1000 });
+    const hashes = [...second.batchHashes];
+    for (let ordinal = 10; ordinal < 20; ordinal += 1) {
+      const firstPage = 101 + (ordinal - 10) * 10;
+      const final = ordinal === 19;
+      const res = await batch(second, { batchOrdinal: ordinal, pages: [page(firstPage, `Beta page ${firstPage} text`)], lastPage: firstPage + 9, ...(final ? { complete: true, totalPages: 250, manifestHash: await manifest(hashes) } : {}) }, T0 + 1000);
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
+      hashes.push(res.body.data.batchHash);
+    }
+    expect(await state(first.attachmentId)).toMatchObject({ state: 'ready', detail: 'limit' });
+    const asked = await readMore(first.attachmentId, T0 + 2000);
+    expect(asked.body.data.resumePage).toBe(201);
+    const third = await claimWork({ now: T0 + 3000 });
+    expect(third).toMatchObject({ startPage: 201, nextBatchOrdinal: 20, nextPage: 201 });
+    expect(third.generationId).toBe(`${first.generationId}:r201`);
+  });
+
+  it('refuses to read more when there is nothing to read or the email may not be processed', async () => {
+    const fresh = await publishFirstHundred([pdf('y')]);
+    // A file that was never read, and one that does not exist.
+    const other = await deferredSource([pdf('z')]);
+    expect((await readMore(other.attachments['scan-z.pdf']!)).body.error?.code).toBe('nothing_to_read');
+    expect((await readMore(crypto.randomUUID())).status).toBe(404);
+    const revision = (await api('GET', `/sources/${fresh.sourceId}`, { token })).body.data.source.revision as number;
+    expect((await api('POST', `/sources/${fresh.sourceId}/quarantine`, { token, key: key(), body: { expectedRevision: revision } })).status).toBe(200);
+    expect((await readMore(fresh.work.attachmentId)).body.error?.code).toBe('not_eligible');
+  });
+
+  it('keeps the published text and the offer to read more when a resumed read fails or is handed back', async () => {
+    const { work: first, sourceId } = await publishFirstHundred();
+    await readMore(first.attachmentId);
+    const resumed = await claimWork({ now: T0 + 1000 });
+    const failed = await api('POST', `/device-work/extraction/${resumed.leaseId}/outcome`, { token, key: key(), now: T0 + 1000, body: { leaseToken: resumed.leaseToken, outcome: 'failed' } });
+    expect(failed.body.data.attachment).toEqual({ state: 'ready', detail: 'limit' });
+    expect(await state(first.attachmentId)).toMatchObject({ state: 'ready', detail: 'limit', active_generation: first.generationId });
+    expect(await db().prepare('SELECT resume_page FROM attachment_processing WHERE attachment_id = ?').bind(first.attachmentId).first()).toEqual({ resume_page: null });
+    expect(await foundIn('Alpha')).toEqual([sourceId]);
+
+    // Handing it back for later keeps the request: the file waits and is claimed again from the same page.
+    await readMore(first.attachmentId, T0 + 2000);
+    const again = await claimWork({ now: T0 + 3000 });
+    await api('POST', `/device-work/extraction/${again.leaseId}/outcome`, { token, key: key(), now: T0 + 3000, body: { leaseToken: again.leaseToken, outcome: 'unavailable' } });
+    expect(await state(first.attachmentId)).toMatchObject({ state: 'deferred', detail: 'device_unavailable' });
+    const third = await claimWork({ now: T0 + 4000 });
+    expect(third).toMatchObject({ startPage: 101, nextBatchOrdinal: 10 });
+  });
+
+  it('continues an expired resumed read without copying again or duplicating text', async () => {
+    const { work: first, sourceId } = await publishFirstHundred();
+    await readMore(first.attachmentId);
+    const old = await claimWork({ now: T0 + 1000 });
+    const b10 = await batch(old, { batchOrdinal: 10, pages: [page(101, 'Beta page 101 text')], lastPage: 110 }, T0 + 1000);
+    expect(b10.status).toBe(200);
+    const later = T0 + 1000 + EXTRACTION_LEASE_MS + 60_000;
+    token = await tokenAt(later);
+    const fresh = await claimWork({ now: later });
+    expect(fresh).toMatchObject({ generationId: old.generationId, startPage: 101, nextBatchOrdinal: 11, nextPage: 111 });
+    expect(fresh.batchHashes).toHaveLength(11);
+    expect(await archiveCount(old.generationId)).toBe(101);
+    expect(await foundIn('Alpha')).toEqual([sourceId]);
   });
 
   it('keeps the lease alive with heartbeats and returns the file when it expires', async () => {

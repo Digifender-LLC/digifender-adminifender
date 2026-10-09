@@ -21,16 +21,22 @@ Exercises [TDD recovery and operational controls](../docs/specifications/tdd.md#
 
 ## Evidence record
 
+### Staging drill, 2026-10-09 (steps 1 to 6; step 7 pending the owner)
+
 | Field | Value |
 | --- | --- |
-| Date, environment, operator | |
-| Worker version before and after | |
-| Bookmarks used | |
-| Ledger head verified (hash, count) | |
-| Deleted IDs rechecked | |
-| Sources and objects reconciled (counts, mismatches) | |
-| Fresh enrollment device | |
-| Restore time | |
-| Problems and follow-ups | |
+| Date, environment, operator | 2026-10-09, staging, an agent with the Cloudflare API token |
+| Worker version before and after | Before `222e2074-6915-4fd1-938a-79da3eeea2f9`; recovery mode `a315b999-f6fb-4f11-b8d6-f087b0bf37b7` (`--var RECOVERY_RUN_ID:drill-20261009`); after `24b43dfd-18b3-4ae7-bd7b-28b24f7b9b63`. Backend code identical to commit `36a1a91` (empty `git diff` of `backend/`). |
+| Bookmarks used | Control `00000162-000000ae-000050ff-064c64d69105c9a4dcf54eaa373754cd`, archive `00000015-00000000-000050ff-3d57ff55bc3968abe3d67148d12c39f6`, both taken seconds before the restore. Undo bookmarks printed by the restore: control `00000162-ffffffff-000050ff-91bfb66d5d13f7da3de3d0a7fbc95ee8`, archive `00000015-ffffffff-000050ff-24c5aca3d388f8684a3cb9cd10300651`. |
+| Ledger head verified (hash, count) | `recovery_runs` row `drill-20261009`, state `completed`: ledger `ok: true`, head sequence 2, 2 records, 2 deleted sources (head hash is not printed in the result). |
+| Deleted IDs rechecked | 2 ledgered sources; `reapplied: 0`, `alreadyDeleted: 2`. The 404 check through the API was **not** run (needs a session). |
+| Sources and objects reconciled (counts, mismatches) | 8 live sources, 8 raw objects checked, 0 missing. |
+| Identity reset | Passkeys revoked 1, sessions 1, devices 2, recovery-key hashes 1, challenges 13. After the run the control database shows 0 live passkeys and 0 live sessions. |
+| In-flight inference | 0 marked uncertain. |
+| Fresh enrollment device | **Not done.** Staging has no usable passkey until the owner enrols one (bootstrap procedure in [staging.md](staging.md)); the staging app cannot sign in until then. |
+| Restore time | Both `time-travel restore` calls finished in 14 seconds (18:28:22 to 18:28:36 UTC). Recovery mode lasted until the scheduled pass completed, within about 3 minutes of the deploy. |
+| Problems and follow-ups | Limits of this drill: the restore was to a bookmark taken moments earlier, so it proves the mechanism and the recovery pass but not data loss handling; step 1 (freeze effects) and the diagnostics export were skipped because they need a session; steps 7 and 8 (fresh passkey, real email-to-inbox, search and chat path) need the owner's phone. The restore does not exercise a production-sized archive. |
 
-No drill has been run yet. Recovery mode is implemented and locally verified (`backend/tests/worker/recovery.test.ts`); staging has not yet had migration 0013 applied.
+### Production
+
+No production drill has been run (no production environment exists).

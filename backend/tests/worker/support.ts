@@ -29,13 +29,14 @@ export interface ApiResult {
 export async function api(
   method: string,
   path: string,
-  options: { body?: unknown; token?: string; auth?: string; now?: number; key?: string; raw?: boolean; env?: Env } = {},
+  options: { body?: unknown; token?: string; auth?: string; now?: number; key?: string; raw?: boolean; env?: Env; extraHeaders?: Record<string, string> } = {},
 ): Promise<ApiResult> {
   const headers: Record<string, string> = { 'cf-connecting-ip': '192.0.2.10' };
   if (options.body !== undefined) headers['content-type'] = 'application/json';
   if (options.token) headers.authorization = `Bearer ${options.token}`;
   if (options.auth) headers.authorization = options.auth;
   if (options.key) headers['idempotency-key'] = options.key;
+  Object.assign(headers, options.extraHeaders);
   const request = new Request(`https://api.example.invalid/api/v1${path}`, { method, headers, body: options.body === undefined ? null : JSON.stringify(options.body) });
   const response = await handleFetch(request, options.env ?? env, options.now ?? T0);
   const isJson = response.headers.get('content-type')?.startsWith('application/json');

@@ -284,13 +284,38 @@ sealed interface ExportRead {
     data class Unavailable(val code: String) : ExportRead
 }
 
-/** `POST /exports`, `GET /exports/{id}` and the authenticated ZIP stream (lld.md#exports). */
+sealed interface ExportListResult {
+    data class Ok(val exports: List<ExportStatus>) : ExportListResult
+
+    data object SessionExpired : ExportListResult
+
+    data class Unavailable(val code: String) : ExportListResult
+}
+
+/** `export-list.schema.json`: the newest exports, each in the shape of `GET /exports/{id}`. At most 50. The schema cannot say each ID once; the reader of the list copes with a repeat. */
+fun parseExportList(element: JsonElement): List<ExportStatus> {
+    val body = element.asObject("$").exactly("$", setOf("exports"))
+    val items = body.array("exports", "$")
+    if (items.size > 50) throw WireException("$.exports: too many")
+    return items.map { parseExportStatus(it) }
+}
+
+/** `POST /exports`, `GET /exports`, `GET /exports/{id}` and the authenticated ZIP stream (lld.md#exports). */
 interface ExportApi {
     suspend fun create(idempotencyKey: String, scope: ExportScope): CreateExportResult
 
     suspend fun status(exportId: String): ExportRead
 
+    /** The newest exports on the Worker, to find ones this phone has no record of. An implementation without it keeps this default. */
+    suspend fun list(): ExportListResult = ExportListResult.Unavailable("list_unsupported")
+
     suspend fun openContent(exportId: String): OpenResult
+
+    /**
+     * The ZIP from byte [offset] to its end, for a download whose connection dropped. The answer is a stream of exactly the missing
+     * bytes, or `Unavailable` when the Worker did not answer a proper byte range; an implementation without ranges keeps this default.
+     */
+    suspend fun openContentFrom(exportId: String, offset: Long): OpenResult = OpenResult.Unavailable("ranges_unsupported")
 }
 
 /** `GET /attachments/{id}/content`: an authenticated byte stream, never a public link. */

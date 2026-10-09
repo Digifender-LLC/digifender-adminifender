@@ -46,7 +46,7 @@ Made on the built debug APK and its merged manifest, not on a device: the `arm64
 
 - Anything on Android: no emulator, device, screenshot or TalkBack; `PdfRenderer`, the text layer API, `ImageDecoder` orientation handling, ML Kit recognition quality and speed, WorkManager constraints, thermal and battery reads, the memory use of a 4-megapixel render, and whether `getTextContents()` returns what is assumed are all unverified. No instrumentation test was added or run.
 - FR-010 acceptance (searchable text from Latin JPEG/PNG/WebP and scanned PDF fixtures) and the 30-document accuracy corpus: not built.
-- Local inference readiness and claims (LiteRT-LM, `/device-work`), and the "Resume next pages" continuation past 100 pages (the Worker has none either).
+- Local inference readiness and claims (LiteRT-LM, `/device-work`), and the continuation past 100 pages (added afterwards, see [read-more-pages.md](read-more-pages.md)).
 - A scanned PDF under `no_ai` (recognition not allowed) is published as `ready` with no text rather than a blocked state, because the Worker has no detail for it; the email screen cannot say why.
 - A page with more than 128 KiB of text is cut to fit one batch; no page is sent in parts. The last run's result is not stored or shown; only the attachment's synced state is.
 - Live Worker, staging, Play, CI.

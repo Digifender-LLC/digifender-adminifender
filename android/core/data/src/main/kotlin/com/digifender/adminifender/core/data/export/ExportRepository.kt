@@ -2,8 +2,10 @@ package com.digifender.adminifender.core.data.export
 
 import com.digifender.adminifender.core.data.files.Destination
 import com.digifender.adminifender.core.data.files.blockingWithAbort
+import com.digifender.adminifender.core.data.network.ContentStream
 import com.digifender.adminifender.core.data.network.CreateExportResult
 import com.digifender.adminifender.core.data.network.ExportApi
+import com.digifender.adminifender.core.data.network.ExportListResult
 import com.digifender.adminifender.core.data.network.ExportRead
 import com.digifender.adminifender.core.data.network.ExportScope
 import com.digifender.adminifender.core.data.network.ExportState
@@ -13,13 +15,16 @@ import com.digifender.adminifender.core.data.network.ScopeProblem
 import com.digifender.adminifender.core.data.network.normalized
 import com.digifender.adminifender.core.data.network.problem
 import java.io.IOException
+import java.io.OutputStream
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.Flow
@@ -54,6 +59,17 @@ sealed interface RefreshOutcome {
     data object Superseded : RefreshOutcome
 }
 
+sealed interface DiscoverOutcome {
+    /** [found] exports were listed by the Worker; [added] of them were new to this phone. */
+    data class Done(val found: Int, val added: Int) : DiscoverOutcome
+
+    data object SignIn : DiscoverOutcome
+
+    data class Unavailable(val code: String) : DiscoverOutcome
+
+    data object Superseded : DiscoverOutcome
+}
+
 sealed interface ExportDownloadOutcome {
     /** Every check passed: the saved file is the complete ZIP the export described. */
     data class Verified(val intent: ExportIntent) : ExportDownloadOutcome
@@ -74,6 +90,10 @@ sealed interface ExportDownloadOutcome {
 
 private const val CHUNK = 64 * 1024
 
+/** How many times one download may ask for the rest of the ZIP after the connection dropped, and the pause before each (times the attempt). */
+private const val MAX_RESUMES = 3
+private const val RESUME_PAUSE_MS = 1_000L
+
 /**
  * Exports as owner-chosen files (FR-012, lld.md#exports). The scope and the Idempotency-Key are stored before the
  * request; an unanswered request is only ever repeated as the *same* request. The ZIP is streamed from the
@@ -87,6 +107,7 @@ class ExportRepository(
     private val scheduler: ExportScheduler,
     private val clock: () -> Long,
     private val newId: () -> String = { UUID.randomUUID().toString() },
+    private val pause: suspend (Long) -> Unit = { delay(it) },
 ) {
     private val rows = Mutex()
     private var epoch = 0
@@ -125,6 +146,38 @@ class ExportRepository(
         val next = change(current) ?: return@withLock null
         store.put(next)
         next
+    }
+
+    /**
+     * Finds exports on the Worker that this phone has no record of (made before a sign-out, or on another device) and keeps them as
+     * created exports, so they can be read back and downloaded like any other. Nothing is created or changed on the Worker, and an
+     * export with no recorded scope (one from before scopes existed, never downloadable) is not adopted.
+     */
+    suspend fun discover(): DiscoverOutcome {
+        val startedIn = epochNow()
+        val listed = when (val result = api.list()) {
+            is ExportListResult.Ok -> result.exports
+            ExportListResult.SessionExpired -> return DiscoverOutcome.SignIn
+            is ExportListResult.Unavailable -> return DiscoverOutcome.Unavailable(result.code)
+        }
+        val adopted = mutableListOf<String>()
+        val current = rows.withLock {
+            if (epoch != startedIn) return@withLock false
+            val known = store.all().mapNotNull { it.exportId }.toMutableSet()
+            for (status in listed) {
+                val scope = status.scope ?: continue
+                if (!known.add(status.id)) continue
+                val now = clock()
+                // The key was never sent: this export was not created by this phone, so there is no request to repeat.
+                val intent = ExportIntent(newId(), newId(), scope, ExportPhase.CREATED, null, status.id, status, now, ExportDownload.NONE, null, null, null, null, null, status.createdAtMs, now)
+                store.put(intent)
+                adopted += intent.localId
+            }
+            true
+        }
+        if (!current) return DiscoverOutcome.Superseded
+        for (id in adopted) if (store.get(id)?.settled == false) scheduler.schedulePoll(id)
+        return DiscoverOutcome.Done(found = listed.size, added = adopted.size)
     }
 
     /** Stores the intent (scope and key) and then asks the Worker. An invalid scope is refused before anything is stored. */
@@ -315,50 +368,13 @@ class ExportRepository(
         var failure: Failure? = null
         var verification: ExportVerification? = null
         try {
-            verification = stream.use { s ->
-                blockingWithAbort(s::abort) {
-                    val verifier = StreamingZipVerifier(expected)
-                    val buffer = ByteArray(CHUNK)
-                    var total = 0L
-                    val out = try {
-                        destination.open()
-                    } catch (_: IOException) {
-                        throw DestinationFailure()
-                    }
-                    try {
-                        while (true) {
-                            ensureActive()
-                            val n = try {
-                                s.body.read(buffer)
-                            } catch (_: IOException) {
-                                throw TransferInterrupted()
-                            }
-                            if (n < 0) break
-                            total += n
-                            verifier.accept(buffer, 0, n)
-                            try {
-                                out.write(buffer, 0, n)
-                            } catch (_: IOException) {
-                                throw DestinationFailure()
-                            }
-                        }
-                        if (s.contentLength >= 0 && s.contentLength != total) throw ZipProblem("length_mismatch")
-                        val result = verifier.finish()
-                        try {
-                            out.flush()
-                        } catch (_: IOException) {
-                            throw DestinationFailure()
-                        }
-                        result
-                    } finally {
-                        try {
-                            out.close()
-                        } catch (_: IOException) {
-                            // A close that fails after a clean verify is caught by the size check below.
-                        }
-                    }
-                }
+            val out = try {
+                blockingWithAbort(stream::abort) { destination.open() }
+            } catch (_: IOException) {
+                stream.close()
+                throw DestinationFailure()
             }
+            verification = receive(intent.exportId!!, stream, StreamingZipVerifier(expected), out)
             val written = destination.sizeBytes()
             if (written != null && written != verification.zipBytes) failure = Failure(ExportDownload.FAILED, "destination_short")
         } catch (e: CancellationException) {
@@ -389,6 +405,86 @@ class ExportRepository(
     private class TransferInterrupted : IOException()
 
     private class DestinationFailure : IOException()
+
+    /** How one pass over a stream ended: the whole ZIP was read and checked, or the connection dropped after [total] bytes in all. */
+    private sealed interface Pass {
+        data class Finished(val verification: ExportVerification) : Pass
+
+        data class Dropped(val total: Long) : Pass
+    }
+
+    /**
+     * Reads the ZIP into [out] and through [verifier]. When the connection drops part-way, the rest is asked for with a byte range
+     * and the read goes on where it stopped, up to [MAX_RESUMES] times: the verifier and the destination are still open, so
+     * nothing already written is read again, and the final checks (every entry's CRC and SHA-256, the manifest, the sizes) judge
+     * the file as a whole whichever connections it came from. A resume the Worker does not answer exactly (not the same ZIP, not
+     * exactly the missing bytes) is a failed attempt, never a guess. Owns [out]: it is closed before this returns.
+     */
+    private suspend fun receive(exportId: String, first: ContentStream, verifier: StreamingZipVerifier, out: OutputStream): ExportVerification {
+        var current = first
+        val fullLength = first.contentLength
+        var total = 0L
+        var resumes = 0
+        try {
+            while (true) {
+                val received = total
+                val pass = current.use { stream -> blockingWithAbort(stream::abort) { readPass(stream, verifier, out, received) } }
+                when (pass) {
+                    is Pass.Finished -> return pass.verification
+                    is Pass.Dropped -> {
+                        total = pass.total
+                        // A download being stopped also ends a read abruptly; that is handled as a stop, not as a dropped connection.
+                        if (!currentCoroutineContext().isActive || resumes >= MAX_RESUMES) throw TransferInterrupted()
+                        resumes += 1
+                        pause(RESUME_PAUSE_MS * resumes)
+                        val next = (api.openContentFrom(exportId, total) as? OpenResult.Open)?.stream ?: throw TransferInterrupted()
+                        if (fullLength >= 0 && next.contentLength != fullLength - total) {
+                            next.close()
+                            throw TransferInterrupted()
+                        }
+                        current = next
+                    }
+                }
+            }
+        } finally {
+            try {
+                out.close()
+            } catch (_: IOException) {
+                // A close that fails after a clean verify is caught by the size check below.
+            }
+        }
+    }
+
+    /** Reads [stream] to its end (finished) or to the first read error (dropped), counting on from [alreadyReceived]. Blocking. */
+    private fun CoroutineScope.readPass(stream: ContentStream, verifier: StreamingZipVerifier, out: OutputStream, alreadyReceived: Long): Pass {
+        val buffer = ByteArray(CHUNK)
+        var total = alreadyReceived
+        while (true) {
+            ensureActive()
+            val n = try {
+                stream.body.read(buffer)
+            } catch (_: IOException) {
+                return Pass.Dropped(total)
+            }
+            if (n < 0) break
+            total += n
+            verifier.accept(buffer, 0, n)
+            try {
+                out.write(buffer, 0, n)
+            } catch (_: IOException) {
+                throw DestinationFailure()
+            }
+        }
+        // Each connection carries exactly the bytes it announced: the whole ZIP, or the part that was still missing.
+        if (stream.contentLength >= 0 && stream.contentLength != total - alreadyReceived) throw ZipProblem("length_mismatch")
+        val result = verifier.finish()
+        try {
+            out.flush()
+        } catch (_: IOException) {
+            throw DestinationFailure()
+        }
+        return Pass.Finished(result)
+    }
 
     /** Records how the download ended. Anything short of verified discards the destination's file first and records whether that worked. */
     private suspend fun settle(localId: String, startedIn: Int, destination: Destination, failure: Failure?, verification: ExportVerification?, signIn: Boolean = false, refreshAfter: Boolean = false): ExportDownloadOutcome {
