@@ -15,11 +15,16 @@ import * as rules from '../triage/routes';
 import * as chat from '../chat/routes';
 import * as extractionDevice from '../extraction/device';
 import * as device from '../inference/device';
+import * as reports from '../reports/routes';
+import * as records from '../reports/records';
+import * as obligations from '../reports/obligations';
 import * as inference from '../inference/routes';
 import * as settings from '../inference/settings';
 import * as notifications from '../notifications/routes';
 import * as health from '../diagnostics/health';
 import * as diagnostics from '../diagnostics/export';
+import { enrollmentAsset } from './enroll';
+import { recoveryRunId } from '../recovery/recovery';
 import { fail, ok } from './envelope';
 import { HttpError } from './errors';
 import { withIdempotency } from './idempotency';
@@ -139,14 +144,36 @@ const ROUTES: Route[] = [
   { method: 'POST', pattern: /^\/device-work\/claim$/, handler: ownerMutation(device.readinessBody, device.claimWork, { recentAuth: false }) },
   { method: 'POST', pattern: new RegExp(`^/device-work/${ID}/heartbeat$`), handler: ownerMutation(device.heartbeatBody, device.heartbeat, { recentAuth: false }) },
   { method: 'POST', pattern: new RegExp(`^/device-work/${ID}/result$`), handler: ownerMutation(device.resultBody, device.submitResult, { recentAuth: false }) },
+  { method: 'GET', pattern: /^\/services$/, handler: reports.listServices },
+  { method: 'POST', pattern: /^\/services$/, handler: mutation(reports.serviceBody, reports.createService) },
+  { method: 'PATCH', pattern: new RegExp(`^/services/${ID}$`), handler: mutation(reports.servicePatch, reports.updateService) },
+  { method: 'POST', pattern: new RegExp(`^/services/${ID}/report-keys$`), handler: reports.createReportKey },
+  { method: 'POST', pattern: new RegExp(`^/report-keys/${ID}/revoke$`), handler: ownerMutation(reports.revokeBody, reports.revokeReportKey, { recentAuth: true }) },
+  { method: 'GET', pattern: /^\/operations\/overview$/, handler: reports.operationsOverview },
+  { method: 'GET', pattern: /^\/operations\/timeline$/, handler: records.timeline },
+  { method: 'POST', pattern: new RegExp(`^/services/${ID}/dependencies$`), handler: mutation(records.dependencyBody, records.changeDependency) },
+  { method: 'GET', pattern: /^\/heartbeat-expectations$/, handler: obligations.listExpectations },
+  { method: 'POST', pattern: /^\/heartbeat-expectations$/, handler: mutation(obligations.expectationBody, obligations.createExpectation) },
+  { method: 'PATCH', pattern: new RegExp(`^/heartbeat-expectations/${ID}$`), handler: mutation(obligations.expectationPatch, obligations.updateExpectation) },
+  { method: 'GET', pattern: /^\/cost-entries$/, handler: records.listCosts },
+  { method: 'POST', pattern: /^\/cost-entries$/, handler: mutation(records.costBody, records.createCost) },
+  { method: 'PATCH', pattern: new RegExp(`^/cost-entries/${ID}$`), handler: mutation(records.costPatch, records.updateCost) },
+  { method: 'GET', pattern: /^\/runbooks$/, handler: records.listRunbooks },
+  { method: 'POST', pattern: /^\/runbooks$/, handler: mutation(records.runbookBody, records.createRunbook) },
+  { method: 'PATCH', pattern: new RegExp(`^/runbooks/${ID}$`), handler: mutation(records.runbookPatch, records.updateRunbook) },
+  { method: 'POST', pattern: new RegExp(`^/device-work/${ID}/decline$`), handler: ownerMutation(device.declineBody, device.declineWork, { recentAuth: false }) },
   { method: 'POST', pattern: new RegExp(`^/briefings/${ID}/review$`), handler: mutation(briefings.reviewBody, briefings.reviewBriefing) },
 ];
 
 export async function handleFetch(request: Request, env: Env, now = Date.now()): Promise<Response> {
   const requestId = crypto.randomUUID();
   const { pathname } = new URL(request.url);
+  const page = enrollmentAsset(request);
+  if (page) return page;
   if (!pathname.startsWith(`${PREFIX}/`)) return fail(404, 'not_found', 'Not found.', requestId);
   const path = pathname.slice(PREFIX.length);
+  // Recovery mode serves nothing but liveness until deletions are reapplied and identity is reset.
+  if (recoveryRunId(env) && path !== '/health' && path !== '/meta') return fail(503, 'recovering', 'The service is being restored.', requestId, { retryable: true });
 
   try {
     for (const route of ROUTES) {
@@ -160,6 +187,7 @@ export async function handleFetch(request: Request, env: Env, now = Date.now()):
           headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' },
         });
       }
+      if (result instanceof WithStatus) return ok(result.data, requestId, result.status);
       return ok(result, requestId);
     }
     return fail(404, 'not_found', 'Not found.', requestId);

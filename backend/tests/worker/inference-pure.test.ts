@@ -43,6 +43,8 @@ describe('route', () => {
     expect(cloudGate(cloud, false)).toEqual({ ok: false, reason: 'cloud_unavailable' });
     expect(cloudGate({ ...cloud, neuronsPerMillionOutputTokens: null }, true)).toEqual({ ok: false, reason: 'model_rate_unknown' });
     expect(cloudGate({ ...cloud, account: 'unattested' }, true)).toEqual({ ok: false, reason: 'account_headroom_unknown' });
+    expect(cloudGate({ ...cloud, account: 'unattested', paidMonthlyCeilingUsd: 5, usdPerThousandNeurons: null }, true)).toEqual({ ok: false, reason: 'account_headroom_unknown' });
+    expect(cloudGate({ ...cloud, account: 'unattested', paidMonthlyCeilingUsd: 5, usdPerThousandNeurons: 0.011 }, true)).toEqual({ ok: true });
   });
 });
 

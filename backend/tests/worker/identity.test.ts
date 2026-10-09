@@ -200,3 +200,23 @@ describe('recovery', () => {
     expect((await call('POST', '/auth/recovery/options', { recoverySecret: `afk_${'Z'.repeat(43)}`, newDeviceName: 'X' })).status).toBe(429);
   });
 });
+
+describe('enrollment page', () => {
+  it('serves the page and its assets same-origin under a strict content security policy', async () => {
+    for (const [path, type] of [['/enroll', 'text/html'], ['/enroll.js', 'text/javascript'], ['/enroll.css', 'text/css']] as const) {
+      const response = await handleFetch(new Request(`https://api.example.invalid${path}`), env, t0);
+      expect(response.status).toBe(200);
+      expect(response.headers.get('content-type')).toContain(type);
+      expect(response.headers.get('content-security-policy')).toContain("script-src 'self'");
+      expect(response.headers.get('content-security-policy')).toContain("frame-ancestors 'none'");
+      expect(response.headers.get('cache-control')).toBe('no-store');
+    }
+    const html = await (await handleFetch(new Request('https://api.example.invalid/enroll'), env, t0)).text();
+    expect(html).not.toMatch(/<script>|\son[a-z]+=/);
+  });
+
+  it('serves nothing else outside the API prefix', async () => {
+    expect((await handleFetch(new Request('https://api.example.invalid/enroll', { method: 'POST' }), env, t0)).status).toBe(404);
+    expect((await handleFetch(new Request('https://api.example.invalid/enroll/x'), env, t0)).status).toBe(404);
+  });
+});

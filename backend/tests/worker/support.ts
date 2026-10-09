@@ -62,7 +62,7 @@ export async function enrollOwner(now = T0): Promise<{ token: string; authentica
 }
 
 /** Stages raw MIME and runs its parse job, returning the published source ID. */
-export async function ingest(raw: string, options: { to?: string; now?: number } = {}): Promise<string> {
+export async function ingest(raw: string, options: { to?: string; now?: number; env?: Partial<Env> } = {}): Promise<string> {
   const bytes = new TextEncoder().encode(raw);
   const message: InboundEmail = {
     from: 'sender@example.com',
@@ -76,7 +76,7 @@ export async function ingest(raw: string, options: { to?: string; now?: number }
       throw new Error('unexpected rejection');
     },
   };
-  const quiet = quietEnv();
+  const quiet = Object.assign(quietEnv(), options.env ?? {});
   const outcome = await admitEmail(message, quiet, options.now ?? T0);
   if (outcome.kind !== 'staged') throw new Error(outcome.kind);
   const run = await runJob(quiet, JOB_HANDLERS, outcome.jobId, options.now ?? T0);

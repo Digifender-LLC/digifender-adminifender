@@ -1,3 +1,9 @@
+-- The earlier prototype of device extraction (0011_device_extraction.sql, one lease row per attachment) was deployed to
+-- staging; on 2026-10-09 the staging tables held no leases and no batches. Its two tables carry the names this design
+-- reuses, so they are dropped first. Everything below replaces that prototype's lease and batch model.
+DROP TABLE IF EXISTS extraction_batches;
+DROP TABLE IF EXISTS extraction_leases;
+
 -- Device extraction for PDFs and images (lld.md#text-extraction-and-ocr): one live lease per attachment, immutable batches
 -- keyed by generation and ordinal, and the kind the server found when it deferred the file. Nothing here holds text: text
 -- lives in the archive partition as unpublished chunks until a fenced control update points the attachment at the generation.
