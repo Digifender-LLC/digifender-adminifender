@@ -187,6 +187,22 @@ class HttpExportApi(client: OkHttpClient, baseUrl: HttpUrl, tokens: AccessTokens
         }
     }
 
+    override suspend fun list(): ExportListResult = try {
+        val (call, response) = core.call(Request.Builder().url(core.url("exports").newBuilder().addQueryParameter("limit", "50").build()).get()) ?: return ExportListResult.SessionExpired
+        response.use {
+            val text = core.text(call, it)
+            when {
+                it.isSuccessful -> ExportListResult.Ok(parseExportList(core.data(text)))
+                it.code == 401 -> ExportListResult.SessionExpired
+                else -> ExportListResult.Unavailable(core.error(text).code)
+            }
+        }
+    } catch (_: IOException) {
+        ExportListResult.Unavailable("network")
+    } catch (_: IllegalArgumentException) {
+        ExportListResult.Unavailable("malformed_response")
+    }
+
     override suspend fun status(exportId: String): ExportRead {
         if (!isUuid(exportId)) return ExportRead.NotKnown
         return try {
@@ -211,12 +227,22 @@ class HttpExportApi(client: OkHttpClient, baseUrl: HttpUrl, tokens: AccessTokens
     override suspend fun openContent(exportId: String): OpenResult =
         if (!isUuid(exportId)) OpenResult.Gone("not_found", 404) else stream(arrayOf("exports", exportId, "content"), checksum = false)
 
+    override suspend fun openContentFrom(exportId: String, offset: Long): OpenResult =
+        if (!isUuid(exportId) || offset < 1) OpenResult.Gone("not_found", 404) else stream(arrayOf("exports", exportId, "content"), checksum = false, fromOffset = offset)
+
     override suspend fun openAttachment(attachmentId: String): OpenResult =
         if (!isUuid(attachmentId)) OpenResult.Gone("not_found", 404) else stream(arrayOf("attachments", attachmentId, "content"), checksum = true)
 
-    private suspend fun stream(segments: Array<String>, checksum: Boolean): OpenResult {
+    private suspend fun stream(segments: Array<String>, checksum: Boolean, fromOffset: Long? = null): OpenResult {
         return try {
-            val (call, response) = core.call(Request.Builder().url(core.url(*segments)).get()) ?: return OpenResult.SessionExpired
+            val request = Request.Builder().url(core.url(*segments)).get()
+            if (fromOffset != null) request.header("range", "bytes=$fromOffset-")
+            val (call, response) = core.call(request) ?: return OpenResult.SessionExpired
+            if (fromOffset != null && response.isSuccessful && !isExactTail(response, fromOffset)) {
+                // Not a 206 for the rest of the same file (a 200 means the Worker ignored the range): nothing here continues the download.
+                response.close()
+                return OpenResult.Unavailable("range_not_honoured")
+            }
             if (response.isSuccessful) {
                 val declared = if (checksum) response.header("x-attachment-sha256")?.lowercase() else null
                 return OpenResult.Open(ContentStream(response.body.contentLength(), declared, ClosingStream(response), call::cancel))
@@ -238,6 +264,14 @@ class HttpExportApi(client: OkHttpClient, baseUrl: HttpUrl, tokens: AccessTokens
         } catch (_: IllegalArgumentException) {
             OpenResult.Unavailable("malformed_response")
         }
+    }
+
+    /** A 206 whose `Content-Range` starts exactly at [offset] and runs to the last byte, with a body that has exactly that length. */
+    private fun isExactTail(response: Response, offset: Long): Boolean {
+        if (response.code != 206) return false
+        val match = Regex("^bytes (\\d+)-(\\d+)/(\\d+)$").matchEntire(response.header("content-range").orEmpty()) ?: return false
+        val (start, end, size) = match.destructured.toList().map { it.toLongOrNull() ?: return false }
+        return start == offset && end == size - 1 && size > start && response.body.contentLength() == size - start
     }
 
     /** The response body as a stream whose close also closes the response. */

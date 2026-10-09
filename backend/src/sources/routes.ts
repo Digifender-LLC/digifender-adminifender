@@ -3,6 +3,7 @@ import type { Env } from '../env';
 import { sha256Hex } from '../ids';
 import { openCursor, sealCursor } from '../http/cursor';
 import { HttpError, notFound } from '../http/errors';
+import { decideRange, rangeHeaders } from '../http/range';
 import { resolvePartition } from '../archive/partitions';
 import { v } from '../http/validate';
 import { type RegistryRow, REGISTRY_COLUMNS, REGISTRY_FROM, archiveFor, sourceProjection, visibleSource } from './registry';
@@ -177,19 +178,23 @@ export async function getAttachmentContent(request: Request, env: Env, now: numb
     }>();
     if (!attachment) continue;
     await visibleSource(env, attachment.source_id);
-    const object = await env.ARCHIVE_BUCKET.get(attachment.object_key);
-    if (!object) throw new HttpError(503, 'unavailable', 'The file is temporarily unavailable.', {}, true);
+    // A ranged request looks the size up first; a plain one reads the object once, as before.
+    const size = request.headers.has('range') ? (await env.ARCHIVE_BUCKET.head(attachment.object_key))?.size : attachment.size_bytes;
+    if (size === undefined) throw new HttpError(503, 'unavailable', 'The file is temporarily unavailable.', {}, true);
+    const decision = decideRange(request, size);
     const name = safeFilename(attachment.name);
-    return new Response(object.body, {
-      headers: {
-        'content-type': 'application/octet-stream',
-        'content-length': String(attachment.size_bytes),
-        'content-disposition': `attachment; filename="${name.replace(/[^\x20-\x7e]/g, '_')}"; filename*=UTF-8''${encodeURIComponent(name)}`,
-        'x-content-type-options': 'nosniff',
-        'cache-control': 'private, no-store',
-        'x-attachment-sha256': attachment.sha256,
-      },
-    });
+    const common = {
+      'content-type': 'application/octet-stream',
+      'content-disposition': `attachment; filename="${name.replace(/[^\x20-\x7e]/g, '_')}"; filename*=UTF-8''${encodeURIComponent(name)}`,
+      'x-content-type-options': 'nosniff',
+      'cache-control': 'private, no-store',
+      // The hash is of the whole file, also on a slice of it.
+      'x-attachment-sha256': attachment.sha256,
+    };
+    if (decision.kind === 'unsatisfiable') return new Response(null, { status: 416, headers: { ...common, ...rangeHeaders(decision, size) } });
+    const object = decision.kind === 'partial' ? await env.ARCHIVE_BUCKET.get(attachment.object_key, { range: { offset: decision.offset, length: decision.length } }) : await env.ARCHIVE_BUCKET.get(attachment.object_key);
+    if (!object) throw new HttpError(503, 'unavailable', 'The file is temporarily unavailable.', {}, true);
+    return new Response(object.body, { status: decision.kind === 'partial' ? 206 : 200, headers: { ...common, ...rangeHeaders(decision, size) } });
   }
   throw notFound();
 }

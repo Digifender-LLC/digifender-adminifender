@@ -36,6 +36,6 @@ npm run check      # typecheck, vitest run, wrangler deploy --dry-run
 - Any Android component: the PDF/OCR worker, ML Kit, rendering limits, the download, the `/device-work` client and local inference readiness (the rest of 14j).
 - Real Workers, D1 limits and latency: the statements-per-batch slicing (50) and the size of a ten-page batch were exercised only locally.
 - A second device using another device's lease (rejected by the `device_id` comparison; no test enrols a second device).
-- Continuation past 100 pages ("Resume next pages"): a longer document is published up to page 100 with detail `limit`.
+- Continuation past 100 pages was not part of this step; it is implemented afterwards and recorded in [read-more-pages.md](read-more-pages.md).
 - `confidence` is accepted and hashed, not stored. The heartbeat and outcome answers have no shared schema. The claim schema cannot state that `batchHashes` has one entry per `nextBatchOrdinal`.
 - Quarantine returns a file to `deferred: device_unavailable` rather than `stored`; the earlier server-job reset is unchanged.

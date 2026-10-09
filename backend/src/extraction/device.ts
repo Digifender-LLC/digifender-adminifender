@@ -2,7 +2,7 @@ import type { AuthContext } from '../auth/sessions';
 import { chunkText } from '../archive/normalize';
 import { assertion, isAssertionFailure } from '../db/assert';
 import type { Env } from '../env';
-import { HttpError } from '../http/errors';
+import { HttpError, notFound } from '../http/errors';
 import { type Validator, v } from '../http/validate';
 import { sha256Hex } from '../ids';
 import { POLICY_REVISION_SQL, loadSettings } from '../inference/settings';
@@ -15,7 +15,10 @@ import { REGISTRY_COLUMNS, REGISTRY_FROM, type RegistryRow, archiveFor } from '.
  * the attachment, the source and the policy, points the attachment at that generation. Nothing is readable before that.
  */
 export const EXTRACTION_LEASE_MS = 10 * 60 * 1000;
+/** Pages one lease may read. A longer document is read over several leases, each started by the owner's "read more". */
 export const MAX_DEVICE_PAGES = 100;
+/** Pages of one document that can be read in total. */
+export const MAX_DOCUMENT_PAGES = 1000;
 export const MAX_BATCH_PAGES = 10;
 export const MAX_BATCH_TEXT_BYTES = 128 * 1024;
 /** Chunk ordinals are `batchOrdinal * STRIDE + n`, so a retried batch always rewrites the same rows. */
@@ -33,7 +36,7 @@ export const claimBody = v.object({ extractorVersion, pdfText: v.boolean(), ocr:
 export const heartbeatBody = v.object({ leaseToken });
 
 const pageEntry = v.object({
-  page: v.integer({ min: 1, max: MAX_DEVICE_PAGES }),
+  page: v.integer({ min: 1, max: MAX_DOCUMENT_PAGES }),
   part: v.integer({ min: 0, max: 999 }),
   method: v.oneOf(['pdf_text', 'ocr'] as const),
   text: v.string({ min: 1, max: MAX_BATCH_TEXT_BYTES }),
@@ -47,9 +50,9 @@ const batchShape = v.object({
   extractorVersion,
   policyRevision: v.integer({ min: 0, max: Number.MAX_SAFE_INTEGER }),
   generationId: v.string({ max: 200 }),
-  batchOrdinal: v.integer({ min: 0, max: MAX_DEVICE_PAGES }),
+  batchOrdinal: v.integer({ min: 0, max: MAX_DOCUMENT_PAGES }),
   pages: v.array(pageEntry, { max: 200 }),
-  lastPage: v.integer({ min: 1, max: MAX_DEVICE_PAGES }),
+  lastPage: v.integer({ min: 1, max: MAX_DOCUMENT_PAGES }),
   totalPages: v.optional(v.integer({ min: 1, max: 100_000 })),
   complete: v.boolean(),
   manifestHash: v.optional(v.string({ min: 64, max: 64, pattern: HEX64 })),
@@ -87,10 +90,12 @@ interface LeaseRow {
   extractor_version: string;
   generation_id: string;
   ocr_allowed: number;
+  start_page: number;
+  base_generation_id: string | null;
 }
 
 const LEASE_COLUMNS =
-  'id, attachment_id, source_id, device_id, lease_token, lease_until, state, processing_revision, source_revision, policy_revision, content_hash, extractor_version, generation_id, ocr_allowed';
+  'id, attachment_id, source_id, device_id, lease_token, lease_until, state, processing_revision, source_revision, policy_revision, content_hash, extractor_version, generation_id, ocr_allowed, start_page, base_generation_id';
 
 const loadLease = (db: D1Database, id: string) => db.prepare(`SELECT ${LEASE_COLUMNS} FROM extraction_leases WHERE id = ?`).bind(id).first<LeaseRow>();
 const loadSource = (db: D1Database, id: string) => db.prepare(`SELECT ${REGISTRY_COLUMNS} FROM ${REGISTRY_FROM} WHERE r.id = ?`).bind(id).first<RegistryRow>();
@@ -159,6 +164,46 @@ async function checkpointFor(db: D1Database, generationId: string): Promise<{ ne
   return { nextBatchOrdinal: rows.length, nextPage: (rows.at(-1)?.last_page ?? 0) + 1, batchHashes: rows.map((r) => r.batch_hash) };
 }
 
+/**
+ * Makes the generation a resumed read continues in: the published generation's chunks, search rows and batch records,
+ * copied under the new generation. Done before the lease exists, and only while the new generation has no batches yet, so a
+ * lease never sees a half-made copy; an interrupted copy is simply made again. Returns false when there is nothing to copy.
+ */
+async function prepareResumedGeneration(db: D1Database, archive: D1Database, sourceId: string, attachmentId: string, baseGeneration: string, newGeneration: string, now: number): Promise<boolean> {
+  const existing = await db.prepare('SELECT COUNT(*) AS n FROM extraction_batches WHERE generation_id = ?').bind(newGeneration).first<{ n: number }>();
+  if ((existing?.n ?? 0) > 0) return true;
+  const base = await db.prepare('SELECT COUNT(*) AS n FROM extraction_batches WHERE generation_id = ?').bind(baseGeneration).first<{ n: number }>();
+  if (!base || base.n === 0) return false;
+  await archive.batch([
+    archive.prepare('DELETE FROM source_fts WHERE source_id = ? AND generation_id = ?').bind(sourceId, newGeneration),
+    archive.prepare('DELETE FROM chunks WHERE source_id = ? AND attachment_id = ? AND generation_id = ?').bind(sourceId, attachmentId, newGeneration),
+    archive
+      .prepare(
+        `INSERT INTO chunks(id, source_id, attachment_id, generation_id, ordinal, page, start_offset, text, text_hash, method)
+         SELECT attachment_id || ':' || ?1 || ':' || ordinal, source_id, attachment_id, ?1, ordinal, page, start_offset, text, text_hash, method
+         FROM chunks WHERE source_id = ?2 AND attachment_id = ?3 AND generation_id = ?4`,
+      )
+      .bind(newGeneration, sourceId, attachmentId, baseGeneration),
+    archive
+      .prepare(
+        `INSERT INTO source_fts(source_id, chunk_id, generation_id, subject, body, filename)
+         SELECT f.source_id, n.id, ?1, f.subject, f.body, f.filename
+         FROM source_fts f JOIN chunks o ON o.id = f.chunk_id JOIN chunks n ON n.generation_id = ?1 AND n.attachment_id = o.attachment_id AND n.ordinal = o.ordinal
+         WHERE f.source_id = ?2 AND f.generation_id = ?3`,
+      )
+      .bind(newGeneration, sourceId, baseGeneration),
+  ]);
+  // The batch records go last: their presence is what says the copy is complete.
+  await db
+    .prepare(
+      `INSERT INTO extraction_batches(generation_id, ordinal, attachment_id, source_id, batch_hash, chunks_digest, chunk_count, last_page, created_at)
+       SELECT ?, ordinal, attachment_id, source_id, batch_hash, chunks_digest, chunk_count, last_page, ? FROM extraction_batches WHERE generation_id = ?`,
+    )
+    .bind(newGeneration, now, baseGeneration)
+    .run();
+  return true;
+}
+
 // POST /device-work/extraction/claim — leases one deferred PDF or image the phone can process now.
 export async function claimExtraction(env: Env, now: number, body: ReturnType<typeof claimBody>, auth: AuthContext) {
   const db = env.CONTROL_DB;
@@ -171,11 +216,11 @@ export async function claimExtraction(env: Env, now: number, body: ReturnType<ty
   const candidates = (
     await db
       .prepare(
-        `SELECT ap.attachment_id, ap.source_id, ap.revision, ap.device_kind FROM attachment_processing ap JOIN source_registry r ON r.id = ap.source_id
+        `SELECT ap.attachment_id, ap.source_id, ap.revision, ap.device_kind, ap.resume_page, ap.active_generation FROM attachment_processing ap JOIN source_registry r ON r.id = ap.source_id
          WHERE ap.state = 'deferred' AND ap.detail = 'device_unavailable' AND ap.device_kind IS NOT NULL AND r.state = 'ready' AND r.admission = 'normal'
          ORDER BY ap.rowid LIMIT 50`,
       )
-      .all<{ attachment_id: string; source_id: string; revision: number; device_kind: 'pdf' | 'image' }>()
+      .all<{ attachment_id: string; source_id: string; revision: number; device_kind: 'pdf' | 'image'; resume_page: number | null; active_generation: string | null }>()
   ).results;
 
   for (const candidate of candidates) {
@@ -190,7 +235,11 @@ export async function claimExtraction(env: Env, now: number, body: ReturnType<ty
 
     const leaseId = crypto.randomUUID();
     const token = crypto.randomUUID();
-    const generationId = deviceGeneration(candidate.attachment_id, stored.sha256, body.extractorVersion, settings.policyRevision);
+    // A resumed read starts a new generation beside the published one: it begins as a copy of it and continues from the next page.
+    const resuming = candidate.resume_page !== null && candidate.active_generation !== null;
+    const startPage = resuming ? candidate.resume_page! : 1;
+    const generationId = deviceGeneration(candidate.attachment_id, stored.sha256, body.extractorVersion, settings.policyRevision) + (resuming ? `:r${startPage}` : '');
+    if (resuming && !(await prepareResumedGeneration(db, archive!, source.id, candidate.attachment_id, candidate.active_generation!, generationId, now))) continue;
     try {
       await db.batch([
         assertion(db, "EXISTS (SELECT 1 FROM attachment_processing WHERE attachment_id = ? AND state = 'deferred' AND detail = 'device_unavailable' AND revision = ?)", candidate.attachment_id, candidate.revision),
@@ -199,10 +248,10 @@ export async function claimExtraction(env: Env, now: number, body: ReturnType<ty
         db
           .prepare(
             `INSERT INTO extraction_leases(id, attachment_id, source_id, device_id, lease_token, lease_until, state, processing_revision, source_revision, policy_revision,
-               content_hash, extractor_version, generation_id, ocr_allowed, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, 'leased', ?, ?, ?, ?, ?, ?, ?, ?)`,
+               content_hash, extractor_version, generation_id, ocr_allowed, created_at, start_page, base_generation_id)
+             VALUES (?, ?, ?, ?, ?, ?, 'leased', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
-          .bind(leaseId, candidate.attachment_id, source.id, auth.deviceId, token, now + EXTRACTION_LEASE_MS, candidate.revision + 1, source.revision, settings.policyRevision, stored.sha256, body.extractorVersion, generationId, ocrAllowed ? 1 : 0, now),
+          .bind(leaseId, candidate.attachment_id, source.id, auth.deviceId, token, now + EXTRACTION_LEASE_MS, candidate.revision + 1, source.revision, settings.policyRevision, stored.sha256, body.extractorVersion, generationId, ocrAllowed ? 1 : 0, now, startPage, resuming ? candidate.active_generation : null),
         db.prepare("UPDATE attachment_processing SET state = 'extracting', detail = NULL, revision = revision + 1 WHERE attachment_id = ? AND revision = ?").bind(candidate.attachment_id, candidate.revision),
         attachmentChange(db, candidate.attachment_id, candidate.revision + 1, now),
       ]);
@@ -225,6 +274,7 @@ export async function claimExtraction(env: Env, now: number, body: ReturnType<ty
         policyRevision: settings.policyRevision,
         generationId,
         ocrAllowed,
+        startPage,
         maxPages: MAX_DEVICE_PAGES,
         maxBatchPages: MAX_BATCH_PAGES,
         maxBatchBytes: MAX_BATCH_TEXT_BYTES,
@@ -260,10 +310,12 @@ const normalizeText = (text: string) =>
     .trim();
 
 /** Order and shape rules that depend on where the generation stands. */
-function checkStructure(body: ReturnType<typeof batchBody>, nextPage: number) {
+/** [lastAllowedPage] is the last page this lease may read: its first page plus the per-lease budget. */
+function checkStructure(body: ReturnType<typeof batchBody>, nextPage: number, lastAllowedPage: number) {
   if (body.lastPage < nextPage) throw invalid('$.lastPage', 'must_advance');
   if (body.lastPage - nextPage + 1 > MAX_BATCH_PAGES) throw invalid('$.lastPage', 'too_many_pages');
-  if (!body.complete && body.lastPage >= MAX_DEVICE_PAGES) throw invalid('$.complete', 'required_at_page_limit');
+  if (body.lastPage > lastAllowedPage) throw invalid('$.lastPage', 'beyond_lease_pages');
+  if (!body.complete && body.lastPage >= lastAllowedPage) throw invalid('$.complete', 'required_at_page_limit');
   if (body.complete && body.totalPages !== undefined && body.totalPages < body.lastPage) throw invalid('$.totalPages', 'below_last_page');
   let bytes = 0;
   let previous: Entry | null = null;
@@ -387,7 +439,7 @@ export async function submitBatch(env: Env, now: number, body: ReturnType<typeof
   }
   if (lease.state !== 'leased') throw leaseLost();
   if (body.batchOrdinal !== checkpoint.nextBatchOrdinal) throw new HttpError(409, 'batch_out_of_order', 'Batches are submitted in order.', { expectedBatchOrdinal: checkpoint.nextBatchOrdinal });
-  checkStructure(body, checkpoint.nextPage);
+  checkStructure(body, checkpoint.nextPage, Math.min(lease.start_page + MAX_DEVICE_PAGES - 1, MAX_DOCUMENT_PAGES));
 
   const archive = archiveFor(env, source);
   const names = archive ? await archive.prepare('SELECT a.name, s.subject FROM attachments a JOIN sources s ON s.id = a.source_id WHERE a.id = ? AND a.source_id = ?').bind(lease.attachment_id, source.id).first<{ name: string; subject: string }>() : null;
@@ -426,8 +478,11 @@ export async function submitBatch(env: Env, now: number, body: ReturnType<typeof
     detail = body.totalPages !== undefined && body.totalPages > body.lastPage ? 'limit' : null;
     publish.push(
       db
-        .prepare("UPDATE attachment_processing SET state = 'ready', detail = ?, active_generation = ?, revision = revision + 1 WHERE attachment_id = ? AND state = 'extracting' AND revision = ?")
-        .bind(detail, lease.generation_id, lease.attachment_id, lease.processing_revision),
+        .prepare(
+          `UPDATE attachment_processing SET state = 'ready', detail = ?, active_generation = ?, pages_read = ?, pages_total = ?, resume_page = NULL, revision = revision + 1
+           WHERE attachment_id = ? AND state = 'extracting' AND revision = ?`,
+        )
+        .bind(detail, lease.generation_id, body.lastPage, body.totalPages ?? body.lastPage, lease.attachment_id, lease.processing_revision),
       attachmentChange(db, lease.attachment_id, lease.processing_revision + 1, now),
       db.prepare("UPDATE extraction_leases SET state = 'published', closed_at = ? WHERE id = ? AND state = 'leased'").bind(now, lease.id),
     );
@@ -475,15 +530,18 @@ export async function reportOutcome(env: Env, now: number, body: ReturnType<type
   const db = env.CONTROL_DB;
   const lease = await loadLease(db, leaseId);
   if (!lease || lease.device_id !== auth.deviceId || lease.lease_token !== body.leaseToken || lease.state !== 'leased' || lease.lease_until < now) throw leaseLost();
-  const target = OUTCOME_STATE[body.outcome];
+  // A resumed read that cannot go on leaves the text already published as it was: the document stays readable up to the page
+  // it had reached, still offering to read more, instead of being marked unsupported or failed.
+  const resumed = lease.base_generation_id !== null && body.outcome !== 'unavailable';
+  const target = resumed ? ({ lease: 'finished', state: 'ready', detail: 'limit' } as const) : OUTCOME_STATE[body.outcome];
   try {
     await db.batch([
       assertion(db, "EXISTS (SELECT 1 FROM extraction_leases WHERE id = ? AND lease_token = ? AND state = 'leased' AND lease_until >= ?)", lease.id, lease.lease_token, now),
       assertion(db, "EXISTS (SELECT 1 FROM attachment_processing WHERE attachment_id = ? AND state = 'extracting' AND revision = ?)", lease.attachment_id, lease.processing_revision),
       db.prepare('UPDATE extraction_leases SET state = ?, closed_at = ? WHERE id = ?').bind(target.lease, now, lease.id),
       db
-        .prepare('UPDATE attachment_processing SET state = ?, detail = ?, revision = revision + 1 WHERE attachment_id = ? AND state = \'extracting\' AND revision = ?')
-        .bind(target.state, target.detail, lease.attachment_id, lease.processing_revision),
+        .prepare('UPDATE attachment_processing SET state = ?, detail = ?, resume_page = CASE WHEN ? THEN NULL ELSE resume_page END, revision = revision + 1 WHERE attachment_id = ? AND state = \'extracting\' AND revision = ?')
+        .bind(target.state, target.detail, resumed ? 1 : 0, lease.attachment_id, lease.processing_revision),
       attachmentChange(db, lease.attachment_id, lease.processing_revision + 1, now),
     ]);
   } catch (error) {
@@ -491,6 +549,34 @@ export async function reportOutcome(env: Env, now: number, body: ReturnType<type
     throw error;
   }
   return { leaseId, attachment: { state: target.state, detail: target.detail } };
+}
+
+export const readMoreBody = v.object({});
+
+// POST /attachments/{id}/read-more — the owner asks for the pages after the ones already read. The published text stays as it is
+// and stays searchable; the file waits in the queue with the page to continue from, and the next lease starts a new generation.
+export async function readMore(env: Env, now: number, _body: ReturnType<typeof readMoreBody>, attachmentId: string) {
+  const db = env.CONTROL_DB;
+  const row = await db
+    .prepare('SELECT source_id, state, detail, revision, pages_read, pages_total FROM attachment_processing WHERE attachment_id = ?')
+    .bind(attachmentId)
+    .first<{ source_id: string; state: string; detail: string | null; revision: number; pages_read: number | null; pages_total: number | null }>();
+  const source = row ? await loadSource(db, row.source_id) : null;
+  if (!row || !source || source.state === 'deleting' || source.state === 'deleted') throw notFound();
+  if (source.state !== 'ready' || source.admission !== 'normal') throw new HttpError(409, 'not_eligible', 'This email cannot be processed now.');
+  if (row.state !== 'ready' || row.detail !== 'limit' || !row.pages_read || !row.pages_total || row.pages_read >= row.pages_total || row.pages_read >= MAX_DOCUMENT_PAGES) {
+    throw new HttpError(409, 'nothing_to_read', 'This file has no further pages waiting to be read.', { state: row.state });
+  }
+  const resumePage = row.pages_read + 1;
+  const results = await db.batch([
+    db
+      .prepare("UPDATE attachment_processing SET state = 'deferred', detail = 'device_unavailable', resume_page = ?, revision = revision + 1 WHERE attachment_id = ? AND revision = ? AND state = 'ready' AND detail = 'limit'")
+      .bind(resumePage, attachmentId, row.revision),
+    attachmentChange(db, attachmentId, row.revision + 1, now),
+  ]);
+  // Another request or a state change got there first: the caller asks again with the file as it is now.
+  if (results[0]?.meta.changes !== 1) throw new HttpError(409, 'nothing_to_read', 'This file has no further pages waiting to be read.');
+  return { attachmentId, state: 'deferred', detail: 'device_unavailable', resumePage };
 }
 
 /**

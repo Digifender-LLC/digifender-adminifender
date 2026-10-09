@@ -5,6 +5,7 @@ import com.digifender.adminifender.core.data.network.ConfirmResult
 import com.digifender.adminifender.core.data.network.CreateExportResult
 import com.digifender.adminifender.core.data.network.ExportAdmission
 import com.digifender.adminifender.core.data.network.ExportFilter
+import com.digifender.adminifender.core.data.network.ExportListResult
 import com.digifender.adminifender.core.data.network.ExportRead
 import com.digifender.adminifender.core.data.network.ExportScope
 import com.digifender.adminifender.core.data.network.ExportState
@@ -224,6 +225,25 @@ class HttpReviewExportApiTest {
     }
 
     @Test
+    fun theExportListIsAskedForWithItsLimitAndClassified() = runBlocking {
+        server.enqueue(json(200, data("export-list", "ready-and-failed")))
+        val listed = exports.list() as ExportListResult.Ok
+        assertEquals(listOf(ExportState.READY, ExportState.FAILED), listed.exports.map { it.state })
+        val request = server.takeRequest()
+        assertEquals("GET", request.method)
+        assertEquals("/api/v1/exports", request.url.encodedPath)
+        assertEquals("50", request.url.queryParameter("limit"))
+        assertTrue(request.headers["authorization"]!!.startsWith("Bearer "))
+        server.enqueue(json(401, error("unauthenticated")))
+        assertEquals(ExportListResult.SessionExpired, exports.list())
+        server.enqueue(json(503, error("unavailable")))
+        assertEquals(ExportListResult.Unavailable("unavailable"), exports.list())
+        // A list that breaks the contract is reported as such, never partly used.
+        server.enqueue(json(200, """{"data":${contractFile("fixtures/v1/export-list/invalid/ready-without-counts.json").trim()}}"""))
+        assertEquals(ExportListResult.Unavailable("malformed_response"), exports.list())
+    }
+
+    @Test
     fun anAttachmentStreamsWithItsLengthAndDeclaredChecksum() = runBlocking {
         val bytes = ByteArray(200_000) { (it % 200).toByte() }
         server.enqueue(
@@ -291,5 +311,51 @@ class HttpReviewExportApiTest {
             // as it must
         }
         assertTrue("cancelled promptly, not after the server's delay", TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - started) < 10)
+    }
+
+    private fun partial(code: Int, contentRange: String?, body: String): MockResponse {
+        val builder = MockResponse.Builder().code(code).addHeader("content-type", "application/zip").body(body)
+        if (contentRange != null) builder.addHeader("content-range", contentRange)
+        return builder.build()
+    }
+
+    @Test
+    fun theRestOfAnExportIsAskedForWithAByteRangeAndOnlyAnExactTailIsAccepted() = runBlocking {
+        server.enqueue(partial(206, "bytes 4-9/10", "456789"))
+        val open = exports.openContentFrom(S1, 4) as OpenResult.Open
+        assertEquals(6L, open.stream.contentLength)
+        assertEquals("456789", open.stream.body.readBytes().decodeToString())
+        open.stream.close()
+        val request = server.takeRequest()
+        assertEquals("/api/v1/exports/$S1/content", request.url.encodedPath)
+        assertEquals("bytes=4-", request.headers["range"])
+        assertEquals("Bearer access-token", request.headers["authorization"])
+
+        // A 200 means the Worker ignored the range; a tail that starts elsewhere or does not reach the end is not the rest of the file.
+        server.enqueue(partial(200, null, "0123456789"))
+        assertEquals(OpenResult.Unavailable("range_not_honoured"), exports.openContentFrom(S1, 4))
+        server.enqueue(partial(206, "bytes 5-9/10", "56789"))
+        assertEquals(OpenResult.Unavailable("range_not_honoured"), exports.openContentFrom(S1, 4))
+        server.enqueue(partial(206, "bytes 4-8/10", "45678"))
+        assertEquals(OpenResult.Unavailable("range_not_honoured"), exports.openContentFrom(S1, 4))
+        server.enqueue(partial(206, "bytes 4-9/10", "4567"))
+        assertEquals(OpenResult.Unavailable("range_not_honoured"), exports.openContentFrom(S1, 4))
+        server.enqueue(partial(206, null, "456789"))
+        assertEquals(OpenResult.Unavailable("range_not_honoured"), exports.openContentFrom(S1, 4))
+    }
+
+    @Test
+    fun aRangeThatCannotBeHonouredOrAnExportThatIsGoneIsToldApart() = runBlocking {
+        server.enqueue(json(416, error("range_not_satisfiable")))
+        assertEquals(OpenResult.Refused("range_not_satisfiable", 416), exports.openContentFrom(S1, 4))
+        server.enqueue(json(410, error("expired")))
+        assertEquals(OpenResult.Gone("expired", 410), exports.openContentFrom(S1, 4))
+        server.enqueue(json(503, error("unavailable")))
+        assertEquals(OpenResult.Unavailable("unavailable"), exports.openContentFrom(S1, 4))
+        // Nothing is sent for an offset that is not a continuation or an ID that is not one.
+        val before = server.requestCount
+        assertEquals(OpenResult.Gone("not_found", 404), exports.openContentFrom(S1, 0))
+        assertEquals(OpenResult.Gone("not_found", 404), exports.openContentFrom("../x", 4))
+        assertEquals(before, server.requestCount)
     }
 }

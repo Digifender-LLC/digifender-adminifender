@@ -19,6 +19,19 @@ android {
         warningsAsErrors = true
         abortOnError = true
     }
+
+    // Room tests live in src/sharedTest and run twice: on a device (androidTest) and on the JVM under Robolectric (test).
+    // The Keystore tests stay device-only: Robolectric has no hardware-backed Keystore.
+    sourceSets {
+        getByName("androidTest").kotlin.directories.add("src/sharedTest/kotlin")
+        getByName("test").kotlin.directories.add("src/sharedTest/kotlin")
+        // MigrationTestHelper reads the committed schema JSON from assets.
+        getByName("test").assets.directories.add("$projectDir/schemas")
+    }
+
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
 }
 
 kotlin {
@@ -28,6 +41,29 @@ kotlin {
 // Shared contract fixtures live at the repository root; JVM tests parse them to keep the DTOs in step with the API.
 val contractsDir = rootDir.resolve("../contracts").absolutePath
 tasks.withType<Test>().configureEach { systemProperty("contractsDir", contractsDir) }
+
+// Robolectric's native SQLite runtime has no Linux aarch64 build ("not supported on Linux (aarch64)"), so the Room tests that
+// run under it are skipped on such hosts, with this message; x86_64 hosts (CI) and devices run them. Force with
+// -Padminifender.forceRobolectric=true.
+// Another way to run them on such a host: -Padminifender.testJava=<path> runs the unit-test JVM with that java, for example an
+// x86_64 JDK started through user-mode QEMU (see docs/verification.md); then nothing is skipped.
+val robolectricUnsupportedHere = System.getProperty("os.name").startsWith("Linux") &&
+    System.getProperty("os.arch") in setOf("aarch64", "arm64") &&
+    !providers.gradleProperty("adminifender.forceRobolectric").isPresent &&
+    !providers.gradleProperty("adminifender.testJava").isPresent
+providers.gradleProperty("adminifender.testJava").orNull?.let { java ->
+    tasks.withType<Test>().configureEach {
+        executable = java
+        // Robolectric extracts its native library into the temp directory; keep it where there is room (TMPDIR if set).
+        System.getenv("TMPDIR")?.let { systemProperty("java.io.tmpdir", it) }
+    }
+}
+tasks.withType<Test>().configureEach {
+    if (robolectricUnsupportedHere) {
+        exclude("**/Room*Test*")
+        doFirst { logger.lifecycle("Room JVM tests skipped: Robolectric has no native runtime for Linux aarch64 (they run on x86_64 CI and on devices).") }
+    }
+}
 
 room {
     // Exported schemas are committed so every migration is tested against the real previous version.
@@ -51,6 +87,9 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.coroutines.test)
     testImplementation(libs.okhttp.mockwebserver)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.room.testing)
+    testImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.room.testing)

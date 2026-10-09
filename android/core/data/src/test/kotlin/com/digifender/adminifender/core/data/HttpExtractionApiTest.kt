@@ -14,6 +14,7 @@ import com.digifender.adminifender.core.data.network.NoWorkReason
 import com.digifender.adminifender.core.data.network.OutcomeResult
 import com.digifender.adminifender.core.data.network.PageMethod
 import com.digifender.adminifender.core.data.network.PageText
+import com.digifender.adminifender.core.data.network.ReadMoreOutcome
 import com.digifender.adminifender.core.data.network.SubmitResult
 import com.digifender.adminifender.core.data.network.isUuid
 import com.digifender.adminifender.core.data.network.parseBatchRequest
@@ -144,6 +145,34 @@ class HttpExtractionApiTest {
         assertEquals(HeartbeatResult.LeaseEnded("lease_lost"), api.heartbeat(work))
         server.enqueue(json(200, """{"data":{"leaseId":"${uuid(9)}","expiresAt":"2026-10-09T12:20:00.000Z"}}"""))
         assertEquals(HeartbeatResult.Unavailable("malformed_response"), api.heartbeat(work))
+    }
+
+    @Test
+    fun askingToReadMoreSendsAnEmptyRequestAndReadsWhereTheFileWillContinue() = runBlocking {
+        server.enqueue(json(200, "{\"data\":{\"attachmentId\":\"${work.attachmentId}\",\"state\":\"deferred\",\"detail\":\"device_unavailable\",\"resumePage\":101}}"))
+        assertEquals(ReadMoreOutcome.Requested(101), api.readMore(work.attachmentId))
+        val request = server.takeRequest()
+        assertEquals("POST", request.method)
+        assertEquals("/api/v1/attachments/${work.attachmentId}/read-more", request.url.encodedPath)
+        assertTrue(isUuid(request.headers["idempotency-key"]!!))
+        assertEquals("{}", request.body!!.utf8())
+    }
+
+    @Test
+    fun readMoreRefusalsAreToldApartAndAnAnswerAboutAnotherFileIsNotTrusted() = runBlocking {
+        server.enqueue(json(409, error("nothing_to_read")))
+        assertEquals(ReadMoreOutcome.NothingToRead, api.readMore(work.attachmentId))
+        server.enqueue(json(409, error("not_eligible")))
+        assertEquals(ReadMoreOutcome.NotAvailable("not_eligible"), api.readMore(work.attachmentId))
+        server.enqueue(json(404, error("not_found")))
+        assertEquals(ReadMoreOutcome.NotAvailable("not_found"), api.readMore(work.attachmentId))
+        server.enqueue(json(503, error("unavailable")))
+        assertEquals(ReadMoreOutcome.Unavailable("unavailable"), api.readMore(work.attachmentId))
+        server.enqueue(json(200, "{\"data\":{\"attachmentId\":\"${uuid(9)}\",\"state\":\"deferred\",\"detail\":\"device_unavailable\",\"resumePage\":101}}"))
+        assertEquals(ReadMoreOutcome.Unavailable("malformed_response"), api.readMore(work.attachmentId))
+        assertEquals(ReadMoreOutcome.NotAvailable("invalid_request"), api.readMore("../x"))
+        signedIn = false
+        assertEquals(ReadMoreOutcome.SessionExpired, api.readMore(work.attachmentId))
     }
 
     @Test

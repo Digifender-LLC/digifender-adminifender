@@ -12,6 +12,7 @@ import com.digifender.adminifender.core.data.network.ExtractionWork
 import com.digifender.adminifender.core.data.network.HeartbeatResult
 import com.digifender.adminifender.core.data.network.MAX_BATCH_BYTES
 import com.digifender.adminifender.core.data.network.MAX_BATCH_PAGES
+import com.digifender.adminifender.core.data.network.MAX_DOCUMENT_PAGES
 import com.digifender.adminifender.core.data.network.MAX_EXTRACTION_PAGES
 import com.digifender.adminifender.core.data.network.NoWorkReason
 import com.digifender.adminifender.core.data.network.OpenResult
@@ -190,7 +191,8 @@ class DeviceExtractor(
 
     private suspend fun read(work: ExtractionWork, source: PageSource): RunResult {
         if (source.pageCount < 1) return giveBack(work, ExtractionOutcome.UNSUPPORTED)
-        val last = minOf(source.pageCount, MAX_EXTRACTION_PAGES)
+        // A lease reads at most MAX_EXTRACTION_PAGES from where it starts; a resumed read starts after the pages already published.
+        val last = minOf(source.pageCount, work.startPage + MAX_EXTRACTION_PAGES - 1, MAX_DOCUMENT_PAGES)
         // A checkpoint past the end cannot be continued: the Worker needs the final batch to carry a real page.
         if (work.nextPage > last) return giveBack(work, ExtractionOutcome.FAILED)
 

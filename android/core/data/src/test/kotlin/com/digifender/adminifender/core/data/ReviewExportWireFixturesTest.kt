@@ -4,6 +4,7 @@ import com.digifender.adminifender.core.data.network.CleanupState
 import com.digifender.adminifender.core.data.network.ExportAdmission
 import com.digifender.adminifender.core.data.network.ExportScope
 import com.digifender.adminifender.core.data.network.ExportState
+import com.digifender.adminifender.core.data.network.ExportStatus
 import com.digifender.adminifender.core.data.network.InvalidatedReason
 import com.digifender.adminifender.core.data.network.OperationReceipt
 import com.digifender.adminifender.core.data.network.OperationState
@@ -15,6 +16,7 @@ import com.digifender.adminifender.core.data.network.WireException
 import com.digifender.adminifender.core.data.network.parseConfirmed
 import com.digifender.adminifender.core.data.network.parseExportRequest
 import com.digifender.adminifender.core.data.network.parseExportScope
+import com.digifender.adminifender.core.data.network.parseExportList
 import com.digifender.adminifender.core.data.network.parseExportStatus
 import com.digifender.adminifender.core.data.network.parseOperation
 import com.digifender.adminifender.core.data.network.parsePreparedReview
@@ -161,6 +163,18 @@ class ReviewExportWireFixturesTest {
             setOf("admission-boolean", "archive-with-source-ids", "filter-empty", "filter-without-criteria", "scope-without-kind", "sources-empty", "sources-malformed-id", "unknown-top-field"),
             ::parseExportRequest,
         )
+    }
+
+    @Test
+    fun exportLists() {
+        val valid = allValid("export-list", setOf("empty", "every-state", "ready-and-failed"), ::parseExportList)
+        assertEquals(emptyList<ExportStatus>(), valid.getValue("empty"))
+        assertEquals(
+            listOf(ExportState.PENDING, ExportState.RUNNING, ExportState.READY, ExportState.EXPIRED, ExportState.INVALIDATED),
+            valid.getValue("every-state").map { it.state },
+        )
+        assertEquals(listOf(ExportState.READY, ExportState.FAILED), valid.getValue("ready-and-failed").map { it.state })
+        allInvalid("export-list", setOf("exports-not-array", "item-with-extra-field", "missing-exports", "ready-without-counts", "too-many", "unknown-field"), ::parseExportList)
     }
 
     @Test

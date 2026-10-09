@@ -64,6 +64,11 @@
     <string name="model_wrong_size">That file is not %1$s: its size does not match. Nothing was installed.</string>
     <string name="model_choose">Choose model file</string>
     <string name="model_remove">Remove model</string>
+    <string name="attachment_read_more">Read more pages</string>
+    <string name="attachment_notice_read_more_asked">The next pages of %1$s are queued. This phone reads them when it is charged enough and online; what you can search now stays as it is until they are done.</string>
+    <string name="attachment_notice_read_more_nothing">%1$s has no further pages waiting to be read.</string>
+    <string name="attachment_notice_read_more_unavailable">Couldn\'t ask for more pages of %1$s right now. Try again in a moment.</string>
+    <string name="attachment_notice_read_more_sign_in">Sign in again to ask for more pages of %1$s.</string>
     <string name="attachment_notice_not_shown">Adminifender only shows plain text. Save a copy to open %1$s with another app yourself.</string>
     <string name="attachment_preview_title">Text of %1$s</string>
     <string name="attachment_preview_truncated">Only the first part is shown.</string>
@@ -316,6 +321,18 @@
     <string name="storage_clear_confirm">Remove all</string>
     <string name="storage_exports_heading">Exports</string>
     <string name="storage_new_export">New export</string>
+    <string name="storage_find_exports">Find exports on the server</string>
+    <string name="storage_find_searching">Looking for exports…</string>
+    <plurals name="storage_find_added">
+        <item quantity="one">Found %1$d export not yet on this phone.</item>
+        <item quantity="other">Found %1$d exports not yet on this phone.</item>
+    </plurals>
+    <plurals name="storage_find_none_new">
+        <item quantity="one">Nothing new. The server lists %1$d export, already here.</item>
+        <item quantity="other">Nothing new. The server lists %1$d exports, all already here.</item>
+    </plurals>
+    <string name="storage_find_sign_in">Sign in again to look for exports.</string>
+    <string name="storage_find_failed">Could not reach the server. Try again later.</string>
     <string name="storage_exports_none">No exports yet.</string>
     <string name="storage_export_verified">Saved and checked</string>
     <string name="storage_export_downloading">Downloading</string>

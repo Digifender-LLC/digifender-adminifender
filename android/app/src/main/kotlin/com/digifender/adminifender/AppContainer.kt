@@ -6,6 +6,7 @@ import com.digifender.adminifender.core.data.device.DeviceWorkRunner
 import com.digifender.adminifender.core.data.export.ExportRepository
 import com.digifender.adminifender.core.data.extraction.DeviceExtractor
 import com.digifender.adminifender.core.data.extraction.ExtractionCapabilities
+import com.digifender.adminifender.core.data.extraction.ReadMoreRepository
 import com.digifender.adminifender.core.data.files.AttachmentRepository
 import com.digifender.adminifender.core.data.files.FileCipher
 import com.digifender.adminifender.core.data.files.SessionEnd
@@ -92,8 +93,9 @@ class AppContainer(context: Context) {
 
     // Text read from PDFs and images on this phone (its own text layer, bundled recognition); the text goes to the Worker and nowhere else.
     private val extractionScheduler = WorkExtractionScheduler(app)
+    private val extractionApi = HttpExtractionApi(http, baseUrl, session)
     val extractor = DeviceExtractor(
-        api = HttpExtractionApi(http, baseUrl, session),
+        api = extractionApi,
         content = contentApi,
         opener = PlatformDocumentOpener(app, MlKitTextRecognizer()),
         capabilities = ExtractionCapabilities(pdfText = PDF_TEXT_LAYER_AVAILABLE, ocr = true, extractorVersion = EXTRACTOR_VERSION),
@@ -123,6 +125,9 @@ class AppContainer(context: Context) {
         if (models.state.value !is ModelState.Installed) return
         foregroundWork.launch { deviceWork.runOnce(WorkKind.INTERACTIVE) }
     }
+
+    /** The owner's "read more pages" for a document that was read only up to its first pages. */
+    val readMore = ReadMoreRepository(extractionApi, extractionScheduler) { scheduler.requestNow() }
     private var extractionTicks: Job? = null
 
     /** A deleted email's private copies go in one step: its downloads stop and its files go, then rows, text and answers, and sync is asked for the tombstone. */

@@ -1,6 +1,7 @@
 import { authenticate } from '../auth/sessions';
 import type { Env } from '../env';
 import { HttpError, notFound } from '../http/errors';
+import { decideRange, rangeHeaders } from '../http/range';
 import { v } from '../http/validate';
 import { sha256Hex } from '../ids';
 import { CLAIM_GUARD, type ClaimedJob, type JobResult, LEASE_GUARD, guardParams } from '../jobs/runner';
@@ -128,7 +129,35 @@ async function currentState(env: Env, row: ExportRow, now: number) {
 // GET /exports/{id}
 export async function getExport(request: Request, env: Env, now: number, [id]: string[]) {
   await authenticate(request, env, now);
-  const row = await loadExport(env, v.uuid()(id, '$.id'));
+  return exportStatus(env, await loadExport(env, v.uuid()(id, '$.id')), now);
+}
+
+const LIST_DEFAULT = 20;
+const LIST_MAX = 50;
+
+// GET /exports?limit= — the newest exports first, each exactly as GET /exports/{id} reports it, so a phone that lost its record
+// of an export (another device, or before a sign-out) can find it again. An export whose manifest cannot be read is listed as
+// failed with a fixed code rather than failing the whole list; asking for that export alone still answers with the server error.
+export async function listExports(request: Request, env: Env, now: number) {
+  await authenticate(request, env, now);
+  const url = new URL(request.url);
+  for (const key of url.searchParams.keys()) if (key !== 'limit') throw new HttpError(400, 'invalid_request', 'The request is invalid.', { path: `$.${key}`, reason: 'unknown_parameter' });
+  const requested = url.searchParams.get('limit');
+  const limit = requested === null ? LIST_DEFAULT : v.integer({ min: 1, max: LIST_MAX })(Number(requested), '$.limit');
+  const rows = (await env.CONTROL_DB.prepare('SELECT * FROM exports ORDER BY created_at DESC, id LIMIT ?').bind(limit).all<ExportRow>()).results;
+  const exports = [];
+  for (const row of rows) {
+    try {
+      exports.push(await exportStatus(env, row, now));
+    } catch (error) {
+      if (!(error instanceof HttpError) || error.status !== 500) throw error;
+      exports.push({ ...(await exportStatus(env, { ...row, state: 'failed' }, now)), failureCode: error.code });
+    }
+  }
+  return { exports };
+}
+
+async function exportStatus(env: Env, row: ExportRow, now: number) {
   const current = await currentState(env, row, now);
   // A ready export always reports counts and omissions (the shared schema forbids null for ready), so a manifest that is
   // missing or unreadable is an error and never an empty summary.
@@ -197,18 +226,23 @@ export async function getExportContent(request: Request, env: Env, now: number, 
   if (current.state === 'expired') throw new HttpError(410, 'expired', 'This export expired. Create a new export.');
   if (current.state === 'failed') throw new HttpError(409, 'export_failed', 'This export could not be prepared. Create a new export.');
   if (current.state !== 'ready' || !row.object_key) throw new HttpError(409, 'not_ready', 'The export is still being prepared.', {}, true);
-  const object = await env.ARCHIVE_BUCKET.get(row.object_key);
-  if (!object) throw new HttpError(410, 'expired', 'This export is no longer available.');
+  // A ranged request looks the size up first, so a resumed download can ask for the rest; a plain one reads the object once.
+  const ranged = request.headers.has('range');
+  const head = ranged ? await env.ARCHIVE_BUCKET.head(row.object_key) : null;
+  if (ranged && !head) throw new HttpError(410, 'expired', 'This export is no longer available.');
+  const decision = head ? decideRange(request, head.size) : ({ kind: 'full' } as const);
   const day = new Date(row.created_at).toISOString().slice(0, 10);
-  return new Response(object.body, {
-    headers: {
-      'content-type': 'application/zip',
-      'content-length': String(object.size),
-      'content-disposition': `attachment; filename="adminifender-export-${day}.zip"`,
-      'cache-control': 'no-store',
-      'x-content-type-options': 'nosniff',
-    },
-  });
+  const common = {
+    'content-type': 'application/zip',
+    'content-disposition': `attachment; filename="adminifender-export-${day}.zip"`,
+    'cache-control': 'no-store',
+    'x-content-type-options': 'nosniff',
+  };
+  if (decision.kind === 'unsatisfiable') return new Response(null, { status: 416, headers: { ...common, ...rangeHeaders(decision, head!.size) } });
+  const object = decision.kind === 'partial' ? await env.ARCHIVE_BUCKET.get(row.object_key, { range: { offset: decision.offset, length: decision.length } }) : await env.ARCHIVE_BUCKET.get(row.object_key);
+  if (!object) throw new HttpError(410, 'expired', 'This export is no longer available.');
+  const size = head?.size ?? object.size;
+  return new Response(object.body, { status: decision.kind === 'partial' ? 206 : 200, headers: { ...common, ...rangeHeaders(decision, size) } });
 }
 
 /** Latest projection of each live entity of one type at the snapshot, as bootstrap pages them. */

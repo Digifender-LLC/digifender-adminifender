@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { EXPORT_TTL_MS, expireExports } from '../../src/exports/job';
 import { inflateEntry, readCentralDirectory } from '../../src/extraction/zip';
 import { sha256Hex } from '../../src/ids';
-import { T0, api, enrollOwner, ingest, runPending } from './support';
+import { T0, api, enrollOwner, expectContract, ingest, runPending } from './support';
 
 let token: string;
 let keyCount = 0;
@@ -141,6 +141,98 @@ describe('exports', () => {
     expect((await api('GET', `/exports/${other}/content`, { token, now: T0 + 2 })).status).toBe(200);
     expect(await expireExports(env, T0 + 1 + EXPORT_TTL_MS)).toEqual({ removed: 1 });
     expect((await api('GET', `/exports/${other}`, { token, now: T0 + 3 })).body.data.state).toBe('expired');
+  });
+
+  /** The raw response of a download with a Range header, so status and headers can be read. */
+  const ranged = (path: string, range: string) =>
+    api('GET', path, { token, extraHeaders: { range } });
+
+  it('serves a byte range of an attachment, the tail, and refuses a range past the end', async () => {
+    const body = 'attached note with some more words in it';
+    const sourceId = await ingest(mail('Ranges', 'Body', body));
+    await runPending('triage');
+    const attachment = (await api('GET', `/sources/${sourceId}`, { token })).body.data.attachments[0] as { id: string; sizeBytes: number; sha256: string };
+    const path = `/attachments/${attachment.id}/content`;
+    const whole = await api('GET', path, { token });
+    expect(whole.status).toBe(200);
+    expect(whole.headers.get('accept-ranges')).toBe('bytes');
+    const bytes = whole.body.data as Uint8Array;
+    expect(bytes.length).toBe(attachment.sizeBytes);
+
+    const middle = await ranged(path, 'bytes=2-9');
+    expect(middle.status).toBe(206);
+    expect(middle.headers.get('content-range')).toBe(`bytes 2-9/${bytes.length}`);
+    expect(middle.headers.get('content-length')).toBe('8');
+    expect(middle.body.data).toEqual(bytes.slice(2, 10));
+    // The checksum is the whole file's, on a slice too, so a resumed download can still be checked at the end.
+    expect(middle.headers.get('x-attachment-sha256')).toBe(attachment.sha256);
+
+    expect((await ranged(path, 'bytes=5-')).body.data).toEqual(bytes.slice(5));
+    expect((await ranged(path, 'bytes=-6')).body.data).toEqual(bytes.slice(-6));
+    // A range that runs past the end is cut to the end.
+    expect((await ranged(path, `bytes=${bytes.length - 3}-9999`)).body.data).toEqual(bytes.slice(-3));
+
+    const past = await ranged(path, `bytes=${bytes.length}-`);
+    expect(past.status).toBe(416);
+    expect(past.headers.get('content-range')).toBe(`bytes */${bytes.length}`);
+    // What this does not honour is answered in full: several ranges, another unit, nonsense, or a condition we cannot check.
+    for (const range of ['bytes=0-1,4-5', 'items=0-1', 'bytes=abc', 'bytes=9-2', 'bytes=-']) {
+      const res = await ranged(path, range);
+      expect(res.status, range).toBe(200);
+      expect(res.body.data).toEqual(bytes);
+    }
+    const conditional = await api('GET', path, { token, extraHeaders: { range: 'bytes=0-1', 'if-range': '"x"' } });
+    expect(conditional.status).toBe(200);
+  });
+
+  it('serves a byte range of an export ZIP, so an interrupted download can resume', async () => {
+    await ingest(mail('Resume me', 'Body', 'attached'));
+    const id = await createExport();
+    expect(await runPending('export', T0 + 2000)).toEqual(['complete']);
+    const path = `/exports/${id}/content`;
+    const whole = (await api('GET', path, { token })).body.data as Uint8Array;
+    const head = await ranged(path, 'bytes=0-3');
+    expect(head.status).toBe(206);
+    expect(head.headers.get('content-range')).toBe(`bytes 0-3/${whole.length}`);
+    expect(head.body.data).toEqual(whole.slice(0, 4));
+    const rest = await ranged(path, 'bytes=4-');
+    expect(rest.status).toBe(206);
+    // The two pieces are the ZIP, byte for byte.
+    expect(new Uint8Array([...(head.body.data as Uint8Array), ...(rest.body.data as Uint8Array)])).toEqual(whole);
+    expect((await ranged(path, `bytes=${whole.length}-`)).status).toBe(416);
+    // An invalid or expired export is still refused before any range is considered.
+    expect((await ranged(`/exports/${crypto.randomUUID()}/content`, 'bytes=0-3')).status).toBe(404);
+  });
+
+  it('lists exports newest first, each as GET /exports/{id} reports it', async () => {
+    await ingest(mail('One', 'Body'));
+    const first = await createExport(T0);
+    const second = await createExport(T0 + 5000);
+    expect(await runPending('export', T0 + 6000)).toEqual(['complete', 'complete']);
+    const listed = await api('GET', '/exports', { token, now: T0 + 7000 });
+    expect(listed.status).toBe(200);
+    expectContract('export-list', listed.body.data);
+    expect(listed.body.data.exports.map((e: { id: string }) => e.id)).toEqual([second, first]);
+    for (const entry of listed.body.data.exports) {
+      expect(entry).toEqual((await api('GET', `/exports/${entry.id}`, { token, now: T0 + 7000 })).body.data);
+    }
+    expect((await api('GET', '/exports?limit=1', { token, now: T0 + 7000 })).body.data.exports).toHaveLength(1);
+    for (const bad of ['limit=0', 'limit=51', 'limit=abc', 'cursor=x']) expect((await api('GET', `/exports?${bad}`, { token, now: T0 + 7000 })).status, bad).toBe(400);
+    expect((await api('GET', '/exports', { now: T0 })).status).toBe(401);
+  });
+
+  it('lists an export whose manifest is gone as failed instead of failing the list', async () => {
+    await ingest(mail('Broken', 'Body'));
+    const id = await createExport();
+    expect(await runPending('export', T0 + 2000)).toEqual(['complete']);
+    const row = await env.CONTROL_DB.prepare('SELECT manifest_key FROM exports WHERE id = ?').bind(id).first<{ manifest_key: string }>();
+    await env.ARCHIVE_BUCKET.delete(row!.manifest_key);
+    const single = await api('GET', `/exports/${id}`, { token, now: T0 + 3000 });
+    expect(single.status).toBe(500);
+    const listed = await api('GET', '/exports', { token, now: T0 + 3000 });
+    expect(listed.status).toBe(200);
+    expectContract('export-list', listed.body.data);
+    expect(listed.body.data.exports[0]).toMatchObject({ id, state: 'failed', failureCode: 'export_manifest_unavailable', counts: null, omissions: null });
   });
 
   it('requires a session', async () => {

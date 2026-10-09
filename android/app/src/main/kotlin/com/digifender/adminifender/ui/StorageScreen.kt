@@ -23,6 +23,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
@@ -40,6 +41,8 @@ import com.digifender.adminifender.core.data.review.DeletionReview
 @Composable
 fun StorageScreen(
     state: StorageUiState,
+    discovery: Discovery,
+    onDiscover: () -> Unit,
     onRemoveFile: (String) -> Unit,
     onClearFiles: () -> Unit,
     onOpenSource: (String) -> Unit,
@@ -63,6 +66,17 @@ fun StorageScreen(
 
         Text(stringResource(R.string.storage_exports_heading), style = MaterialTheme.typography.titleMedium)
         OutlinedButton(onClick = onNewExport) { Text(stringResource(R.string.storage_new_export)) }
+        OutlinedButton(onClick = onDiscover, enabled = discovery != Discovery.Searching) { Text(stringResource(R.string.storage_find_exports)) }
+        when (discovery) {
+            Discovery.Idle -> Unit
+            Discovery.Searching -> Text(stringResource(R.string.storage_find_searching), style = MaterialTheme.typography.bodySmall)
+            is Discovery.Done -> Text(
+                if (discovery.added == 0) pluralStringResource(R.plurals.storage_find_none_new, discovery.found, discovery.found) else pluralStringResource(R.plurals.storage_find_added, discovery.added, discovery.added),
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Discovery.SignIn -> Text(stringResource(R.string.storage_find_sign_in), style = MaterialTheme.typography.bodySmall)
+            Discovery.Failed -> Text(stringResource(R.string.storage_find_failed), style = MaterialTheme.typography.bodySmall)
+        }
         if (state.exports.isEmpty()) Text(stringResource(R.string.storage_exports_none))
         state.exports.forEach { ExportCard(it, onOpenExport) }
 

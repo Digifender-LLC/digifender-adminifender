@@ -20,6 +20,8 @@ google-services = "4.5.0"
 mlkit-text-recognition = "16.0.1"
 # On-device LLM runtime for local triage and chat. Latest release on Google Maven, checked 2026-10-09 (the previous branch used 0.17.1).
 litertlm = "0.18.0"
+# Runs the Room and migration tests on the JVM. Latest release on Maven Central, checked 2026-10-09 (metadata updated 2026-09-10).
+robolectric = "4.17"
 
 [libraries]
 compose-bom = { module = "androidx.compose:compose-bom", version.ref = "compose-bom" }
@@ -44,6 +46,7 @@ credentials-play-services = { module = "androidx.credentials:credentials-play-se
 work-runtime = { module = "androidx.work:work-runtime-ktx", version.ref = "work" }
 mlkit-text-recognition = { module = "com.google.mlkit:text-recognition", version.ref = "mlkit-text-recognition" }
 litertlm = { module = "com.google.ai.edge.litertlm:litertlm-android", version.ref = "litertlm" }
+robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
 firebase-bom = { module = "com.google.firebase:firebase-bom", version.ref = "firebase-bom" }
 firebase-messaging = { module = "com.google.firebase:firebase-messaging" }
 androidx-test-runner = { module = "androidx.test:runner", version = "1.7.0" }
