@@ -29,7 +29,7 @@ Slice 14f landed on 2026-10-04. Slice 14g was locally verified on 2026-10-08. Sl
 Planned Android slices, in order:
 
 1. 14j: device worker for PDF text and OCR (FR-010) and local inference readiness and claims (`/device-work`).
-2. Worker fixes for the contract gaps in the 14i Android evidence (`safeName` keeping `..`, no range support, no export list call).
+2. Remaining Worker contract gaps from the 14i Android evidence: no range support on downloads and no export list call. (`safeName` keeping `..` was fixed on 2026-10-09.)
 3. Emulator instrumentation runs, screenshots and TalkBack checks. The Room store, archive, briefing, chat, file and review cache and migration tests (including 3 to 4 and 4 to 5) and the Keystore vault and file-key tests are compiled but have never been run; CI compiles them (its result was not re-checked here).
 
 Only the owner can do these, and slice 15 needs all of them:

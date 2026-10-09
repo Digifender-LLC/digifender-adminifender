@@ -50,7 +50,7 @@ Not run: any instrumentation test (`RoomFilesReviewsTest`, `KeystoreFileKeysTest
 
 ## Contract gaps for the Worker
 
-1. `safeName` in `backend/src/exports/job.ts` keeps `.` and `..` as file names, so an attachment named `..` yields the entry `files/<source>/<attachment>/..`. The phone refuses to vouch for such a name (`verification_unsafe_name`), so one such attachment makes the whole export unverifiable. The Worker should map those names.
+1. `safeName` in `backend/src/exports/job.ts` keeps `.` and `..` as file names, so an attachment named `..` yields the entry `files/<source>/<attachment>/..`. The phone refuses to vouch for such a name (`verification_unsafe_name`), so one such attachment makes the whole export unverifiable. **Fixed afterwards (2026-10-09):** `safeName` now maps a name made only of dots to `attachment`; `exports.test.ts` pins `..`, `.` and `...` (the first two failed before the fix). `npm run check` on Node 22.22.0 passed: typecheck, 33 files and 722 tests, and the bundle dry run (1425.49 KiB, 296.38 KiB gzip). The Android code is unchanged by this.
 2. Neither `/exports/{id}/content` nor `/attachments/{id}/content` supports ranges, so an interrupted multi-hundred-megabyte export restarts from zero.
 3. The raw attachment ceiling (25 MiB) is a constant in both code bases; the Worker does not publish it.
 4. There is no call that lists exports, so an export made on another device or before sign-out cannot be rediscovered.

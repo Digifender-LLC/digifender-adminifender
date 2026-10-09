@@ -60,7 +60,11 @@ class Stop extends Error {
   }
 }
 const jsonl = (rows: unknown[]) => encoder.encode(rows.map((r) => JSON.stringify(r)).join('\n') + (rows.length ? '\n' : ''));
-const safeName = (name: string) => name.replace(/[\u0000-\u001f\u007f"\\/:*?<>|]/g, '_').slice(0, 120) || 'attachment';
+// A name of only dots (`.`, `..`) would be a path-traversal segment inside the ZIP, so it gets the same fallback as an empty name.
+const safeName = (name: string) => {
+  const cleaned = name.replace(/[\u0000-\u001f\u007f"\\/:*?<>|]/g, '_').slice(0, 120);
+  return /^\.*$/.test(cleaned) ? 'attachment' : cleaned;
+};
 const iso = (ms: number | null) => (ms === null ? null : new Date(ms).toISOString());
 
 /**
