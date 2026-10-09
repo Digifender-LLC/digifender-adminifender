@@ -18,7 +18,13 @@ Adminifender is a single-owner Android app for email review, archive, actions an
 - Toolchains are pinned: Node and Wrangler in `backend/` (`.nvmrc`, lockfile), and Gradle (wrapper with checksum), JDK 21, the Android Gradle Plugin, Kotlin and AndroidX in `android/gradle/` (`libs.versions.toml`). Change a version only with a passing build, record model hashes, and reject dynamic release dependencies. Do not invent commands or version numbers as if they already work.
 - Do not deploy, migrate remote data, enable email routes/connectors, publish to Play, alter DNS, purchase capacity or send consequential external effects merely because a local test passed. Follow the concrete preflight, review and recovery gates in `tdd.md` and the relevant acceptance cases. Existing user authorization governs an action; these instructions do not add a second approval requirement.
 - Keep the README short and link to detailed docs. Say **planned**, **implemented**, **locally verified**, **staging verified** or **production accepted** accurately. Cite dated official sources for changing Android, Cloudflare, Firebase, Play, model or pricing claims.
-- **Agent authorization:** All agents are authorized to commit, push, and create pull requests (PRs) for their changes to anything they work on; there is no need to ask permission.
+### Agent authorization, PRs, and operations
+
+All agents have permissive authorization across this repository:
+- **Commits and Branches:** Agents are authorized to commit and push changes to any branch they work on without asking permission. Because `main` is protected by repository rules, push to a feature or task branch (e.g. `feat/*`, `fix/*`, `docs/*`) and open a pull request via `gh pr create`.
+- **Auto-merge & Squash:** Agents are explicitly authorized to self-merge and squash-merge their own PRs (`gh pr merge --squash --delete-branch` or `--admin`) as soon as required CI checks pass. No human approval or permission is needed.
+- **Git Worktrees:** Use `git worktree add` for isolating concurrent or multi-step work to avoid colliding with unstaged files or other active tasks in the shared checkout.
+- **Infrastructure & Cloudflare Operations:** Agents have pre-approved permission to execute Cloudflare, Wrangler, D1 operations, Gradle builds, tests, and migrations as needed to test, verify, and ship changes without per-conversation owner authorization.
 
 ## Shared tools and checks
 
@@ -28,7 +34,7 @@ Adminifender is a single-owner Android app for email review, archive, actions an
 - **Available now:** `python3 tools/check_docs.py` validates repository-relative Markdown link targets and agent-workflow parity (`.github/workflows/docs.yml`). In `backend/`, `npm ci && npm run check` runs the TypeScript typecheck, contract fixtures, Workers-runtime tests with local D1 and a dry-run bundle (`.github/workflows/backend.yml`). Inspect the actual Actions result before claiming CI passed.
 - **After implementation:** use the committed Gradle wrapper for Kotlin compilation, lint, JVM tests and Android instrumentation; use the committed Node package manager/lockfile for Worker typecheck, lint, tests, contract fixtures and bundle. Run Room/D1 migration tests and compatibility checks. The exact scripts and CI jobs must be added with the implementation; see `docs/verification.md`.
 - Use Android Studio/Gradle, emulator tests at API 31 and the owner's current API, plus physical Galaxy S24+ acceptance. Use Wrangler/Vitest with local D1/R2/Queue bindings and fake providers for Worker tests. Inspect UI screenshots and accessibility results rather than relying only on a green test exit.
-- Spawn or message subagents only when the user explicitly asks for delegation. If concurrent work is authorized, use separate checkouts and nonoverlapping files. Never overwrite another agent's changes or share live credentials with a checkout.
+- Agents are authorized to delegate subtasks to context-scoped subagents as needed. Use separate worktrees (`git worktree add`) for concurrent work and nonoverlapping files. Never overwrite another agent's changes or share live credentials with a checkout.
 
 ## Verification and handoff
 
