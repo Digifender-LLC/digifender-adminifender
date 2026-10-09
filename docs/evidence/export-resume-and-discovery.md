@@ -1,6 +1,6 @@
 # Export download resume and export discovery on the phone: local verification evidence
 
-Date: 2026-10-09. Scope: the phone side of the two gaps left after the [Worker range and list change](range-downloads-and-export-list.md). Status: **implemented and locally verified (JVM tests, Lint, builds)**; no emulator, device or staging run. Staging runs the Worker side only for the range/list change; this branch is stacked on it.
+Date: 2026-10-09. Scope: the phone side of the two gaps left after the [Worker range and list change](range-downloads-and-export-list.md). Status: **implemented and locally verified (JVM tests, Lint, builds)**; no emulator, device or staging run. The staging Worker already runs the range/list change (deployed 2026-10-09 from `36a1a91`, see `ops/staging.md`); this branch is phone-only and stacked on it.
 
 ## Result
 
@@ -19,5 +19,5 @@ Pinned toolchain (JDK 21, Gradle 9.8.0), one invocation: `:core:model:test :core
 ## Not covered, and not claimed
 
 - No test of `StorageViewModel.discover` or the button itself (Compose/ViewModel layer compiled and Lint-checked only); no screenshots or TalkBack.
-- Resume was exercised against MockWebServer and scripted streams, not against the staging R2 bucket or a real flaky network; the staging Worker does not run the range/list change yet.
+- Resume was exercised against MockWebServer and scripted streams, not against the staging R2 bucket or a real flaky network. Staging has the Worker side, but no phone has talked to it.
 - No resume across process death, and none for attachment downloads (sealed as one message).

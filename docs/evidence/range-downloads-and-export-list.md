@@ -1,6 +1,6 @@
 # Range downloads and the export list: local verification evidence
 
-Date: 2026-10-09. Scope: the two Worker gaps listed after slice 14i: no byte-range support on downloads (an interrupted export restarts from zero) and no call that lists exports (an export made before a sign-out or on another device cannot be found). Status: **implemented and locally verified for the Worker**; **the phone uses neither yet**, and staging does not have this change.
+Date: 2026-10-09. Scope: the two Worker gaps listed after slice 14i: no byte-range support on downloads (an interrupted export restarts from zero) and no call that lists exports (an export made before a sign-out or on another device cannot be found). Status: **implemented and locally verified for the Worker**; **the phone uses neither yet**, and staging received this change later the same day (`36a1a91`, see `ops/staging.md`).
 
 ## Result
 
@@ -17,4 +17,4 @@ Node 22.22.0, `backend/`: `npm run check` exit 0 (typecheck, **37 files, 933 tes
 - **Update (same day): the phone now resumes an export download inside one attempt and can list exports; see [export-resume-and-discovery.md](export-resume-and-discovery.md). The bullets below describe the state when this note was written.**
 - **The phone does not use ranges.** Resuming an export download needs the Android side to reopen the destination for appending, re-read the part already written through the streaming verifier, and then ask for the rest; attachment downloads are sealed as one message, so they would need a segmented format first. Neither exists, and an interrupted download on the phone still restarts from the start.
 - **The phone does not call `GET /exports`.** Adopting a listed export as a local record needs a decision on how it appears next to the owner's own requests; no Android parser for `export-list` exists yet.
-- Real R2 range reads were exercised only against the local R2 binding, not against the staging bucket. The staging Worker does not yet run this change.
+- Real R2 range reads were exercised only against the local R2 binding, not against the staging bucket. The staging Worker received this change later on 2026-10-09 (`36a1a91`, see `ops/staging.md`), but only unauthenticated answers (401) were checked there; no authenticated range or list call has run on staging.
