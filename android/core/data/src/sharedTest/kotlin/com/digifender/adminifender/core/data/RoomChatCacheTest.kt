@@ -1,5 +1,7 @@
 package com.digifender.adminifender.core.data
 
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -275,7 +277,8 @@ class RoomChatCacheTest {
     fun nothingIsStoredForAConversationThatSignOutCleared() = runTest {
         cache.insertThread(thread())
         cache.submit(turn(), 20)
-        db.clearAllTables()
+        // Blocking, like production's sign-out: off the main thread, which Robolectric's test thread is.
+        withContext(Dispatchers.IO) { db.clearAllTables() }
         assertFalse(cache.applyServer("t1", listOf(server()), PageKind.Latest(null), true, 60))
         assertNull(cache.turnOnce(turnA))
         assertTrue(cache.needingCheck().isEmpty())
