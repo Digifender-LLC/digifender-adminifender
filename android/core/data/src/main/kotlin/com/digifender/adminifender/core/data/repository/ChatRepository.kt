@@ -70,6 +70,13 @@ interface ChatCache {
      */
     suspend fun editAgain(turnId: String): EditAgain
 
+    /**
+     * Removes a conversation, its questions, stored answers and draft from this phone in one transaction. Refused while
+     * a question is unconfirmed or still being answered, so nothing the Worker may hold is lost track of. The Worker has
+     * no call that deletes a conversation, so its copy is not touched.
+     */
+    suspend fun deleteThread(localId: String): DeleteThread
+
     /** What sign-out would discard without the owner having sent or finished it. */
     fun unsent(): Flow<ChatUnsent>
 
@@ -96,6 +103,19 @@ sealed interface EditAgain {
 
     data object Unavailable : EditAgain
 }
+
+sealed interface DeleteThread {
+    data object Deleted : DeleteThread
+
+    /** A question is unconfirmed or still being answered; cancel it or wait for it first. */
+    data object InFlight : DeleteThread
+
+    data object Unavailable : DeleteThread
+}
+
+/** A question the phone must still keep track of: not yet confirmed by the Worker, or accepted and not finished. */
+fun ChatTurn.inFlight() = dispatch == Dispatch.QUEUED || dispatch == Dispatch.ATTEMPTED ||
+    (dispatch == Dispatch.ACCEPTED && (state == null || state == ServerState.PENDING || state == ServerState.RUNNING))
 
 sealed interface SendOutcome {
     data class Submitted(val turnId: String) : SendOutcome
@@ -537,6 +557,9 @@ class ChatRepository(
 
     /** Puts a refused or withdrawn question's text back into the draft, unless the draft holds something else. */
     suspend fun editAgain(turnId: String): EditAgain = cache.editAgain(turnId)
+
+    /** Removes a conversation from this phone unless one of its questions is unconfirmed or still being answered. */
+    suspend fun deleteThread(localId: String): DeleteThread = cache.deleteThread(localId)
 
     fun unsent(): Flow<ChatUnsent> = cache.unsent()
 

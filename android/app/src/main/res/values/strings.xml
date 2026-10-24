@@ -296,6 +296,11 @@
     <string name="chat_loading">Loading…</string>
     <string name="chat_no_conversations">No conversations yet.</string>
     <string name="chat_last_used">Last used %1$s</string>
+    <string name="chat_delete">Delete from this phone</string>
+    <string name="chat_delete_title">Delete this conversation?</string>
+    <string name="chat_delete_body">Its questions, answers and any unsent draft are removed from this phone. The server keeps its own copy and has no way to delete it from here.</string>
+    <string name="chat_delete_confirm">Delete</string>
+    <string name="chat_delete_blocked">A question in that conversation has not been confirmed or is still being answered. Cancel it or wait for it to finish, then delete.</string>
     <string name="chat_has_draft">Has an unsent draft</string>
     <string name="chat_thread_refused">The server refused this subject</string>
     <string name="chat_missing">This conversation is no longer on this phone.</string>

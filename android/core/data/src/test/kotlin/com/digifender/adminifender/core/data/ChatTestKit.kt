@@ -21,6 +21,7 @@ import com.digifender.adminifender.core.data.repository.ChatUnsent
 import com.digifender.adminifender.core.data.repository.ChatTurn
 import com.digifender.adminifender.core.data.repository.ContextSource
 import com.digifender.adminifender.core.data.repository.CreateState
+import com.digifender.adminifender.core.data.repository.DeleteThread
 import com.digifender.adminifender.core.data.repository.Dispatch
 import com.digifender.adminifender.core.data.repository.EditAgain
 import com.digifender.adminifender.core.data.repository.LocalInvalid
@@ -28,6 +29,7 @@ import com.digifender.adminifender.core.data.repository.PageKind
 import com.digifender.adminifender.core.data.repository.ServerState
 import com.digifender.adminifender.core.data.repository.ServerTurn
 import com.digifender.adminifender.core.data.repository.SourceFact
+import com.digifender.adminifender.core.data.repository.inFlight
 import com.digifender.adminifender.core.data.repository.contextSourceIds
 import com.digifender.adminifender.core.data.repository.needsCheck
 import com.digifender.adminifender.core.data.repository.planPage
@@ -126,6 +128,14 @@ class InMemoryChatCache : ChatCache {
         updateThread(thread.localId) { it.copy(draft = row.content) }
         turnRows.value = turnRows.value.filter { it.turnId != turnId }
         return EditAgain.Restored(row.content)
+    }
+
+    override suspend fun deleteThread(localId: String): DeleteThread {
+        if (threadRows.value.none { it.localId == localId }) return DeleteThread.Unavailable
+        if (turnRows.value.any { it.threadLocalId == localId && it.inFlight() }) return DeleteThread.InFlight
+        turnRows.value = turnRows.value.filter { it.threadLocalId != localId }
+        threadRows.value = threadRows.value.filter { it.localId != localId }
+        return DeleteThread.Deleted
     }
 
     override fun unsent(): Flow<ChatUnsent> = combine(threadRows, turnRows) { threads, turns ->

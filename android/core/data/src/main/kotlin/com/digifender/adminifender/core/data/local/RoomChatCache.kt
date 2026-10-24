@@ -16,6 +16,7 @@ import com.digifender.adminifender.core.data.repository.ChatUnsent
 import com.digifender.adminifender.core.data.repository.ClaimBasis
 import com.digifender.adminifender.core.data.repository.ContextSource
 import com.digifender.adminifender.core.data.repository.CreateState
+import com.digifender.adminifender.core.data.repository.DeleteThread
 import com.digifender.adminifender.core.data.repository.Dispatch
 import com.digifender.adminifender.core.data.repository.EditAgain
 import com.digifender.adminifender.core.data.repository.LocalInvalid
@@ -24,6 +25,7 @@ import com.digifender.adminifender.core.data.repository.ServerState
 import com.digifender.adminifender.core.data.repository.ServerTurn
 import com.digifender.adminifender.core.data.repository.SourceFact
 import com.digifender.adminifender.core.data.repository.contextSourceIds
+import com.digifender.adminifender.core.data.repository.inFlight
 import com.digifender.adminifender.core.data.repository.planPage
 import com.digifender.adminifender.core.data.repository.staleAnswers
 import kotlinx.coroutines.flow.Flow
@@ -255,6 +257,13 @@ class RoomChatCache(private val db: AppDatabase) : ChatCache {
         dao.setDraft(thread.localId, row.content)
         dao.deleteTurn(turnId)
         EditAgain.Restored(row.content)
+    }
+
+    override suspend fun deleteThread(localId: String): DeleteThread = db.withTransaction {
+        if (dao.thread(localId) == null) return@withTransaction DeleteThread.Unavailable
+        if (dao.turns(localId).any { it.toTurn().inFlight() }) return@withTransaction DeleteThread.InFlight
+        dao.deleteThread(localId)
+        DeleteThread.Deleted
     }
 
     override fun unsent(): Flow<ChatUnsent> = combine(dao.observeUnconfirmed(), dao.observeDrafts(), dao.observeAtWorker()) { unconfirmed, drafts, atWorker -> ChatUnsent(unconfirmed, drafts, atWorker) }

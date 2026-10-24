@@ -416,7 +416,7 @@ private fun SignedIn(container: AppContainer, activity: Activity, destination: M
                         val chatListModel = viewModel { ChatListViewModel(container.chat, container.concerns, container.archive) }
                         val chatList by chatListModel.state.collectAsStateWithLifecycle()
                         LifecycleEventEffect(Lifecycle.Event.ON_START) { chatListModel.onForeground() }
-                        ChatListScreen(chatList, { open(Route.ChatRoute(it)) }, { scope -> chatListModel.open(scope) { open(Route.ChatRoute(it)) } })
+                        ChatListScreen(chatList, { open(Route.ChatRoute(it)) }, { scope -> chatListModel.open(scope) { open(Route.ChatRoute(it)) } }, chatListModel::delete)
                     }
                     Tab.SETTINGS -> SettingsScreen(
                         inbox.freshness,
