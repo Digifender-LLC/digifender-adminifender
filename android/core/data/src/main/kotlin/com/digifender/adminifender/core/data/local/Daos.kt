@@ -229,6 +229,10 @@ interface ChatDao {
     @Query("DELETE FROM chat_turns WHERE turnId = :id")
     suspend fun deleteTurn(id: String): Int
 
+    /** The turns go with it (cascade). */
+    @Query("DELETE FROM chat_threads WHERE localId = :id")
+    suspend fun deleteThread(id: String): Int
+
     @Query("UPDATE chat_turns SET dispatch = :next, dispatchError = :error WHERE turnId = :id AND dispatch IN (:allowed)")
     suspend fun setDispatch(id: String, next: String, error: String?, allowed: List<String>): Int
 

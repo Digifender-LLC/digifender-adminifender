@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -76,8 +77,31 @@ fun scopeDetail(label: ScopeLabel): String? =
  * concern points at it, and it is named by a short ID because no name is synced.
  */
 @Composable
-fun ChatListScreen(state: ChatListState, onOpen: (String) -> Unit, onNew: (ChatScope) -> Unit, modifier: Modifier = Modifier) {
+fun ChatListScreen(
+    state: ChatListState,
+    onOpen: (String) -> Unit,
+    onNew: (ChatScope) -> Unit,
+    onDelete: (String, () -> Unit) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     var picker by rememberSaveable { mutableStateOf(Picker.NONE) }
+    var confirmDelete by rememberSaveable { mutableStateOf<String?>(null) }
+    var deleteBlocked by rememberSaveable { mutableStateOf(false) }
+    confirmDelete?.let { id ->
+        AlertDialog(
+            onDismissRequest = { confirmDelete = null },
+            title = { Text(stringResource(R.string.chat_delete_title)) },
+            text = { Text(stringResource(R.string.chat_delete_body)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmDelete = null
+                    deleteBlocked = false
+                    onDelete(id) { deleteBlocked = true }
+                }) { Text(stringResource(R.string.chat_delete_confirm)) }
+            },
+            dismissButton = { TextButton(onClick = { confirmDelete = null }) { Text(stringResource(R.string.cancel)) } },
+        )
+    }
     LazyColumn(modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item { Text(stringResource(R.string.chat_title), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(vertical = 8.dp)) }
         item { Text(stringResource(R.string.chat_intro), style = MaterialTheme.typography.bodyMedium) }
@@ -138,6 +162,7 @@ fun ChatListScreen(state: ChatListState, onOpen: (String) -> Unit, onNew: (ChatS
             }
         }
         item { Text(stringResource(R.string.chat_conversations), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp)) }
+        if (deleteBlocked) item { Text(stringResource(R.string.chat_delete_blocked), style = MaterialTheme.typography.bodyMedium) }
         val threads = state.items
         if (threads == null) {
             item { Text(stringResource(R.string.chat_loading)) }
@@ -152,6 +177,7 @@ fun ChatListScreen(state: ChatListState, onOpen: (String) -> Unit, onNew: (ChatS
                         Text(stringResource(R.string.chat_last_used, dateTime(item.thread.updatedAtMs)), style = MaterialTheme.typography.bodySmall)
                         if (item.thread.draft.isNotEmpty()) Text(stringResource(R.string.chat_has_draft), style = MaterialTheme.typography.bodySmall)
                         if (item.thread.createState == CreateState.REFUSED) Text(stringResource(R.string.chat_thread_refused), style = MaterialTheme.typography.bodySmall)
+                        TextButton(onClick = { confirmDelete = item.thread.localId }) { Text(stringResource(R.string.chat_delete)) }
                     }
                 }
             }
