@@ -14,6 +14,7 @@ import com.digifender.adminifender.core.data.repository.ChatRepository
 import com.digifender.adminifender.core.data.repository.ChatThread
 import com.digifender.adminifender.core.data.repository.ChatTurn
 import com.digifender.adminifender.core.data.repository.ConcernRepository
+import com.digifender.adminifender.core.data.repository.DeleteThread
 import com.digifender.adminifender.core.data.repository.EditAgain
 import com.digifender.adminifender.core.data.repository.ReadOutcome
 import com.digifender.adminifender.core.data.repository.SendOutcome
@@ -111,6 +112,11 @@ class ChatListViewModel(private val chat: ChatRepository, private val concerns: 
     /** Opens the latest conversation for [scope] or starts a local one; no request is made until a question is sent. */
     fun open(scope: ChatScope, onReady: (String) -> Unit) {
         viewModelScope.launch { chat.openThread(scope)?.let(onReady) }
+    }
+
+    /** Removes a conversation from this phone; [onInFlight] runs when a question is unconfirmed or still being answered. */
+    fun delete(localId: String, onInFlight: () -> Unit) {
+        viewModelScope.launch { if (chat.deleteThread(localId) == DeleteThread.InFlight) onInFlight() }
     }
 
     /** The list came to the foreground: send what is stored and read back what is unconfirmed. */
