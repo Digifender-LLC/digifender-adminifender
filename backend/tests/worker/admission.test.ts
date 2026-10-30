@@ -4,6 +4,7 @@ import { quietEnv } from './support';
 const env = quietEnv();
 import { beforeEach, describe, expect, it } from 'vitest';
 import { type InboundEmail, admitEmail } from '../../src/admission/capture';
+import worker from '../../src/index';
 
 const now = Date.UTC(2026, 9, 3, 12);
 const rawMail = (body = 'Synthetic test body.') =>
@@ -150,5 +151,49 @@ describe('durable staging', () => {
     const outcome = await admitEmail(mail(), { ...workerEnv, WORK_QUEUE: failingQueue }, now);
     expect(outcome.kind).toBe('staged');
     expect(await count("SELECT COUNT(*) AS n FROM outbox WHERE state = 'pending'")).toBe(1);
+  });
+});
+
+describe('staging forward copy', () => {
+  const ctx = {} as ExecutionContext;
+  function forwardable(failForward = false) {
+    const forwarded: string[] = [];
+    const message = Object.assign(mail(), {
+      forward: async (to: string) => {
+        if (failForward) throw new Error('destination not verified');
+        forwarded.push(to);
+      },
+    });
+    return { message: message as unknown as ForwardableEmailMessage & FakeMail, forwarded };
+  }
+
+  it('forwards newly stored mail once and never forwards duplicates', async () => {
+    const forwardEnv = { ...env, FORWARD_TO: 'copy@example.com' };
+    const first = forwardable();
+    await worker.email!(first.message, forwardEnv, ctx);
+    const repeat = forwardable();
+    await worker.email!(repeat.message, forwardEnv, ctx);
+    expect(first.forwarded).toEqual(['copy@example.com']);
+    expect(repeat.forwarded).toEqual([]);
+    expect(await count('SELECT COUNT(*) AS n FROM source_registry')).toBe(1);
+  });
+
+  it('does not forward without FORWARD_TO, and keeps the stored copy when forwarding fails', async () => {
+    const unset = forwardable();
+    await worker.email!(unset.message, env, ctx);
+    expect(unset.forwarded).toEqual([]);
+    const failing = forwardable(true);
+    Object.assign(failing.message, { to: 'alias@adminifender.example' });
+    await worker.email!(failing.message, { ...env, FORWARD_TO: 'copy@example.com' }, ctx);
+    expect(failing.message.rejected).toBeNull();
+    expect(await count('SELECT COUNT(*) AS n FROM source_registry')).toBe(2);
+  });
+
+  it('does not forward rejected mail', async () => {
+    const { message, forwarded } = forwardable();
+    Object.assign(message, { rawSize: 25 * 1024 * 1024 + 1 });
+    await worker.email!(message, { ...env, FORWARD_TO: 'copy@example.com' }, ctx);
+    expect(message.rejected).not.toBeNull();
+    expect(forwarded).toEqual([]);
   });
 });

@@ -25,6 +25,15 @@ export default {
     // The live route stays disabled until intake acceptance (tdd.md#preflight-and-release-gates).
     const outcome = await admitEmail(message, env);
     console.log(JSON.stringify({ event: 'email_admission', outcome: outcome.kind }));
+    // Only newly stored mail: rejected mail has already bounced, and duplicates were forwarded on first arrival.
+    if (env.FORWARD_TO && outcome.kind === 'staged') {
+      try {
+        await message.forward(env.FORWARD_TO);
+      } catch {
+        // The stored copy is the record, so a failed forward is logged rather than bounced.
+        console.warn(JSON.stringify({ event: 'email_forward_failed' }));
+      }
+    }
   },
 
   async queue(batch, env, _ctx) {

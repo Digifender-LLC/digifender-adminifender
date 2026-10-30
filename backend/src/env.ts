@@ -20,6 +20,11 @@ export interface Env {
   /** Set only for a recovery pass (ops/recovery-drill.md): the API answers 503 and jobs pause until it is removed. */
   RECOVERY_RUN_ID?: string;
   /**
+   * Staging only, owner decision 2026-10-30 (ops/staging.md): also forward each newly stored message here.
+   * Must be a verified Email Routing destination address. Unset everywhere else.
+   */
+  FORWARD_TO?: string;
+  /**
    * Optional Workers AI binding. Absent locally and until a reviewed environment binds it; routing then treats
    * cloud as unavailable and queues work for the phone.
    */
